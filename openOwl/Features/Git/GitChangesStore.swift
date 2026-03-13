@@ -1,0 +1,424 @@
+import AppKit
+import Combine
+import Foundation
+
+@MainActor
+final class GitChangesStore: ObservableObject {
+    @Published private(set) var repositoryURL: URL?
+    @Published private(set) var statusSnapshot: GitStatusSnapshot?
+    @Published private(set) var branches: [String] = []
+    @Published var selectedBranch: String = ""
+    @Published var newBranchName: String = ""
+
+    @Published var selectedChange: GitFileChange?
+    @Published private(set) var selectedDiffText: String = ""
+
+    @Published var commitMessage: String = ""
+
+    @Published private(set) var isRefreshing = false
+    @Published private(set) var isRunningCommand = false
+    @Published var errorMessage: String?
+    @Published var infoMessage: String?
+
+    var hasDiscardableChanges: Bool {
+        guard let statusSnapshot else { return false }
+        return !statusSnapshot.modified.isEmpty || !statusSnapshot.untracked.isEmpty
+    }
+
+    private var gitService: GitService?
+    private var watcher: FileWatcher?
+    private var hasStarted = false
+
+    private var preferredDirectory: URL
+
+    init(initialDirectory: URL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath, isDirectory: true)) {
+        self.preferredDirectory = initialDirectory.standardizedFileURL
+    }
+
+    func startIfNeeded() {
+        guard !hasStarted else { return }
+        hasStarted = true
+
+        Task {
+            await openRepository(at: preferredDirectory)
+        }
+    }
+
+    func setPreferredDirectory(_ directoryURL: URL) {
+        let standardized = directoryURL.standardizedFileURL
+        preferredDirectory = standardized
+        hasStarted = true
+
+        Task {
+            await openRepository(at: standardized)
+        }
+    }
+
+    func chooseRepository() {
+        let panel = NSOpenPanel()
+        panel.title = "Select Git Repository"
+        panel.message = "Choose a folder that contains a .git directory"
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.allowsMultipleSelection = false
+
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+
+        Task {
+            await openRepository(at: url)
+        }
+    }
+
+    func openRepository(at candidateURL: URL) async {
+        let directoryURL = candidateURL.hasDirectoryPath ? candidateURL : candidateURL.deletingLastPathComponent()
+        let probeService = GitService(workingDirectory: directoryURL)
+
+        do {
+            let resolvedRoot = try await probeService.repositoryRoot()
+            let root = resolvedRoot.standardizedFileURL
+            preferredDirectory = root
+            gitService = GitService(workingDirectory: root)
+            repositoryURL = root
+            selectedChange = nil
+            selectedDiffText = ""
+            newBranchName = ""
+            errorMessage = nil
+            infoMessage = nil
+
+            configureWatcher(for: root)
+            await refresh()
+        } catch {
+            repositoryURL = nil
+            statusSnapshot = nil
+            branches = []
+            selectedBranch = ""
+            selectedChange = nil
+            selectedDiffText = ""
+            watcher?.stop()
+            watcher = nil
+            errorMessage = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+        }
+    }
+
+    func refresh() async {
+        guard !isRefreshing else { return }
+        guard let gitService else { return }
+
+        isRefreshing = true
+        defer { isRefreshing = false }
+
+        do {
+            let snapshot = try await gitService.status()
+            statusSnapshot = snapshot
+            selectedBranch = snapshot.branch
+            errorMessage = nil
+
+            try await loadBranches(using: gitService)
+            await ensureSelectedDiffIsFresh(using: gitService)
+        } catch {
+            errorMessage = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+        }
+    }
+
+    func refreshNow() {
+        Task {
+            await refresh()
+        }
+    }
+
+    func selectChange(_ change: GitFileChange) {
+        selectedChange = change
+
+        Task {
+            await loadDiff(for: change)
+        }
+    }
+
+    func clearInfoMessage() {
+        infoMessage = nil
+    }
+
+    func stage(_ change: GitFileChange) {
+        stage(paths: [change.path])
+    }
+
+    func unstage(_ change: GitFileChange) {
+        unstage(paths: [change.path])
+    }
+
+    func discard(_ change: GitFileChange) {
+        discard(changes: [change])
+    }
+
+    func discard(_ changes: [GitFileChange]) {
+        discard(changes: changes)
+    }
+
+    func stageAll() {
+        guard let snapshot = statusSnapshot else { return }
+        let paths = Set(snapshot.modified.map(\.path) + snapshot.untracked.map(\.path))
+        stage(paths: Array(paths).sorted())
+    }
+
+    func discardAll() {
+        guard let snapshot = statusSnapshot else { return }
+        discard(changes: snapshot.modified + snapshot.untracked)
+    }
+
+    func unstageAll() {
+        guard let gitService else { return }
+
+        runCommand {
+            try await gitService.unstageAll()
+            self.infoMessage = "Unstaged all files."
+        }
+    }
+
+    func commit() {
+        guard let gitService else { return }
+        let autoStage = !(statusSnapshot?.hasStagedChanges ?? false)
+        let message = commitMessage
+
+        runCommand {
+            try await gitService.commit(message: message, autoStageWhenNeeded: autoStage)
+            self.commitMessage = ""
+            self.infoMessage = autoStage ? "Committed (auto-staged all changes)." : "Committed."
+        }
+    }
+
+    func checkoutSelectedBranch() {
+        guard let gitService else { return }
+        let targetBranch = selectedBranch
+
+        runCommand {
+            try await gitService.checkout(branch: targetBranch)
+            self.infoMessage = "Switched to branch: \(targetBranch)"
+        }
+    }
+
+    func createBranchFromInput(checkout: Bool = true) {
+        guard let gitService else { return }
+        let name = newBranchName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty else { return }
+
+        runCommand {
+            try await gitService.createBranch(name: name, checkout: checkout)
+            self.newBranchName = ""
+            self.infoMessage = checkout ? "Created and switched to branch: \(name)" : "Created branch: \(name)"
+        }
+    }
+
+    func deleteSelectedBranch(force: Bool = false) {
+        deleteBranch(name: selectedBranch, force: force)
+    }
+
+    func deleteBranch(name: String, force: Bool = false) {
+        guard let gitService else { return }
+        let targetBranch = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !targetBranch.isEmpty else { return }
+
+        runCommand {
+            try await gitService.deleteBranch(name: targetBranch, force: force)
+            self.infoMessage = force ? "Force deleted branch: \(targetBranch)" : "Deleted branch: \(targetBranch)"
+        }
+    }
+
+    func fetch() {
+        guard let gitService else { return }
+        runCommand {
+            try await gitService.fetch()
+            self.infoMessage = "Fetch completed."
+        }
+    }
+
+    func pull() {
+        guard let gitService else { return }
+        runCommand {
+            try await gitService.pull()
+            self.infoMessage = "Pull completed."
+        }
+    }
+
+    func push() {
+        guard let gitService else { return }
+        runCommand {
+            try await gitService.push()
+            self.infoMessage = "Push completed."
+        }
+    }
+
+    func openDiff(forFileURL fileURL: URL) {
+        Task {
+            let standardized = fileURL.standardizedFileURL
+
+            if !isFileInsideCurrentRepository(standardized) {
+                await openRepository(at: standardized.deletingLastPathComponent())
+            }
+
+            guard statusSnapshot != nil else { return }
+            if let change = changeForFileURL(standardized) {
+                selectChange(change)
+                return
+            }
+
+            await refresh()
+            if let change = changeForFileURL(standardized) {
+                selectChange(change)
+                return
+            }
+
+            infoMessage = "No git diff for selected file."
+        }
+    }
+
+    private func stage(paths: [String]) {
+        guard let gitService else { return }
+        guard !paths.isEmpty else { return }
+
+        runCommand {
+            try await gitService.stage(files: paths)
+            self.infoMessage = "Staged \(paths.count) file(s)."
+        }
+    }
+
+    private func unstage(paths: [String]) {
+        guard let gitService else { return }
+        guard !paths.isEmpty else { return }
+
+        runCommand {
+            try await gitService.unstage(files: paths)
+            self.infoMessage = "Unstaged \(paths.count) file(s)."
+        }
+    }
+
+    private func discard(changes: [GitFileChange]) {
+        guard let gitService else { return }
+        guard !changes.isEmpty else { return }
+
+        let modifiedPaths = Array(
+            Set(changes.filter { $0.section == .modified }.map(\.path))
+        ).sorted()
+        let untrackedPaths = Array(
+            Set(changes.filter { $0.section == .untracked }.map(\.path))
+        ).sorted()
+
+        guard !modifiedPaths.isEmpty || !untrackedPaths.isEmpty else { return }
+
+        runCommand {
+            if !modifiedPaths.isEmpty {
+                try await gitService.discardModified(files: modifiedPaths)
+            }
+            if !untrackedPaths.isEmpty {
+                try await gitService.discardUntracked(paths: untrackedPaths)
+            }
+
+            let total = modifiedPaths.count + untrackedPaths.count
+            self.infoMessage = "Discarded \(total) change(s)."
+        }
+    }
+
+    private func runCommand(_ operation: @escaping () async throws -> Void) {
+        guard !isRunningCommand else { return }
+        isRunningCommand = true
+
+        Task {
+            defer { isRunningCommand = false }
+            do {
+                try await operation()
+                await refresh()
+            } catch {
+                errorMessage = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+            }
+        }
+    }
+
+    private func configureWatcher(for repositoryURL: URL) {
+        watcher?.stop()
+        watcher = FileWatcher(directoryURL: repositoryURL) { [weak self] in
+            self?.refreshNow()
+        }
+        watcher?.start()
+    }
+
+    private func loadBranches(using gitService: GitService) async throws {
+        let list = try await gitService.branches()
+        branches = list
+
+        // Detached HEAD or remote-only refs may not be in local branch list.
+        if !selectedBranch.isEmpty && !branches.contains(selectedBranch) {
+            branches = ([selectedBranch] + branches).uniqued()
+        }
+    }
+
+    private func loadDiff(for change: GitFileChange) async {
+        guard let gitService else { return }
+
+        do {
+            let diff = try await gitService.diff(for: change)
+            if selectedChange?.id == change.id {
+                selectedDiffText = diff
+            }
+        } catch {
+            if selectedChange?.id == change.id {
+                selectedDiffText = ""
+                errorMessage = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+            }
+        }
+    }
+
+    private func ensureSelectedDiffIsFresh(using gitService: GitService) async {
+        guard let snapshot = statusSnapshot else {
+            selectedChange = nil
+            selectedDiffText = ""
+            return
+        }
+
+        guard let selected = selectedChange else {
+            selectedDiffText = ""
+            return
+        }
+
+        let allChanges = snapshot.staged + snapshot.modified + snapshot.untracked
+        guard let stillExisting = allChanges.first(where: { $0.id == selected.id }) else {
+            selectedChange = nil
+            selectedDiffText = ""
+            return
+        }
+
+        do {
+            selectedDiffText = try await gitService.diff(for: stillExisting)
+        } catch {
+            selectedDiffText = ""
+            errorMessage = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+        }
+    }
+
+    private func isFileInsideCurrentRepository(_ fileURL: URL) -> Bool {
+        guard let repositoryURL else { return false }
+        let rootPath = repositoryURL.standardizedFileURL.path
+        let filePath = fileURL.path
+        if filePath == rootPath { return true }
+        return filePath.hasPrefix(rootPath + "/")
+    }
+
+    private func changeForFileURL(_ fileURL: URL) -> GitFileChange? {
+        guard let snapshot = statusSnapshot else { return nil }
+        let absolutePath = fileURL.standardizedFileURL.path
+        let allChanges = snapshot.staged + snapshot.modified + snapshot.untracked
+
+        return allChanges.first { change in
+            let changePath = snapshot.repositoryRoot
+                .appendingPathComponent(change.path)
+                .standardizedFileURL
+                .path
+            return changePath == absolutePath
+        }
+    }
+}
+
+private extension Array where Element: Hashable {
+    func uniqued() -> [Element] {
+        var seen: Set<Element> = []
+        return filter { seen.insert($0).inserted }
+    }
+}

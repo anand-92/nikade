@@ -6,16 +6,21 @@ import QuartzCore
 class TerminalNSView: NSView {
     private var surface: ghostty_surface_t?
     private let ghosttyApp: ghostty_app_t
+    private let paneID: UUID
     private var metalLayer: CAMetalLayer!
     private var trackingArea: NSTrackingArea?
 
     /// Reference to the app manager for clipboard routing.
     weak var appManager: GhosttyAppManager?
+    var onFocus: (() -> Void)?
+    var paneIdentifier: UUID { paneID }
 
-    init(ghosttyApp: ghostty_app_t) {
+    init(ghosttyApp: ghostty_app_t, paneID: UUID) {
         self.ghosttyApp = ghosttyApp
+        self.paneID = paneID
         super.init(frame: .zero)
         wantsLayer = true
+        registerForDraggedTypes([.fileURL])
     }
 
     @available(*, unavailable)
@@ -40,8 +45,15 @@ class TerminalNSView: NSView {
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
+        // #region agent log
+        debugLog("GhosttyTerminal.swift:viewDidMoveToWindow", "viewDidMoveToWindow called", ["hypothesisId": "H6", "hasWindow": window != nil, "hasSurface": surface != nil, "paneID": paneID.uuidString])
+        // #endregion
 
         guard let window, surface == nil else { return }
+
+        // #region agent log
+        debugLog("GhosttyTerminal.swift:creating-surface", "creating ghostty surface", ["hypothesisId": "H6", "scaleFactor": window.backingScaleFactor, "boundsW": bounds.width, "boundsH": bounds.height])
+        // #endregion
 
         // Update metal layer scale
         metalLayer.contentsScale = window.backingScaleFactor
@@ -54,7 +66,19 @@ class TerminalNSView: NSView {
         surfaceConfig.scale_factor = Double(window.backingScaleFactor)
         surfaceConfig.font_size = 0 // use config default
 
-        surface = ghostty_surface_new(ghosttyApp, &surfaceConfig)
+        let profile = appManager?.launchProfile
+        if let profile, profile.shouldInjectFallbackShell {
+            surface = profile.fallbackShell.withCString { cCommand in
+                surfaceConfig.command = cCommand
+                return ghostty_surface_new(ghosttyApp, &surfaceConfig)
+            }
+        } else {
+            surface = ghostty_surface_new(ghosttyApp, &surfaceConfig)
+        }
+
+        // #region agent log
+        debugLog("GhosttyTerminal.swift:surface-created", "ghostty_surface_new returned", ["hypothesisId": "H6", "surfaceNil": surface == nil])
+        // #endregion
 
         guard surface != nil else {
             NSLog("openOwl: Failed to create ghostty surface")
@@ -66,21 +90,23 @@ class TerminalNSView: NSView {
         ghostty_surface_set_size(surface, UInt32(fbSize.width), UInt32(fbSize.height))
         ghostty_surface_set_content_scale(surface, Double(window.backingScaleFactor), Double(window.backingScaleFactor))
 
-        // Register as active surface for clipboard callbacks
-        appManager?.activeSurface = surface
+        if let surface {
+            appManager?.register(surface: surface, for: paneID, view: self)
+        }
 
         // Setup tracking area for mouse events
         setupTrackingArea()
 
         // Become first responder to receive key events
         window.makeFirstResponder(self)
+        // #region agent log
+        debugLog("GhosttyTerminal.swift:surface-setup-done", "surface fully set up, first responder set", ["hypothesisId": "H6", "paneID": paneID.uuidString])
+        // #endregion
     }
 
     override func removeFromSuperview() {
         if let surface {
-            if appManager?.activeSurface == surface {
-                appManager?.activeSurface = nil
-            }
+            appManager?.unregisterPane(paneID)
             ghostty_surface_free(surface)
             self.surface = nil
         }
@@ -95,6 +121,7 @@ class TerminalNSView: NSView {
         if let surface {
             ghostty_surface_set_focus(surface, true)
             appManager?.activeSurface = surface
+            onFocus?()
         }
         return super.becomeFirstResponder()
     }
@@ -243,6 +270,40 @@ class TerminalNSView: NSView {
         )
     }
 
+    // MARK: - Drag & Drop
+
+    override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
+        hasFileURLs(in: sender.draggingPasteboard) ? .copy : []
+    }
+
+    override func draggingUpdated(_ sender: NSDraggingInfo) -> NSDragOperation {
+        hasFileURLs(in: sender.draggingPasteboard) ? .copy : []
+    }
+
+    override func prepareForDragOperation(_ sender: NSDraggingInfo) -> Bool {
+        hasFileURLs(in: sender.draggingPasteboard)
+    }
+
+    override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
+        guard let surface else { return false }
+
+        let options: [NSPasteboard.ReadingOptionKey: Any] = [.urlReadingFileURLsOnly: true]
+        let droppedURLs = (sender.draggingPasteboard.readObjects(forClasses: [NSURL.self], options: options) as? [URL]) ?? []
+        let paths = droppedURLs
+            .map { $0.standardizedFileURL.path }
+            .uniquedPreservingOrder()
+
+        guard !paths.isEmpty else { return false }
+
+        window?.makeFirstResponder(self)
+
+        let payload = paths.map(Self.shellEscapedPath).joined(separator: " ") + " "
+        payload.withCString { cstr in
+            ghostty_surface_text(surface, cstr, UInt(payload.utf8.count))
+        }
+        return true
+    }
+
     // MARK: - Tracking Area
 
     private func setupTrackingArea() {
@@ -256,6 +317,19 @@ class TerminalNSView: NSView {
             userInfo: nil
         )
         addTrackingArea(trackingArea!)
+    }
+
+    private func hasFileURLs(in pasteboard: NSPasteboard) -> Bool {
+        let options: [NSPasteboard.ReadingOptionKey: Any] = [.urlReadingFileURLsOnly: true]
+        guard let urls = pasteboard.readObjects(forClasses: [NSURL.self], options: options) as? [URL] else {
+            return false
+        }
+        return !urls.isEmpty
+    }
+
+    private static func shellEscapedPath(_ path: String) -> String {
+        let escaped = path.replacingOccurrences(of: "'", with: "'\"'\"'")
+        return "'\(escaped)'"
     }
 }
 
@@ -304,4 +378,17 @@ extension TerminalNSView: NSTextInputClient {
     }
 
     func characterIndex(for point: NSPoint) -> Int { 0 }
+}
+
+private extension Array where Element == String {
+    func uniquedPreservingOrder() -> [String] {
+        var seen = Set<String>()
+        var output: [String] = []
+        output.reserveCapacity(count)
+
+        for value in self where seen.insert(value).inserted {
+            output.append(value)
+        }
+        return output
+    }
 }

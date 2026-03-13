@@ -2,31 +2,50 @@
 
 ## 概述
 
-使用 libghostty 实现原生 Metal GPU 渲染的终端，这是产品的核心功能。
+使用 libghostty 实现原生 Metal GPU 渲染终端，并提供多标签与分屏基础交互。
 
 ## 核心需求
 
 ### P0 — 基础终端
 
-- [ ] libghostty 集成：通过 C bridging header 导入，初始化 ghostty_app_t
-- [ ] 终端视图：AppKit NSView + CAMetalLayer，通过 NSViewRepresentable 桥接到 SwiftUI
-- [ ] PTY 管理：libghostty 内置，自动检测用户 shell (zsh/bash/fish)
-- [ ] 输入处理：键盘事件转换为 ghostty_input_key_s，鼠标事件处理
-- [ ] 终端配置：字体、字号、主题颜色、光标样式
-- [ ] 读取 ~/.config/ghostty/config 用户已有配置
+- [x] libghostty 集成：通过 C bridging header 导入，初始化 `ghostty_app_t`
+- [x] 终端视图：AppKit NSView + CAMetalLayer，通过 NSViewRepresentable 桥接到 SwiftUI
+- [x] PTY 管理：libghostty 内置，自动检测用户 shell (zsh/bash/fish)
+- [x] 输入处理：键盘事件转换为 `ghostty_input_key_s`，鼠标事件处理
+- [x] 终端配置：字体、字号、主题颜色由 libghostty 配置驱动
+- [x] 读取 `~/.config/ghostty/config` 用户已有配置（含 recursive include）
 
 ### P0 — 多标签 + 分屏
 
-- [ ] 多标签页：Cmd+T 新建，Cmd+W 关闭，Cmd+1-9 切换
-- [ ] 分屏：Cmd+D 水平分屏，Cmd+Shift+D 垂直分屏
-- [ ] 焦点切换：Cmd+Arrow 在分屏间移动焦点
+- [x] 多标签页：Cmd+T 新建，Cmd+W 关闭，Cmd+1-9 切换
+- [x] 分屏：Cmd+D 左右分屏，Cmd+Shift+D 上下分屏
+- [x] 焦点切换：Cmd+Arrow 在分屏间移动焦点（边界无目标时 no-op）
+- [x] 关闭优先级：`Cmd+W` = 关闭当前分屏 > 关闭当前标签 > 关闭窗口
 
 ### P1 — 增强
 
-- [ ] 终端标题追踪（OSC 0/2）
-- [ ] 拖拽文件到终端粘贴路径
+- [x] 终端标题追踪（OSC 0/2）
+- [x] 拖拽文件到终端粘贴路径（shell-safe 路径转义）
 - [ ] URL 检测 + Cmd+Click 打开链接
-- [ ] 滚动回看 (scrollback)
+- [ ] 运行时 scrollback 调参 UI（底层配置已可生效）
+
+## 已落地的关键规则
+
+- shell 启动策略：
+  - 优先使用用户 config 中的 `command`
+  - 若未设置 `command`，fallback 检测顺序为：`$SHELL` 可执行 > `getpwuid` 登录 shell > `/bin/zsh`
+- 主题/字体/scrollback：
+  - 统一由 libghostty 读取 config 生效
+  - Swift 侧记录 `command/font-family/font-size/theme/scrollback-limit` 快照用于诊断
+- 标签与分屏：
+  - 本阶段采用应用内 Tab Bar（非 macOS 原生 tab group）
+  - 分屏支持多级嵌套，当前固定 50/50 比例（无拖拽调比）
+- 文件拖拽到终端：
+  - 支持从 Finder/文件树拖拽文件或目录到 Terminal
+  - 终端收到的是 shell-safe 转义路径，多个路径以空格拼接并自动补尾随空格
+- 标题追踪：
+  - 监听 libghostty `SetTitle/SetTabTitle` action 回调
+  - 按目标 surface 映射到 pane，再更新应用内 tab 标题
 
 ## 技术要点
 
@@ -55,10 +74,10 @@ Swift 需要实现以下回调供 libghostty 调用：
 
 1. libghostty 维护终端状态（网格、样式、scrollback）
 2. Metal 渲染由 libghostty 内部完成，直接绘制到 CAMetalLayer
-3. Swift 端管理 display link timing
+3. Swift 端通过 `wakeup_cb -> ghostty_app_tick` 驱动事件循环
 4. 大小变更通过 `ghostty_surface_set_size()` 传递像素尺寸和 content scale
 
 ## 参考实现
 
 - Ghostty macOS app: `macos/Sources/Ghostty/` 和 `macos/Sources/Features/Terminal/`
-- cmux: `github.com/manaflow-ai/cmux` — 第三方 libghostty 集成的最佳参考
+- cmux: `github.com/manaflow-ai/cmux` — 第三方 libghostty 集成参考

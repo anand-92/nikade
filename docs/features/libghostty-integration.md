@@ -31,7 +31,7 @@ cmux 的做法：
 
 - Bridging Header: 只需一行 `#import "ghostty.h"`
 - 链接: GhosttyKit.xcframework + 系统框架 (Metal, MetalKit, AppKit)
-- 资源: 设置 `GHOSTTY_RESOURCES_DIR` 环境变量
+- 资源: 打包 `ghostty-resources` 到 app `Contents/Resources`，并在 `ghostty_init` 前设置 `GHOSTTY_RESOURCES_DIR`
 - 设置 `TERM=xterm-ghostty` 环境变量
 
 ### 4. 初始化流程

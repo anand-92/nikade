@@ -11,6 +11,8 @@ settings:
     SWIFT_OBJC_BRIDGING_HEADER: openOwl/Ghostty/openOwl-Bridging-Header.h
     MACOSX_DEPLOYMENT_TARGET: "14.0"
     SWIFT_VERSION: "5.10"
+    DEAD_CODE_STRIPPING: YES
+    ENABLE_USER_SCRIPT_SANDBOXING: YES
 
 targets:
   openOwl:
@@ -20,6 +22,9 @@ targets:
       - path: openOwl
         excludes:
           - "**/*.entitlements"
+      - path: ghostty-resources
+        type: folder
+        buildPhase: resources
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.openowl.app
@@ -46,6 +51,7 @@ targets:
           - "-framework Carbon"
           - "-framework IOKit"
           - "-framework UniformTypeIdentifiers"
+          - "-framework Security"
           - "-lz"
           - "-lc++"
     entitlements:

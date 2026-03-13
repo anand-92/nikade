@@ -3,16 +3,55 @@ import SwiftUI
 @main
 struct openOwlApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
-    @StateObject private var ghosttyManager = GhosttyAppManager()
+    @StateObject private var ghosttyManager: GhosttyAppManager
+    @StateObject private var workspaceStore = TerminalWorkspaceStore()
+    @StateObject private var navigationStore = AppNavigationStore()
+    @StateObject private var projectStore = ProjectStore()
+    @StateObject private var gitChangesStore = GitChangesStore()
+    @StateObject private var fileExplorerStore = FileExplorerStore()
 
     init() {
-        setupEnvironment()
+        // #region agent log
+        installExitTracing()
+        debugLog("openOwlApp.swift:init-start", "openOwlApp init started", ["hypothesisId": "H4,H5"])
+        // #endregion
+        Self.setupEnvironment()
+        // #region agent log
+        debugLog("openOwlApp.swift:init-after-env", "setupEnvironment completed", ["hypothesisId": "H1"])
+        // #endregion
+        _ghosttyManager = StateObject(wrappedValue: GhosttyAppManager())
+        // #region agent log
+        debugLog("openOwlApp.swift:init-done", "openOwlApp init completed", ["hypothesisId": "H1,H2,H3,H4"])
+        // #endregion
     }
 
     var body: some Scene {
         WindowGroup {
             ContentView()
                 .environmentObject(ghosttyManager)
+                .environmentObject(workspaceStore)
+                .environmentObject(navigationStore)
+                .environmentObject(projectStore)
+                .environmentObject(gitChangesStore)
+                .environmentObject(fileExplorerStore)
+                .onAppear {
+                    // #region agent log
+                    debugLog("openOwlApp.swift:onAppear", "ContentView onAppear fired", ["hypothesisId": "H5"])
+                    // #endregion
+                    appDelegate.workspaceStore = workspaceStore
+                    appDelegate.ghosttyManager = ghosttyManager
+                    appDelegate.navigationStore = navigationStore
+                    ghosttyManager.onPaneTitleChanged = { paneID, title in
+                        workspaceStore.updateTitle(for: paneID, title: title)
+                    }
+                    syncActiveProjectContext()
+                    // #region agent log
+                    debugLog("openOwlApp.swift:onAppear-done", "onAppear completed", ["hypothesisId": "H5"])
+                    // #endregion
+                }
+                .onChange(of: projectStore.activeProjectID) { _, _ in
+                    syncActiveProjectContext()
+                }
                 .frame(
                     minWidth: AppConstants.windowMinWidth,
                     minHeight: AppConstants.windowMinHeight
@@ -21,31 +60,47 @@ struct openOwlApp: App {
         .defaultSize(width: 1200, height: 800)
     }
 
-    private func setupEnvironment() {
+    private static func setupEnvironment() {
         setenv("TERM", AppConstants.termEnv, 1)
 
         // GHOSTTY_RESOURCES_DIR: ghostty needs this for terminfo, shell-integration, themes.
         // In dev builds, use the symlinked ghostty-resources in the project root.
         // In release builds, bundle resources inside the .app.
         if let resourcesInBundle = Bundle.main.resourcePath {
-            let ghosttyRes = (resourcesInBundle as NSString).appendingPathComponent("ghostty")
-            if FileManager.default.fileExists(atPath: ghosttyRes) {
-                setenv(AppConstants.ghosttyResourcesDirEnv, ghosttyRes, 1)
-                return
+            for directoryName in ["ghostty", "ghostty-resources"] {
+                let ghosttyRes = (resourcesInBundle as NSString).appendingPathComponent(directoryName)
+                if FileManager.default.fileExists(atPath: ghosttyRes) {
+                    setenv(AppConstants.ghosttyResourcesDirEnv, ghosttyRes, 1)
+                    return
+                }
             }
         }
 
         // Dev fallback: project root's ghostty-resources symlink
-        let execPath = Bundle.main.bundlePath
-        // Walk up from .app bundle to find project root
-        var dir = (execPath as NSString).deletingLastPathComponent
-        for _ in 0..<5 {
-            let candidate = (dir as NSString).appendingPathComponent("ghostty-resources")
-            if FileManager.default.fileExists(atPath: candidate) {
-                setenv(AppConstants.ghosttyResourcesDirEnv, candidate, 1)
-                return
+        let searchRoots = [
+            (Bundle.main.bundlePath as NSString).deletingLastPathComponent,
+            FileManager.default.currentDirectoryPath
+        ]
+
+        for root in searchRoots {
+            var dir = root
+            for _ in 0..<8 {
+                let candidate = (dir as NSString).appendingPathComponent("ghostty-resources")
+                if FileManager.default.fileExists(atPath: candidate) {
+                    setenv(AppConstants.ghosttyResourcesDirEnv, candidate, 1)
+                    return
+                }
+                let next = (dir as NSString).deletingLastPathComponent
+                if next == dir { break }
+                dir = next
             }
-            dir = (dir as NSString).deletingLastPathComponent
         }
+    }
+
+    @MainActor
+    private func syncActiveProjectContext() {
+        guard let projectURL = projectStore.activeProjectURL else { return }
+        gitChangesStore.setPreferredDirectory(projectURL)
+        fileExplorerStore.setProject(projectURL)
     }
 }
