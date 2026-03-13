@@ -1,0 +1,56 @@
+name: openOwl
+options:
+  bundleIdPrefix: com.openowl
+  deploymentTarget:
+    macOS: "14.0"
+  xcodeVersion: "16.0"
+  createIntermediateGroups: true
+
+settings:
+  base:
+    SWIFT_OBJC_BRIDGING_HEADER: openOwl/Ghostty/openOwl-Bridging-Header.h
+    MACOSX_DEPLOYMENT_TARGET: "14.0"
+    SWIFT_VERSION: "5.10"
+
+targets:
+  openOwl:
+    type: application
+    platform: macOS
+    sources:
+      - path: openOwl
+        excludes:
+          - "**/*.entitlements"
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.openowl.app
+        PRODUCT_NAME: openOwl
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.developer-tools
+        INFOPLIST_KEY_CFBundleDisplayName: openOwl
+        CODE_SIGN_ENTITLEMENTS: openOwl/Resources/openOwl.entitlements
+        FRAMEWORK_SEARCH_PATHS:
+          - "$(PROJECT_DIR)"
+        HEADER_SEARCH_PATHS:
+          - "$(PROJECT_DIR)/GhosttyKit.xcframework/macos-arm64_x86_64/Headers"
+        LIBRARY_SEARCH_PATHS:
+          - "$(PROJECT_DIR)/GhosttyKit.xcframework/macos-arm64_x86_64"
+        OTHER_LDFLAGS:
+          - "-lghostty"
+          - "-framework Metal"
+          - "-framework MetalKit"
+          - "-framework AppKit"
+          - "-framework QuartzCore"
+          - "-framework CoreText"
+          - "-framework CoreGraphics"
+          - "-framework Foundation"
+          - "-framework Carbon"
+          - "-framework IOKit"
+          - "-framework UniformTypeIdentifiers"
+          - "-lz"
+          - "-lc++"
+    entitlements:
+      path: openOwl/Resources/openOwl.entitlements
+      properties:
+        com.apple.security.cs.allow-jit: true
+        com.apple.security.cs.allow-unsigned-executable-memory: true
+        com.apple.security.cs.disable-library-validation: true

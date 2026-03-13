@@ -21,6 +21,13 @@ ghostty/zig-out/
 ghostty/zig-cache/
 ghostty/.zig-cache/
 
+# GhosttyKit (symlinks to cached build)
+GhosttyKit.xcframework
+ghostty-resources
+
+# Generated Xcode project
+*.xcodeproj
+
 # Secrets
 .env
 *.pem
