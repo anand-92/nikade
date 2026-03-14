@@ -93,10 +93,17 @@ build_ghosttykit() {
         mkdir -p "$cache_dir"
         cp -R "$built_path" "$cached_xcframework"
 
-        # Cache resources (terminfo, shell-integration, themes)
+        # Cache resources (shell-integration, themes, terminfo)
         local resources_src="$GHOSTTY_DIR/zig-out/share/ghostty"
         if [ -d "$resources_src" ]; then
             cp -R "$resources_src" "$cache_dir/resources"
+        fi
+
+        # terminfo lives outside the ghostty subdir — merge it into resources
+        local terminfo_src="$GHOSTTY_DIR/zig-out/share/terminfo"
+        if [ -d "$terminfo_src" ]; then
+            mkdir -p "$cache_dir/resources/terminfo"
+            cp -R "$terminfo_src"/* "$cache_dir/resources/terminfo/"
         fi
 
         info "Cached to $cache_dir"

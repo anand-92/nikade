@@ -2,15 +2,19 @@ import AppKit
 import QuartzCore
 
 /// Core terminal NSView backed by CAMetalLayer + ghostty_surface_t.
-/// Handles keyboard, mouse, resize, and focus events.
+/// Keyboard, mouse, resize, focus — mirrors Ghostty SurfaceView_AppKit.swift.
+///
+/// Known workaround:
+/// - Composing keyAction skipped: key encoder leaks first character during composition.
 class TerminalNSView: NSView {
     private var surface: ghostty_surface_t?
     private let ghosttyApp: ghostty_app_t
     private let paneID: UUID
     private var metalLayer: CAMetalLayer!
     private var trackingArea: NSTrackingArea?
+    private var markedText = NSMutableAttributedString()
+    private var keyTextAccumulator: [String]?
 
-    /// Reference to the app manager for clipboard routing.
     weak var appManager: GhosttyAppManager?
     var onFocus: (() -> Void)?
     var paneIdentifier: UUID { paneID }
@@ -44,28 +48,48 @@ class TerminalNSView: NSView {
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
-
         guard let window, surface == nil else { return }
 
-        // Update metal layer scale
         metalLayer.contentsScale = window.backingScaleFactor
 
-        // Create surface config
         var surfaceConfig = ghostty_surface_config_new()
         surfaceConfig.platform_tag = GHOSTTY_PLATFORM_MACOS
-        surfaceConfig.platform.macos.nsview = Unmanaged.passUnretained(self).toOpaque()
+        surfaceConfig.platform = ghostty_platform_u(macos: ghostty_platform_macos_s(
+            nsview: Unmanaged.passUnretained(self).toOpaque()
+        ))
         surfaceConfig.userdata = Unmanaged.passUnretained(self).toOpaque()
         surfaceConfig.scale_factor = Double(window.backingScaleFactor)
-        surfaceConfig.font_size = 0 // use config default
+        surfaceConfig.font_size = 0
 
-        surface = ghostty_surface_new(ghosttyApp, &surfaceConfig)
+        // Inject TERMINFO_DIRS so the shell can find xterm-ghostty terminfo
+        let resourcesPath = Bundle.main.resourceURL?
+            .appendingPathComponent("ghostty-resources/terminfo").path
+        var envVars: [ghostty_env_var_s] = []
+        var envStorage: [UnsafeMutablePointer<CChar>] = []
+
+        if let terminfoPath = resourcesPath {
+            let keyPtr = strdup("TERMINFO_DIRS")!
+            let valPtr = strdup(terminfoPath)!
+            envStorage.append(contentsOf: [keyPtr, valPtr])
+            envVars.append(ghostty_env_var_s(key: keyPtr, value: valPtr))
+        }
+
+        if !envVars.isEmpty {
+            envVars.withUnsafeMutableBufferPointer { buf in
+                surfaceConfig.env_vars = buf.baseAddress
+                surfaceConfig.env_var_count = buf.count
+                self.surface = ghostty_surface_new(self.ghosttyApp, &surfaceConfig)
+            }
+        } else {
+            surface = ghostty_surface_new(ghosttyApp, &surfaceConfig)
+        }
+        for ptr in envStorage { free(ptr) }
 
         guard surface != nil else {
             NSLog("openOwl: Failed to create ghostty surface")
             return
         }
 
-        // Set initial size — only if non-zero to avoid corrupting PTY dimensions
         let fbSize = convertToBacking(bounds.size)
         if fbSize.width > 0 && fbSize.height > 0 {
             ghostty_surface_set_size(surface, UInt32(fbSize.width), UInt32(fbSize.height))
@@ -76,10 +100,7 @@ class TerminalNSView: NSView {
             appManager?.register(surface: surface, for: paneID, view: self)
         }
 
-        // Setup tracking area for mouse events
         setupTrackingArea()
-
-        // Become first responder to receive key events
         window.makeFirstResponder(self)
     }
 
@@ -117,7 +138,6 @@ class TerminalNSView: NSView {
     override func setFrameSize(_ newSize: NSSize) {
         super.setFrameSize(newSize)
         guard let surface else { return }
-
         let fbSize = convertToBacking(newSize)
         ghostty_surface_set_size(surface, UInt32(fbSize.width), UInt32(fbSize.height))
     }
@@ -137,48 +157,49 @@ class TerminalNSView: NSView {
 
     override func keyDown(with event: NSEvent) {
         guard let surface else {
-            super.keyDown(with: event)
+            interpretKeyEvents([event])
             return
         }
 
-        // Build key event, then set text from the event's characters.
-        // text must be set via withCString to keep the pointer alive during the call.
-        var key = GhosttyInput.keyEvent(from: event, action: GHOSTTY_ACTION_PRESS)
-        let handled: Bool
-        if let text = event.characters, !text.isEmpty,
-           let codepoint = text.utf8.first, codepoint >= 0x20 {
-            handled = text.withCString { ptr in
-                key.text = ptr
-                return ghostty_surface_key(surface, key)
-            }
-        } else {
-            handled = ghostty_surface_key(surface, key)
-        }
+        let translationEvent = translatedKeyEvent(for: event, surface: surface)
+        let action = event.isARepeat ? GHOSTTY_ACTION_REPEAT : GHOSTTY_ACTION_PRESS
 
-        if !handled {
-            interpretKeyEvents([event])
+        keyTextAccumulator = []
+        defer { keyTextAccumulator = nil }
+
+        let markedTextBefore = markedText.length > 0
+        interpretKeyEvents([translationEvent])
+        syncPreedit(clearIfNeeded: markedTextBefore)
+
+        let acc = keyTextAccumulator ?? []
+        if !acc.isEmpty {
+            for text in acc {
+                _ = keyAction(action, event: event, translationEvent: translationEvent, text: text)
+            }
+        } else if markedText.length > 0 || markedTextBefore {
+            // Composing — skip keyAction. See class doc for workaround details.
+        } else {
+            _ = keyAction(
+                action,
+                event: event,
+                translationEvent: translationEvent,
+                text: GhosttyInput.ghosttyCharacters(from: translationEvent)
+            )
         }
     }
 
     override func keyUp(with event: NSEvent) {
-        guard let surface else {
-            super.keyUp(with: event)
-            return
-        }
-
-        let key = GhosttyInput.keyEvent(from: event, action: GHOSTTY_ACTION_RELEASE)
-        _ = ghostty_surface_key(surface, key)
+        _ = keyAction(GHOSTTY_ACTION_RELEASE, event: event)
     }
 
     override func flagsChanged(with event: NSEvent) {
-        guard let surface else {
+        guard surface != nil else {
             super.flagsChanged(with: event)
             return
         }
 
-        // Determine press vs release based on whether the modifier is active.
-        // FlagsChanged events have NO characters — only keyCode and modifierFlags.
-        let mods = GhosttyInput.ghosttyMods(event.modifierFlags)
+        if hasMarkedText() { return }
+
         let mod: UInt32
         switch event.keyCode {
         case 0x39: mod = GHOSTTY_MODS_CAPS.rawValue
@@ -189,9 +210,61 @@ class TerminalNSView: NSView {
         default: return
         }
 
-        let action = (mods.rawValue & mod != 0) ? GHOSTTY_ACTION_PRESS : GHOSTTY_ACTION_RELEASE
-        let key = GhosttyInput.keyEvent(from: event, action: action)
-        _ = ghostty_surface_key(surface, key)
+        let mods = GhosttyInput.ghosttyMods(event.modifierFlags)
+        var action = GHOSTTY_ACTION_RELEASE
+        if mods.rawValue & mod != 0 {
+            let sidePressed: Bool
+            switch event.keyCode {
+            case 0x3C:
+                sidePressed = event.modifierFlags.rawValue & UInt(NX_DEVICERSHIFTKEYMASK) != 0
+            case 0x3E:
+                sidePressed = event.modifierFlags.rawValue & UInt(NX_DEVICERCTLKEYMASK) != 0
+            case 0x3D:
+                sidePressed = event.modifierFlags.rawValue & UInt(NX_DEVICERALTKEYMASK) != 0
+            case 0x36:
+                sidePressed = event.modifierFlags.rawValue & UInt(NX_DEVICERCMDKEYMASK) != 0
+            default:
+                sidePressed = true
+            }
+            if sidePressed {
+                action = GHOSTTY_ACTION_PRESS
+            }
+        }
+
+        _ = keyAction(action, event: event)
+    }
+
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        guard event.type == .keyDown, let surface else { return false }
+        let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+
+        // Intercept Cmd+V (paste) to avoid reentrancy crash:
+        // ghostty_surface_key → paste binding → read_clipboard_cb →
+        // ghostty_surface_complete_clipboard_request would re-enter the surface.
+        if flags == .command, event.charactersIgnoringModifiers == "v" {
+            let value = NSPasteboard.general.string(forType: .string) ?? ""
+            guard !value.isEmpty else { return true }
+            value.withCString { ptr in
+                ghostty_surface_text(surface, ptr, UInt(value.utf8.count))
+            }
+            return true
+        }
+
+        // Intercept Cmd+C (copy)
+        if flags == .command, event.charactersIgnoringModifiers == "c" {
+            ghostty_surface_binding_action(surface, "copy_to_clipboard", 0)
+            return true
+        }
+
+        return false
+    }
+
+    override func insertText(_ insertString: Any) {
+        insertText(insertString, replacementRange: NSRange(location: NSNotFound, length: 0))
+    }
+
+    override func doCommand(by selector: Selector) {
+        // Intentionally empty — prevents NSBeep for unhandled key commands.
     }
 
     // MARK: - Mouse Input
@@ -199,23 +272,17 @@ class TerminalNSView: NSView {
     override func mouseDown(with event: NSEvent) {
         guard let surface else { return }
         window?.makeFirstResponder(self)
-
         let point = convert(event.locationInWindow, from: nil)
-        let fbPoint = convertToBacking(point)
         let mods = GhosttyInput.modifierFlags(from: event)
-
-        ghostty_surface_mouse_pos(surface, fbPoint.x, fbPoint.y, mods)
+        ghostty_surface_mouse_pos(surface, point.x, bounds.height - point.y, mods)
         _ = ghostty_surface_mouse_button(surface, GHOSTTY_MOUSE_PRESS, GHOSTTY_MOUSE_LEFT, mods)
     }
 
     override func mouseUp(with event: NSEvent) {
         guard let surface else { return }
-
         let point = convert(event.locationInWindow, from: nil)
-        let fbPoint = convertToBacking(point)
         let mods = GhosttyInput.modifierFlags(from: event)
-
-        ghostty_surface_mouse_pos(surface, fbPoint.x, fbPoint.y, mods)
+        ghostty_surface_mouse_pos(surface, point.x, bounds.height - point.y, mods)
         _ = ghostty_surface_mouse_button(surface, GHOSTTY_MOUSE_RELEASE, GHOSTTY_MOUSE_LEFT, mods)
     }
 
@@ -234,44 +301,33 @@ class TerminalNSView: NSView {
     override func mouseDragged(with event: NSEvent) {
         guard let surface else { return }
         let point = convert(event.locationInWindow, from: nil)
-        let fbPoint = convertToBacking(point)
         let mods = GhosttyInput.modifierFlags(from: event)
-        ghostty_surface_mouse_pos(surface, fbPoint.x, fbPoint.y, mods)
+        ghostty_surface_mouse_pos(surface, point.x, bounds.height - point.y, mods)
     }
 
     override func mouseMoved(with event: NSEvent) {
         guard let surface else { return }
         let point = convert(event.locationInWindow, from: nil)
-        let fbPoint = convertToBacking(point)
         let mods = GhosttyInput.modifierFlags(from: event)
-        ghostty_surface_mouse_pos(surface, fbPoint.x, fbPoint.y, mods)
+        ghostty_surface_mouse_pos(surface, point.x, bounds.height - point.y, mods)
     }
 
     override func scrollWheel(with event: NSEvent) {
         guard let surface else { return }
-
-        // Build scroll mods as ghostty_input_scroll_mods_t (packed int)
         var scrollMods: Int32 = 0
         if event.hasPreciseScrollingDeltas {
-            scrollMods |= 1 // precision bit
+            scrollMods |= 1
         }
         if event.momentumPhase != [] {
-            // Set momentum bits based on phase
             if event.momentumPhase == .began {
-                scrollMods |= (1 << 1) // GHOSTTY_MOUSE_MOMENTUM_BEGAN
+                scrollMods |= (1 << 1)
             } else if event.momentumPhase == .changed {
-                scrollMods |= (2 << 1) // GHOSTTY_MOUSE_MOMENTUM_CHANGED
+                scrollMods |= (2 << 1)
             } else if event.momentumPhase == .ended {
-                scrollMods |= (3 << 1) // GHOSTTY_MOUSE_MOMENTUM_ENDED
+                scrollMods |= (3 << 1)
             }
         }
-
-        ghostty_surface_mouse_scroll(
-            surface,
-            event.scrollingDeltaX,
-            event.scrollingDeltaY,
-            scrollMods
-        )
+        ghostty_surface_mouse_scroll(surface, event.scrollingDeltaX, event.scrollingDeltaY, scrollMods)
     }
 
     // MARK: - Drag & Drop
@@ -290,17 +346,11 @@ class TerminalNSView: NSView {
 
     override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
         guard let surface else { return false }
-
         let options: [NSPasteboard.ReadingOptionKey: Any] = [.urlReadingFileURLsOnly: true]
         let droppedURLs = (sender.draggingPasteboard.readObjects(forClasses: [NSURL.self], options: options) as? [URL]) ?? []
-        let paths = droppedURLs
-            .map { $0.standardizedFileURL.path }
-            .uniquedPreservingOrder()
-
+        let paths = droppedURLs.map { $0.standardizedFileURL.path }.uniquedPreservingOrder()
         guard !paths.isEmpty else { return false }
-
         window?.makeFirstResponder(self)
-
         let payload = paths.map(Self.shellEscapedPath).joined(separator: " ") + " "
         payload.withCString { cstr in
             ghostty_surface_text(surface, cstr, UInt(payload.utf8.count))
@@ -308,12 +358,10 @@ class TerminalNSView: NSView {
         return true
     }
 
-    // MARK: - Tracking Area
+    // MARK: - Private Helpers
 
     private func setupTrackingArea() {
-        if let trackingArea {
-            removeTrackingArea(trackingArea)
-        }
+        if let trackingArea { removeTrackingArea(trackingArea) }
         trackingArea = NSTrackingArea(
             rect: bounds,
             options: [.mouseMoved, .mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect],
@@ -335,6 +383,80 @@ class TerminalNSView: NSView {
         let escaped = path.replacingOccurrences(of: "'", with: "'\"'\"'")
         return "'\(escaped)'"
     }
+
+    private func keyAction(
+        _ action: ghostty_input_action_e,
+        event: NSEvent,
+        translationEvent: NSEvent? = nil,
+        text: String? = nil,
+        composing: Bool = false
+    ) -> Bool {
+        guard let surface else { return false }
+
+        var key = GhosttyInput.keyEvent(
+            from: event,
+            action: action,
+            translationMods: translationEvent?.modifierFlags
+        )
+        key.composing = composing
+
+        if let text, !text.isEmpty,
+           let codepoint = text.utf8.first, codepoint >= 0x20 {
+            return text.withCString { ptr in
+                key.text = ptr
+                return ghostty_surface_key(surface, key)
+            }
+        } else {
+            return ghostty_surface_key(surface, key)
+        }
+    }
+
+    private func translatedKeyEvent(for event: NSEvent, surface: ghostty_surface_t) -> NSEvent {
+        let translationModsGhostty = GhosttyInput.eventModifierFlags(
+            mods: ghostty_surface_key_translation_mods(
+                surface,
+                GhosttyInput.ghosttyMods(event.modifierFlags)
+            )
+        )
+        var translationMods = event.modifierFlags
+        for flag in [NSEvent.ModifierFlags.shift, .control, .option, .command] {
+            if translationModsGhostty.contains(flag) {
+                translationMods.insert(flag)
+            } else {
+                translationMods.remove(flag)
+            }
+        }
+        if translationMods == event.modifierFlags {
+            return event
+        }
+        return NSEvent.keyEvent(
+            with: event.type,
+            location: event.locationInWindow,
+            modifierFlags: translationMods,
+            timestamp: event.timestamp,
+            windowNumber: event.windowNumber,
+            context: nil,
+            characters: event.characters(byApplyingModifiers: translationMods) ?? "",
+            charactersIgnoringModifiers: event.charactersIgnoringModifiers ?? "",
+            isARepeat: event.isARepeat,
+            keyCode: event.keyCode
+        ) ?? event
+    }
+
+    private func syncPreedit(clearIfNeeded: Bool = true) {
+        guard let surface else { return }
+        if markedText.length > 0 {
+            let str = markedText.string
+            let len = str.utf8CString.count
+            if len > 0 {
+                str.withCString { ptr in
+                    ghostty_surface_preedit(surface, ptr, UInt(len - 1))
+                }
+            }
+        } else if clearIfNeeded {
+            ghostty_surface_preedit(surface, nil, 0)
+        }
+    }
 }
 
 // MARK: - NSTextInputClient
@@ -342,31 +464,60 @@ class TerminalNSView: NSView {
 extension TerminalNSView: NSTextInputClient {
     func insertText(_ string: Any, replacementRange: NSRange) {
         guard let surface else { return }
-        guard let str = string as? String else { return }
+        let str: String
+        switch string {
+        case let attributed as NSAttributedString:
+            str = attributed.string
+        case let value as String:
+            str = value
+        default:
+            return
+        }
+
+        unmarkText()
+
+        if var accumulator = keyTextAccumulator {
+            accumulator.append(str)
+            keyTextAccumulator = accumulator
+            return
+        }
+
+        // Direct text input outside keyDown flow (e.g. async IME commit)
         str.withCString { cstr in
             ghostty_surface_text(surface, cstr, UInt(str.utf8.count))
         }
     }
 
     func setMarkedText(_ string: Any, selectedRange: NSRange, replacementRange: NSRange) {
-        guard let surface else { return }
-        if let str = string as? String {
-            str.withCString { cstr in
-                ghostty_surface_preedit(surface, cstr, UInt(str.utf8.count))
-            }
+        switch string {
+        case let attributed as NSAttributedString:
+            markedText = NSMutableAttributedString(attributedString: attributed)
+        case let value as String:
+            markedText = NSMutableAttributedString(string: value)
+        default:
+            return
+        }
+
+        if keyTextAccumulator == nil {
+            syncPreedit()
         }
     }
 
     func unmarkText() {
-        guard let surface else { return }
-        ghostty_surface_preedit(surface, nil, 0)
+        if markedText.length > 0 {
+            markedText.mutableString.setString("")
+            syncPreedit()
+        }
     }
 
-    func hasMarkedText() -> Bool { false }
+    func hasMarkedText() -> Bool { markedText.length > 0 }
 
     func selectedRange() -> NSRange { NSRange(location: NSNotFound, length: 0) }
 
-    func markedRange() -> NSRange { NSRange(location: NSNotFound, length: 0) }
+    func markedRange() -> NSRange {
+        guard markedText.length > 0 else { return NSRange(location: NSNotFound, length: 0) }
+        return NSRange(location: 0, length: markedText.length)
+    }
 
     func attributedSubstring(forProposedRange range: NSRange, actualRange: NSRangePointer?) -> NSAttributedString? { nil }
 
@@ -376,7 +527,6 @@ extension TerminalNSView: NSTextInputClient {
         guard let surface, let window else { return .zero }
         var x: Double = 0, y: Double = 0, w: Double = 0, h: Double = 0
         ghostty_surface_ime_point(surface, &x, &y, &w, &h)
-        // Ghostty coordinates are top-left (0,0), convert to NSView bottom-left
         let viewRect = NSRect(x: x, y: frame.size.height - y, width: w, height: h)
         let winRect = convert(viewRect, to: nil)
         return window.convertToScreen(winRect)
@@ -390,7 +540,6 @@ private extension Array where Element == String {
         var seen = Set<String>()
         var output: [String] = []
         output.reserveCapacity(count)
-
         for value in self where seen.insert(value).inserted {
             output.append(value)
         }

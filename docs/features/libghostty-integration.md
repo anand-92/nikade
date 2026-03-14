@@ -67,9 +67,14 @@ runtime.close_surface_cb = { userdata in ... }     // 关闭请求
 
 ### 7. 输入
 
-键盘事件通过 `ghostty_surface_key(surface, &event)` 传递：
-- NSEvent → ghostty_input_key_s 转换
-- 需要处理 key code 映射（参考 Ghostty.Input.swift）
+键盘事件通过 `ghostty_surface_key(surface, &event)` 传递，但要按 cmux / Ghostty AppKit 的输入链路处理，避免 IME 乱码：
+- `keyDown` 不直接把 `event.characters` 写入 PTY，而是先 `interpretKeyEvents`
+- `insertText` 在 `keyDown` 期间只做累积；有累积文本时直接走 `ghostty_surface_text` 写入 PTY，避免 modifier 状态污染文本输入
+- `setMarkedText / unmarkText` 同步 `ghostty_surface_preedit`，并维护 `hasMarkedText`
+- `flagsChanged` 在 preedit 阶段跳过，避免组合输入被 modifier 中断
+- `ghostty_input_key_s.consumed_mods` 需要基于 translation mods 计算，避免 Option/布局翻译错误
+
+openOwl 当前实现已按以上流程修复（参考 `openOwl/Ghostty/GhosttyTerminal.swift` 与 `openOwl/Ghostty/GhosttyInput.swift`）。
 
 ### 8. 配置
 

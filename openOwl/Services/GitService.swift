@@ -257,8 +257,10 @@ final class GitService {
     func addWorktree(branch: String, dirName: String) async throws -> String {
         let home = FileManager.default.homeDirectoryForCurrentUser.path
         let projectName = workingDirectory.lastPathComponent
-        let worktreeBase = "\(home)/.openowl/workspace/\(projectName)"
-        let worktreePath = "\(worktreeBase)/\(dirName)"
+        let worktreeBase = "\(home)/.openowl/workspace/projects/\(projectName)"
+        // Strip branch prefix (e.g. fix/abc → abc, feature/login → login)
+        let strippedDir = dirName.components(separatedBy: "/").last ?? dirName
+        let worktreePath = "\(worktreeBase)/\(strippedDir)"
 
         // Ensure parent directory exists
         try FileManager.default.createDirectory(

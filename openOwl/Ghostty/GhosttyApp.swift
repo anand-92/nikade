@@ -83,47 +83,55 @@ final class GhosttyAppManager: ObservableObject {
             return manager.handleAction(target: target, action: action)
         }
 
-        runtime.read_clipboard_cb = { userdata, clipboard, requestData in
+        runtime.read_clipboard_cb = { userdata, clipboard, state in
             guard let userdata else { return false }
             let manager = Unmanaged<GhosttyAppManager>.fromOpaque(userdata).takeUnretainedValue()
+            guard let surface = manager.activeSurface else { return false }
 
-            // Must complete clipboard request on main thread for NSPasteboard access
-            let completeOnMain = {
-                guard let surface = manager.activeSurface else { return }
-                let pasteboard = NSPasteboard.general
-                let content = pasteboard.string(forType: .string) ?? ""
-                content.withCString { cstr in
-                    ghostty_surface_complete_clipboard_request(
-                        surface,
-                        cstr,
-                        requestData,
-                        false
-                    )
+            // Must defer completion to avoid reentrancy crash:
+            // ghostty_surface_key → paste binding → read_clipboard_cb →
+            // ghostty_surface_complete_clipboard_request would crash if synchronous.
+            DispatchQueue.main.async {
+                let value = NSPasteboard.general.string(forType: .string) ?? ""
+                value.withCString { ptr in
+                    ghostty_surface_complete_clipboard_request(surface, ptr, state, false)
                 }
-            }
-
-            if Thread.isMainThread {
-                completeOnMain()
-            } else {
-                DispatchQueue.main.async { completeOnMain() }
             }
             return true
         }
 
-        runtime.confirm_read_clipboard_cb = nil
+        runtime.confirm_read_clipboard_cb = { userdata, content, state, _ in
+            guard let content else { return }
+            guard let userdata else { return }
+            let manager = Unmanaged<GhosttyAppManager>.fromOpaque(userdata).takeUnretainedValue()
+            guard let surface = manager.activeSurface else { return }
+            ghostty_surface_complete_clipboard_request(surface, content, state, true)
+        }
 
-        runtime.write_clipboard_cb = { userdata, clipboard, content, count, confirm in
+        runtime.write_clipboard_cb = { _, clipboard, content, count, _ in
             guard let content, count > 0 else { return }
-            let doWrite = {
-                let pasteboard = NSPasteboard.general
-                pasteboard.clearContents()
-                let text = String(cString: content.pointee.data)
-                pasteboard.setString(text, forType: .string)
+            let buffer = UnsafeBufferPointer(start: content, count: Int(count))
+
+            // Find text/plain content, or fall back to first available
+            var fallback: String?
+            for item in buffer {
+                guard let dataPtr = item.data else { continue }
+                let value = String(cString: dataPtr)
+
+                if let mimePtr = item.mime {
+                    let mime = String(cString: mimePtr)
+                    if mime.hasPrefix("text/plain") {
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString(value, forType: .string)
+                        return
+                    }
+                }
+                if fallback == nil { fallback = value }
             }
-            if Thread.isMainThread {
-                doWrite()
-            } else {
-                DispatchQueue.main.async { doWrite() }
+
+            if let fallback {
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(fallback, forType: .string)
             }
         }
 
