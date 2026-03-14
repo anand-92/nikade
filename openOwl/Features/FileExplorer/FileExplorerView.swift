@@ -17,7 +17,7 @@ struct FileExplorerView: View {
     var body: some View {
         HSplitView {
             treePanel
-                .frame(minWidth: 220, idealWidth: 280)
+                .frame(minWidth: 200)
 
             previewPanel
                 .frame(minWidth: 300)

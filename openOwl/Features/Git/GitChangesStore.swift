@@ -31,9 +31,12 @@ final class GitChangesStore: ObservableObject {
         return !statusSnapshot.modified.isEmpty || !statusSnapshot.untracked.isEmpty
     }
 
+    @Published private(set) var isGeneratingMessage = false
+
     private var gitService: GitService?
     private var watcher: FileWatcher?
     private var hasStarted = false
+    private let commitMessageGenerator = CommitMessageGenerator()
 
     private var preferredDirectory: URL
 
@@ -207,6 +210,34 @@ final class GitChangesStore: ObservableObject {
         runCommand {
             try await gitService.unstageAll()
             self.infoMessage = "Unstaged all files."
+        }
+    }
+
+    func generateCommitMessage() {
+        guard let gitService else { return }
+        guard !isGeneratingMessage else { return }
+        isGeneratingMessage = true
+
+        Task {
+            defer { isGeneratingMessage = false }
+            do {
+                let diff = try await gitService.diff(staged: true)
+                guard !diff.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                    // No staged changes — try all changes
+                    let allDiff = try await gitService.diff(staged: false)
+                    guard !allDiff.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                        errorMessage = "No changes to generate message for."
+                        return
+                    }
+                    let message = try await commitMessageGenerator.generate(diff: allDiff)
+                    if !message.isEmpty { commitMessage = message }
+                    return
+                }
+                let message = try await commitMessageGenerator.generate(diff: diff)
+                if !message.isEmpty { commitMessage = message }
+            } catch {
+                errorMessage = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+            }
         }
     }
 

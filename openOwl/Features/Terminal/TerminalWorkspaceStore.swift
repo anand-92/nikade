@@ -23,6 +23,10 @@ enum TerminalFocusDirection {
     case down
 }
 
+enum PaneDropZone: Equatable {
+    case left, right, top, bottom, center
+}
+
 enum TerminalCloseAction {
     case none
     case closeWindow
@@ -61,6 +65,110 @@ indirect enum TerminalSplitNode: Equatable {
             return id == paneID
         case .split(_, _, let first, let second):
             return first.containsPane(paneID) || second.containsPane(paneID)
+        }
+    }
+
+    /// Update the ratio of the nearest split ancestor containing `targetPaneID` in its first child.
+    func updatingRatio(forPaneID targetPaneID: UUID, newRatio: Double) -> TerminalSplitNode {
+        switch self {
+        case .leaf:
+            return self
+        case .split(let axis, let ratio, let first, let second):
+            // If the first child contains the target pane, this is the split to update
+            if first.containsPane(targetPaneID) && !second.containsPane(targetPaneID) {
+                // But first, recurse into the first child to see if there's a deeper match
+                let updatedFirst = first.updatingRatio(forPaneID: targetPaneID, newRatio: newRatio)
+                if updatedFirst != first {
+                    return .split(axis: axis, ratio: ratio, first: updatedFirst, second: second)
+                }
+                // This is the closest split — update ratio
+                let clamped = min(max(newRatio, 0.1), 0.9)
+                return .split(axis: axis, ratio: clamped, first: first, second: second)
+            }
+            // If the second child contains it, check if there's a deeper split to update
+            if second.containsPane(targetPaneID) {
+                let updatedSecond = second.updatingRatio(forPaneID: targetPaneID, newRatio: newRatio)
+                return .split(axis: axis, ratio: ratio, first: first, second: updatedSecond)
+            }
+            return self
+        }
+    }
+
+    /// Update the ratio of the split node that directly contains `firstPaneID` in its first subtree.
+    /// This variant is used by the divider drag, where we know which split to target.
+    func updatingSplitRatio(whereFirstContains firstPaneID: UUID, andSecondContains secondPaneID: UUID, newRatio: Double) -> TerminalSplitNode {
+        switch self {
+        case .leaf:
+            return self
+        case .split(let axis, let ratio, let first, let second):
+            if first.containsPane(firstPaneID) && second.containsPane(secondPaneID) {
+                // Check if a deeper split matches
+                let updatedFirst = first.updatingSplitRatio(whereFirstContains: firstPaneID, andSecondContains: secondPaneID, newRatio: newRatio)
+                if updatedFirst != first {
+                    return .split(axis: axis, ratio: ratio, first: updatedFirst, second: second)
+                }
+                let updatedSecond = second.updatingSplitRatio(whereFirstContains: firstPaneID, andSecondContains: secondPaneID, newRatio: newRatio)
+                if updatedSecond != second {
+                    return .split(axis: axis, ratio: ratio, first: first, second: updatedSecond)
+                }
+                // This is the target split
+                let clamped = min(max(newRatio, 0.1), 0.9)
+                return .split(axis: axis, ratio: clamped, first: first, second: second)
+            }
+            // Recurse
+            let updatedFirst = first.updatingSplitRatio(whereFirstContains: firstPaneID, andSecondContains: secondPaneID, newRatio: newRatio)
+            let updatedSecond = second.updatingSplitRatio(whereFirstContains: firstPaneID, andSecondContains: secondPaneID, newRatio: newRatio)
+            if updatedFirst != first || updatedSecond != second {
+                return .split(axis: axis, ratio: ratio, first: updatedFirst, second: updatedSecond)
+            }
+            return self
+        }
+    }
+
+    /// Swap two leaf panes in the tree.
+    func swappingPanes(_ a: UUID, _ b: UUID) -> TerminalSplitNode {
+        switch self {
+        case .leaf(let id):
+            if id == a { return .leaf(b) }
+            if id == b { return .leaf(a) }
+            return self
+        case .split(let axis, let ratio, let first, let second):
+            return .split(
+                axis: axis,
+                ratio: ratio,
+                first: first.swappingPanes(a, b),
+                second: second.swappingPanes(a, b)
+            )
+        }
+    }
+
+    /// Reset all ratios to 0.5 recursively.
+    func equalized() -> TerminalSplitNode {
+        switch self {
+        case .leaf:
+            return self
+        case .split(let axis, _, let first, let second):
+            return .split(axis: axis, ratio: 0.5, first: first.equalized(), second: second.equalized())
+        }
+    }
+
+    /// Insert newPaneID beside targetPaneID. If `newPaneFirst`, the new pane is the first child.
+    func insertingPaneBeside(_ targetPaneID: UUID, newPaneID: UUID, axis: TerminalSplitAxis, newPaneFirst: Bool) -> TerminalSplitNode? {
+        switch self {
+        case .leaf(let id):
+            guard id == targetPaneID else { return nil }
+            let first: TerminalSplitNode = newPaneFirst ? .leaf(newPaneID) : .leaf(id)
+            let second: TerminalSplitNode = newPaneFirst ? .leaf(id) : .leaf(newPaneID)
+            return .split(axis: axis, ratio: 0.5, first: first, second: second)
+
+        case .split(let currentAxis, let ratio, let first, let second):
+            if let updatedFirst = first.insertingPaneBeside(targetPaneID, newPaneID: newPaneID, axis: axis, newPaneFirst: newPaneFirst) {
+                return .split(axis: currentAxis, ratio: ratio, first: updatedFirst, second: second)
+            }
+            if let updatedSecond = second.insertingPaneBeside(targetPaneID, newPaneID: newPaneID, axis: axis, newPaneFirst: newPaneFirst) {
+                return .split(axis: currentAxis, ratio: ratio, first: first, second: updatedSecond)
+            }
+            return nil
         }
     }
 
@@ -159,6 +267,11 @@ final class TerminalWorkspaceStore: ObservableObject {
 
     /// Set by the host app to request first responder hand-off to a pane's NSView.
     var focusPaneHandler: ((UUID) -> Void)?
+
+    /// Drag-to-reposition state
+    @Published var draggingPaneID: UUID?
+    @Published var dragOverPaneID: UUID?
+    @Published var dropZone: PaneDropZone?
 
     private var nextTabNumber = 1
 
@@ -261,6 +374,78 @@ final class TerminalWorkspaceStore: ObservableObject {
         tab.focusedPaneID = candidate
         tabs[index] = tab
         requestFocus(for: candidate)
+    }
+
+    func updateSplitRatio(firstPaneID: UUID, secondPaneID: UUID, newRatio: Double) {
+        guard let index = activeTabIndex else { return }
+        var tab = tabs[index]
+        let newTree = tab.splitTree.updatingSplitRatio(
+            whereFirstContains: firstPaneID,
+            andSecondContains: secondPaneID,
+            newRatio: newRatio
+        )
+        tab.splitTree = newTree
+        tabs[index] = tab
+    }
+
+    func swapPaneWithNeighbor(_ direction: TerminalFocusDirection) {
+        guard let index = activeTabIndex else { return }
+        var tab = tabs[index]
+        guard let currentPane = tab.focusedPaneID ?? tab.splitTree.firstPaneID else { return }
+        let frames = tab.splitTree.normalizedPaneFrames()
+        guard let currentFrame = frames[currentPane] else { return }
+
+        guard let neighborID = nextPaneID(from: currentFrame, currentPaneID: currentPane, frames: frames, direction: direction) else { return }
+
+        tab.splitTree = tab.splitTree.swappingPanes(currentPane, neighborID)
+        // Focus follows the original pane
+        tab.focusedPaneID = currentPane
+        tabs[index] = tab
+        requestFocus(for: currentPane)
+    }
+
+    func movePaneToTarget(sourceID: UUID, targetID: UUID, zone: PaneDropZone) {
+        guard sourceID != targetID else { return }
+        guard let index = activeTabIndex else { return }
+        var tab = tabs[index]
+
+        if zone == .center {
+            tab.splitTree = tab.splitTree.swappingPanes(sourceID, targetID)
+        } else {
+            let axis: TerminalSplitAxis
+            let sourceFirst: Bool
+
+            switch zone {
+            case .left:  axis = .horizontal; sourceFirst = true
+            case .right: axis = .horizontal; sourceFirst = false
+            case .top:   axis = .vertical;   sourceFirst = true
+            case .bottom: axis = .vertical;  sourceFirst = false
+            case .center: return
+            }
+
+            guard let withoutSource = tab.splitTree.removingPane(sourceID) else { return }
+            guard let newTree = withoutSource.insertingPaneBeside(targetID, newPaneID: sourceID, axis: axis, newPaneFirst: sourceFirst) else { return }
+            tab.splitTree = newTree
+        }
+
+        tab.focusedPaneID = sourceID
+        tabs[index] = tab
+        requestFocus(for: sourceID)
+    }
+
+    func swapPanes(_ a: UUID, _ b: UUID) {
+        guard a != b else { return }
+        guard let index = activeTabIndex else { return }
+        var tab = tabs[index]
+        tab.splitTree = tab.splitTree.swappingPanes(a, b)
+        tabs[index] = tab
+    }
+
+    func equalizeSplits() {
+        guard let index = activeTabIndex else { return }
+        var tab = tabs[index]
+        tab.splitTree = tab.splitTree.equalized()
+        tabs[index] = tab
     }
 
     func updateTitle(for paneID: UUID, title: String) {

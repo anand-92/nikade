@@ -135,6 +135,14 @@ final class GitService {
         _ = try await runGit(["commit", "--file", fileURL.path])
     }
 
+    func diff(staged: Bool) async throws -> String {
+        if staged {
+            return try await runGit(["diff", "--staged"])
+        } else {
+            return try await runGit(["diff"])
+        }
+    }
+
     func diff(for change: GitFileChange) async throws -> String {
         switch change.section {
         case .staged:

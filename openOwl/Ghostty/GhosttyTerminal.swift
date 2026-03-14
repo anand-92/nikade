@@ -20,7 +20,6 @@ class TerminalNSView: NSView {
         self.paneID = paneID
         super.init(frame: .zero)
         wantsLayer = true
-        registerForDraggedTypes([.fileURL])
     }
 
     @available(*, unavailable)
@@ -45,15 +44,8 @@ class TerminalNSView: NSView {
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
-        // #region agent log
-        debugLog("GhosttyTerminal.swift:viewDidMoveToWindow", "viewDidMoveToWindow called", ["hypothesisId": "H6", "hasWindow": window != nil, "hasSurface": surface != nil, "paneID": paneID.uuidString])
-        // #endregion
 
         guard let window, surface == nil else { return }
-
-        // #region agent log
-        debugLog("GhosttyTerminal.swift:creating-surface", "creating ghostty surface", ["hypothesisId": "H6", "scaleFactor": window.backingScaleFactor, "boundsW": bounds.width, "boundsH": bounds.height])
-        // #endregion
 
         // Update metal layer scale
         metalLayer.contentsScale = window.backingScaleFactor
@@ -66,28 +58,18 @@ class TerminalNSView: NSView {
         surfaceConfig.scale_factor = Double(window.backingScaleFactor)
         surfaceConfig.font_size = 0 // use config default
 
-        let profile = appManager?.launchProfile
-        if let profile, profile.shouldInjectFallbackShell {
-            surface = profile.fallbackShell.withCString { cCommand in
-                surfaceConfig.command = cCommand
-                return ghostty_surface_new(ghosttyApp, &surfaceConfig)
-            }
-        } else {
-            surface = ghostty_surface_new(ghosttyApp, &surfaceConfig)
-        }
-
-        // #region agent log
-        debugLog("GhosttyTerminal.swift:surface-created", "ghostty_surface_new returned", ["hypothesisId": "H6", "surfaceNil": surface == nil])
-        // #endregion
+        surface = ghostty_surface_new(ghosttyApp, &surfaceConfig)
 
         guard surface != nil else {
             NSLog("openOwl: Failed to create ghostty surface")
             return
         }
 
-        // Set initial size
+        // Set initial size — only if non-zero to avoid corrupting PTY dimensions
         let fbSize = convertToBacking(bounds.size)
-        ghostty_surface_set_size(surface, UInt32(fbSize.width), UInt32(fbSize.height))
+        if fbSize.width > 0 && fbSize.height > 0 {
+            ghostty_surface_set_size(surface, UInt32(fbSize.width), UInt32(fbSize.height))
+        }
         ghostty_surface_set_content_scale(surface, Double(window.backingScaleFactor), Double(window.backingScaleFactor))
 
         if let surface {
@@ -99,9 +81,6 @@ class TerminalNSView: NSView {
 
         // Become first responder to receive key events
         window.makeFirstResponder(self)
-        // #region agent log
-        debugLog("GhosttyTerminal.swift:surface-setup-done", "surface fully set up, first responder set", ["hypothesisId": "H6", "paneID": paneID.uuidString])
-        // #endregion
     }
 
     override func removeFromSuperview() {
@@ -162,10 +141,21 @@ class TerminalNSView: NSView {
             return
         }
 
-        let key = GhosttyInput.keyEvent(from: event, action: GHOSTTY_ACTION_PRESS)
-        let handled = ghostty_surface_key(surface, key)
+        // Build key event, then set text from the event's characters.
+        // text must be set via withCString to keep the pointer alive during the call.
+        var key = GhosttyInput.keyEvent(from: event, action: GHOSTTY_ACTION_PRESS)
+        let handled: Bool
+        if let text = event.characters, !text.isEmpty,
+           let codepoint = text.utf8.first, codepoint >= 0x20 {
+            handled = text.withCString { ptr in
+                key.text = ptr
+                return ghostty_surface_key(surface, key)
+            }
+        } else {
+            handled = ghostty_surface_key(surface, key)
+        }
+
         if !handled {
-            // Let interpretKeyEvents handle IME input
             interpretKeyEvents([event])
         }
     }
@@ -186,7 +176,21 @@ class TerminalNSView: NSView {
             return
         }
 
-        let key = GhosttyInput.keyEvent(from: event, action: GHOSTTY_ACTION_PRESS)
+        // Determine press vs release based on whether the modifier is active.
+        // FlagsChanged events have NO characters — only keyCode and modifierFlags.
+        let mods = GhosttyInput.ghosttyMods(event.modifierFlags)
+        let mod: UInt32
+        switch event.keyCode {
+        case 0x39: mod = GHOSTTY_MODS_CAPS.rawValue
+        case 0x38, 0x3C: mod = GHOSTTY_MODS_SHIFT.rawValue
+        case 0x3B, 0x3E: mod = GHOSTTY_MODS_CTRL.rawValue
+        case 0x3A, 0x3D: mod = GHOSTTY_MODS_ALT.rawValue
+        case 0x37, 0x36: mod = GHOSTTY_MODS_SUPER.rawValue
+        default: return
+        }
+
+        let action = (mods.rawValue & mod != 0) ? GHOSTTY_ACTION_PRESS : GHOSTTY_ACTION_RELEASE
+        let key = GhosttyInput.keyEvent(from: event, action: action)
         _ = ghostty_surface_key(surface, key)
     }
 
@@ -372,9 +376,10 @@ extension TerminalNSView: NSTextInputClient {
         guard let surface, let window else { return .zero }
         var x: Double = 0, y: Double = 0, w: Double = 0, h: Double = 0
         ghostty_surface_ime_point(surface, &x, &y, &w, &h)
-        let point = NSPoint(x: x, y: frame.height - y - h)
-        let screenPoint = window.convertPoint(toScreen: convert(point, to: nil))
-        return NSRect(x: screenPoint.x, y: screenPoint.y, width: w, height: h)
+        // Ghostty coordinates are top-left (0,0), convert to NSView bottom-left
+        let viewRect = NSRect(x: x, y: frame.size.height - y, width: w, height: h)
+        let winRect = convert(viewRect, to: nil)
+        return window.convertToScreen(winRect)
     }
 
     func characterIndex(for point: NSPoint) -> Int { 0 }

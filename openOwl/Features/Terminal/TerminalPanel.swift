@@ -8,20 +8,13 @@ struct TerminalPanel: NSViewRepresentable {
     @EnvironmentObject var appManager: GhosttyAppManager
 
     func makeNSView(context: Context) -> TerminalNSView {
-        // #region agent log
-        debugLog("TerminalPanel.swift:makeNSView", "creating TerminalNSView", ["hypothesisId": "H9", "paneID": paneID.uuidString])
-        // #endregion
         let view = TerminalNSView(ghosttyApp: ghosttyApp, paneID: paneID)
         view.appManager = appManager
         view.onFocus = onFocus
-        // #region agent log
-        debugLog("TerminalPanel.swift:makeNSView-done", "TerminalNSView created", ["hypothesisId": "H9", "paneID": paneID.uuidString])
-        // #endregion
         return view
     }
 
     func updateNSView(_ nsView: TerminalNSView, context: Context) {
-        nsView.appManager = appManager
-        nsView.onFocus = onFocus
+        // No dynamic updates — the surface handles its own state.
     }
 }

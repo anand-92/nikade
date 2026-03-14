@@ -17,11 +17,11 @@ struct GitChangesView: View {
                 gitGraphPanel
                     .frame(minHeight: 120)
             }
-            .frame(minWidth: 260, idealWidth: 320)
+            .frame(minWidth: 220)
 
             // Right panel: diff
             diffPanel
-                .frame(minWidth: 350)
+                .frame(minWidth: 300)
         }
         .onAppear {
             store.startIfNeeded()
@@ -90,26 +90,45 @@ struct GitChangesView: View {
                     }
                 }
 
-            Button {
-                store.commit()
-            } label: {
-                HStack(spacing: 4) {
-                    Image(systemName: "checkmark")
-                        .font(.system(size: 9, weight: .semibold))
-                    Text(store.isRunningCommand ? "Committing..." : "Commit")
-                        .font(.system(size: 11, weight: .medium))
+            HStack(spacing: 4) {
+                Button {
+                    store.generateCommitMessage()
+                } label: {
+                    if store.isGeneratingMessage {
+                        ProgressView()
+                            .controlSize(.mini)
+                            .frame(width: 16, height: 16)
+                    } else {
+                        Image(systemName: "sparkles")
+                            .font(.system(size: 11))
+                    }
                 }
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 3)
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .disabled(store.isGeneratingMessage || store.isRunningCommand || !hasAnyChanges)
+                .help("Generate commit message (claude)")
+
+                Button {
+                    store.commit()
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "checkmark")
+                            .font(.system(size: 9, weight: .semibold))
+                        Text(store.isRunningCommand ? "Committing..." : "Commit")
+                            .font(.system(size: 11, weight: .medium))
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 3)
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.small)
+                .disabled(
+                    store.commitMessage.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                    || store.isRunningCommand
+                    || !hasAnyChanges
+                )
+                .keyboardShortcut(.return, modifiers: [.command])
             }
-            .buttonStyle(.borderedProminent)
-            .controlSize(.small)
-            .disabled(
-                store.commitMessage.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                || store.isRunningCommand
-                || !hasAnyChanges
-            )
-            .keyboardShortcut(.return, modifiers: [.command])
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 6)

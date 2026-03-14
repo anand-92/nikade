@@ -3,8 +3,11 @@ import AppKit
 /// Converts NSEvent modifier flags to ghostty_input_mods_e bitmask.
 enum GhosttyInput {
     static func modifierFlags(from event: NSEvent) -> ghostty_input_mods_e {
+        ghosttyMods(event.modifierFlags)
+    }
+
+    static func ghosttyMods(_ flags: NSEvent.ModifierFlags) -> ghostty_input_mods_e {
         var mods = GHOSTTY_MODS_NONE.rawValue
-        let flags = event.modifierFlags
 
         if flags.contains(.shift) {
             mods |= GHOSTTY_MODS_SHIFT.rawValue
@@ -26,19 +29,25 @@ enum GhosttyInput {
     }
 
     /// Build a ghostty_input_key_s from an NSEvent.
+    /// Following Ghostty's approach: text is NOT read here (caller must set it).
+    /// This prevents crashes from accessing .characters on FlagsChanged events.
     static func keyEvent(from event: NSEvent, action: ghostty_input_action_e) -> ghostty_input_key_s {
-        let mods = modifierFlags(from: event)
-        let keycode = UInt32(event.keyCode)
-        let text = event.characters ?? ""
-
         var key = ghostty_input_key_s()
         key.action = action
-        key.mods = mods
+        key.keycode = UInt32(event.keyCode)
+        key.mods = ghosttyMods(event.modifierFlags)
         key.consumed_mods = GHOSTTY_MODS_NONE
-        key.keycode = keycode
-        key.text = (text as NSString).utf8String
-        key.unshifted_codepoint = 0
+        key.text = nil
         key.composing = false
+        key.unshifted_codepoint = 0
+
+        // Only read character data for actual key events, never for flagsChanged
+        if event.type == .keyDown || event.type == .keyUp {
+            if let chars = event.characters(byApplyingModifiers: []),
+               let codepoint = chars.unicodeScalars.first {
+                key.unshifted_codepoint = codepoint.value
+            }
+        }
 
         return key
     }

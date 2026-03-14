@@ -39,17 +39,33 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         guard !flags.contains(.control), !flags.contains(.option) else { return false }
 
         switch event.keyCode {
-        case 123:
-            workspaceStore.focusNeighbor(.left)
+        case 123: // Left arrow
+            if flags.contains(.shift) {
+                workspaceStore.swapPaneWithNeighbor(.left)
+            } else {
+                workspaceStore.focusNeighbor(.left)
+            }
             return true
-        case 124:
-            workspaceStore.focusNeighbor(.right)
+        case 124: // Right arrow
+            if flags.contains(.shift) {
+                workspaceStore.swapPaneWithNeighbor(.right)
+            } else {
+                workspaceStore.focusNeighbor(.right)
+            }
             return true
-        case 125:
-            workspaceStore.focusNeighbor(.down)
+        case 125: // Down arrow
+            if flags.contains(.shift) {
+                workspaceStore.swapPaneWithNeighbor(.down)
+            } else {
+                workspaceStore.focusNeighbor(.down)
+            }
             return true
-        case 126:
-            workspaceStore.focusNeighbor(.up)
+        case 126: // Up arrow
+            if flags.contains(.shift) {
+                workspaceStore.swapPaneWithNeighbor(.up)
+            } else {
+                workspaceStore.focusNeighbor(.up)
+            }
             return true
         default:
             break
