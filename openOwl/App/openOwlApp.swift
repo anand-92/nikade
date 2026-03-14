@@ -11,18 +11,8 @@ struct openOwlApp: App {
     @StateObject private var fileExplorerStore = FileExplorerStore()
 
     init() {
-        // #region agent log
-        installExitTracing()
-        debugLog("openOwlApp.swift:init-start", "openOwlApp init started", ["hypothesisId": "H4,H5"])
-        // #endregion
         Self.setupEnvironment()
-        // #region agent log
-        debugLog("openOwlApp.swift:init-after-env", "setupEnvironment completed", ["hypothesisId": "H1"])
-        // #endregion
         _ghosttyManager = StateObject(wrappedValue: GhosttyAppManager())
-        // #region agent log
-        debugLog("openOwlApp.swift:init-done", "openOwlApp init completed", ["hypothesisId": "H1,H2,H3,H4"])
-        // #endregion
     }
 
     var body: some Scene {
@@ -35,9 +25,6 @@ struct openOwlApp: App {
                 .environmentObject(gitChangesStore)
                 .environmentObject(fileExplorerStore)
                 .onAppear {
-                    // #region agent log
-                    debugLog("openOwlApp.swift:onAppear", "ContentView onAppear fired", ["hypothesisId": "H5"])
-                    // #endregion
                     appDelegate.workspaceStore = workspaceStore
                     appDelegate.ghosttyManager = ghosttyManager
                     appDelegate.navigationStore = navigationStore
@@ -45,12 +32,18 @@ struct openOwlApp: App {
                         workspaceStore.updateTitle(for: paneID, title: title)
                     }
                     syncActiveProjectContext()
-                    // #region agent log
-                    debugLog("openOwlApp.swift:onAppear-done", "onAppear completed", ["hypothesisId": "H5"])
-                    // #endregion
                 }
                 .onChange(of: projectStore.activeProjectID) { _, _ in
                     syncActiveProjectContext()
+                }
+                .onReceive(gitChangesStore.$statusSnapshot) { snapshot in
+                    // Keep sidebar branch display in sync with git status
+                    guard let snapshot,
+                          let activeID = projectStore.activeProjectID,
+                          let activeURL = projectStore.activeProjectURL,
+                          snapshot.repositoryRoot.standardizedFileURL == activeURL.standardizedFileURL
+                    else { return }
+                    projectStore.updateProjectBranch(activeID, branch: snapshot.branch)
                 }
                 .frame(
                     minWidth: AppConstants.windowMinWidth,
@@ -102,5 +95,15 @@ struct openOwlApp: App {
         guard let projectURL = projectStore.activeProjectURL else { return }
         gitChangesStore.setPreferredDirectory(projectURL)
         fileExplorerStore.setProject(projectURL)
+
+        // Fetch current branch immediately for sidebar display
+        // (don't wait for Git tab to be opened)
+        Task {
+            let git = GitService(workingDirectory: projectURL)
+            if let branch = try? await git.getCurrentBranch(),
+               let activeID = projectStore.activeProjectID {
+                projectStore.updateProjectBranch(activeID, branch: branch)
+            }
+        }
     }
 }

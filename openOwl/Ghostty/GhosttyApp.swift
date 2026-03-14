@@ -34,10 +34,6 @@ final class GhosttyAppManager: ObservableObject {
     }
 
     private func initializeGhostty() {
-        // #region agent log
-        debugLog("GhosttyApp.swift:init-start", "initializeGhostty started", ["hypothesisId": "H1"])
-        // #endregion
-
         // Initialize the ghostty library
         var args: [UnsafeMutablePointer<CChar>?] = []
         let appName = strdup("openOwl")
@@ -46,23 +42,13 @@ final class GhosttyAppManager: ObservableObject {
         let result = ghostty_init(1, &args)
         appName?.deallocate()
 
-        // #region agent log
-        debugLog("GhosttyApp.swift:after-ghostty-init", "ghostty_init returned", ["hypothesisId": "H1", "result": "\(result)", "success": result == GHOSTTY_SUCCESS])
-        // #endregion
-
         guard result == GHOSTTY_SUCCESS else {
             error = "ghostty_init failed with code \(result)"
             return
         }
 
         // Create config
-        // #region agent log
-        debugLog("GhosttyApp.swift:before-config", "creating GhosttyConfig", ["hypothesisId": "H2"])
-        // #endregion
         config = GhosttyConfig()
-        // #region agent log
-        debugLog("GhosttyApp.swift:after-config", "GhosttyConfig created", ["hypothesisId": "H2", "configNil": config?.config == nil])
-        // #endregion
         guard config?.config != nil else {
             error = "Failed to create ghostty config"
             return
@@ -100,17 +86,26 @@ final class GhosttyAppManager: ObservableObject {
         runtime.read_clipboard_cb = { userdata, clipboard, requestData in
             guard let userdata else { return false }
             let manager = Unmanaged<GhosttyAppManager>.fromOpaque(userdata).takeUnretainedValue()
-            guard let surface = manager.activeSurface else { return false }
 
-            let pasteboard = NSPasteboard.general
-            let content = pasteboard.string(forType: .string) ?? ""
-            content.withCString { cstr in
-                ghostty_surface_complete_clipboard_request(
-                    surface,
-                    cstr,
-                    requestData,
-                    false
-                )
+            // Must complete clipboard request on main thread for NSPasteboard access
+            let completeOnMain = {
+                guard let surface = manager.activeSurface else { return }
+                let pasteboard = NSPasteboard.general
+                let content = pasteboard.string(forType: .string) ?? ""
+                content.withCString { cstr in
+                    ghostty_surface_complete_clipboard_request(
+                        surface,
+                        cstr,
+                        requestData,
+                        false
+                    )
+                }
+            }
+
+            if Thread.isMainThread {
+                completeOnMain()
+            } else {
+                DispatchQueue.main.async { completeOnMain() }
             }
             return true
         }
@@ -119,10 +114,17 @@ final class GhosttyAppManager: ObservableObject {
 
         runtime.write_clipboard_cb = { userdata, clipboard, content, count, confirm in
             guard let content, count > 0 else { return }
-            let pasteboard = NSPasteboard.general
-            pasteboard.clearContents()
-            let text = String(cString: content.pointee.data)
-            pasteboard.setString(text, forType: .string)
+            let doWrite = {
+                let pasteboard = NSPasteboard.general
+                pasteboard.clearContents()
+                let text = String(cString: content.pointee.data)
+                pasteboard.setString(text, forType: .string)
+            }
+            if Thread.isMainThread {
+                doWrite()
+            } else {
+                DispatchQueue.main.async { doWrite() }
+            }
         }
 
         runtime.close_surface_cb = { userdata, confirm in
@@ -130,22 +132,13 @@ final class GhosttyAppManager: ObservableObject {
         }
 
         // Create app
-        // #region agent log
-        debugLog("GhosttyApp.swift:before-app-new", "calling ghostty_app_new", ["hypothesisId": "H3"])
-        // #endregion
         app = ghostty_app_new(&runtime, config!.config)
-        // #region agent log
-        debugLog("GhosttyApp.swift:after-app-new", "ghostty_app_new returned", ["hypothesisId": "H3", "appNil": app == nil])
-        // #endregion
         guard app != nil else {
             error = "Failed to create ghostty app"
             return
         }
 
         isReady = true
-        // #region agent log
-        debugLog("GhosttyApp.swift:init-complete", "initializeGhostty completed successfully", ["hypothesisId": "H1,H2,H3"])
-        // #endregion
     }
 
     /// Called from wakeup_cb to process pending ghostty events on the main thread.

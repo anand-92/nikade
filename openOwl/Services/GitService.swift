@@ -36,6 +36,18 @@ struct GitStatusSnapshot {
     var hasAnyChanges: Bool { hasStagedChanges || !modified.isEmpty || !untracked.isEmpty }
 }
 
+struct GitLogEntry: Identifiable {
+    let hash: String
+    let abbreviatedHash: String
+    let message: String
+    let author: String
+    let date: String        // ISO 8601 string
+    let refs: String
+    let parents: [String]
+
+    var id: String { hash }
+}
+
 enum GitServiceError: LocalizedError {
     case notGitRepository
     case commandFailed(command: String, exitCode: Int32, stderr: String)
@@ -178,6 +190,135 @@ final class GitService {
 
     func push() async throws {
         _ = try await runGit(["push"])
+    }
+
+    // MARK: - Log
+
+    func log(limit: Int = 50, skip: Int = 0) async throws -> [GitLogEntry] {
+        // Each entry is 7 lines separated by a record separator
+        let separator = "---OPENOWL-RECORD---"
+        let format = ["%H", "%h", "%s", "%aN", "%aI", "%D", "%P"].joined(separator: "%n")
+        let output = try await runGit([
+            "log",
+            "--format=\(format)\(separator)",
+            "-n", "\(limit)",
+            "--skip=\(skip)",
+            "--all"
+        ])
+
+        var entries: [GitLogEntry] = []
+        let records = output.components(separatedBy: separator).filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+
+        for record in records {
+            let lines = record.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+            guard lines.count >= 7 else { continue }
+
+            // Find the 7 meaningful lines (skip leading empty lines from separator)
+            let meaningful = lines.filter { !$0.isEmpty }
+            guard meaningful.count >= 5 else { continue }
+
+            // Re-parse: the record has exactly 7 lines between separators
+            let trimmed = record.trimmingCharacters(in: .whitespacesAndNewlines)
+            let parts = trimmed.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+            guard parts.count >= 7 else { continue }
+
+            let parents = parts[6].isEmpty ? [] : parts[6].split(separator: " ").map(String.init)
+            entries.append(GitLogEntry(
+                hash: parts[0],
+                abbreviatedHash: parts[1],
+                message: parts[2],
+                author: parts[3],
+                date: parts[4],
+                refs: parts[5],
+                parents: parents
+            ))
+        }
+
+        return entries
+    }
+
+    // MARK: - Worktree Management
+
+    struct WorktreeInfo {
+        let path: String
+        let branch: String
+        let head: String
+    }
+
+    /// Create a new git worktree. Returns the worktree filesystem path.
+    func addWorktree(branch: String, dirName: String) async throws -> String {
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        let projectName = workingDirectory.lastPathComponent
+        let worktreeBase = "\(home)/.openowl/workspace/\(projectName)"
+        let worktreePath = "\(worktreeBase)/\(dirName)"
+
+        // Ensure parent directory exists
+        try FileManager.default.createDirectory(
+            atPath: worktreeBase,
+            withIntermediateDirectories: true
+        )
+
+        // Check if branch already exists
+        let branchList = try await runGit(["branch", "--list", branch])
+        let exists = !branchList.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+
+        if exists {
+            _ = try await runGit(["worktree", "add", worktreePath, branch])
+        } else {
+            _ = try await runGit(["worktree", "add", "-b", branch, worktreePath])
+        }
+
+        return worktreePath
+    }
+
+    func listWorktrees() async throws -> [WorktreeInfo] {
+        let raw = try await runGit(["worktree", "list", "--porcelain"])
+        var worktrees: [WorktreeInfo] = []
+        var currentPath: String?
+        var currentBranch: String?
+        var currentHead: String?
+
+        for line in raw.split(separator: "\n", omittingEmptySubsequences: false) {
+            let line = String(line)
+            if line.hasPrefix("worktree ") {
+                currentPath = String(line.dropFirst(9))
+            } else if line.hasPrefix("HEAD ") {
+                currentHead = String(line.dropFirst(5))
+            } else if line.hasPrefix("branch ") {
+                currentBranch = String(line.dropFirst(7)).replacingOccurrences(of: "refs/heads/", with: "")
+            } else if line.isEmpty {
+                if let path = currentPath {
+                    worktrees.append(WorktreeInfo(
+                        path: path,
+                        branch: currentBranch ?? "detached",
+                        head: currentHead ?? ""
+                    ))
+                }
+                currentPath = nil
+                currentBranch = nil
+                currentHead = nil
+            }
+        }
+        return worktrees
+    }
+
+    func removeWorktree(path: String) async throws {
+        _ = try await runGit(["worktree", "remove", path, "--force"])
+    }
+
+    func renameBranch(from oldName: String, to newName: String) async throws {
+        _ = try await runGit(["branch", "-m", oldName, newName])
+    }
+
+    static func hasUncommittedChanges(at path: URL) async throws -> Bool {
+        let service = GitService(workingDirectory: path)
+        let output = try await service.runGit(["status", "--porcelain"])
+        return !output.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    func getCurrentBranch() async throws -> String {
+        let output = try await runGit(["rev-parse", "--abbrev-ref", "HEAD"])
+        return output.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     func ignoredPaths() async throws -> [String] {
@@ -366,10 +507,16 @@ private extension GitService {
 
                 do {
                     try process.run()
+
+                    // Read pipe data BEFORE waitUntilExit to avoid deadlock.
+                    // If the process fills the pipe buffer (~64KB), it blocks on write.
+                    // waitUntilExit would then wait forever for the blocked process.
+                    let stdoutData = stdoutPipe.fileHandleForReading.readDataToEndOfFile()
+                    let stderrData = stderrPipe.fileHandleForReading.readDataToEndOfFile()
                     process.waitUntilExit()
 
-                    let stdout = String(data: stdoutPipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
-                    let stderr = String(data: stderrPipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+                    let stdout = String(data: stdoutData, encoding: .utf8) ?? ""
+                    let stderr = String(data: stderrData, encoding: .utf8) ?? ""
 
                     if process.terminationStatus == 0 || allowFailure {
                         continuation.resume(returning: stdout)

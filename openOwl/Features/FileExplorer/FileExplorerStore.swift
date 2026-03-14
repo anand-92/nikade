@@ -76,7 +76,7 @@ final class FileExplorerStore: ObservableObject {
     @Published var quickOpenQuery: String = ""
     @Published var quickOpenSelectionID: String?
 
-    private var nodeIndex: [String: FileExplorerNode] = [:]
+    private(set) var nodeIndex: [String: FileExplorerNode] = [:]
     private var searchableFileNodes: [FileExplorerNode] = []
     private var watcher: FileWatcher?
 
@@ -205,6 +205,95 @@ final class FileExplorerStore: ObservableObject {
         pasteboard.setString(url.path, forType: .string)
     }
 
+    // MARK: - File Operations
+
+    /// Copy file URLs to pasteboard (for Cmd+C)
+    func copyFiles(_ urls: [URL]) {
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.writeObjects(urls as [NSURL])
+    }
+
+    /// Cut files: copy to pasteboard and mark for move
+    func cutFiles(_ urls: [URL]) {
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.writeObjects(urls as [NSURL])
+        // Store cut state — on paste we move instead of copy
+        UserDefaults.standard.set(true, forKey: "openowl.fileCutPending")
+    }
+
+    /// Paste files from pasteboard into target directory
+    func pasteFiles(into targetDirectory: URL) {
+        let pasteboard = NSPasteboard.general
+        guard let urls = pasteboard.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL],
+              !urls.isEmpty else { return }
+
+        let isCut = UserDefaults.standard.bool(forKey: "openowl.fileCutPending")
+        UserDefaults.standard.removeObject(forKey: "openowl.fileCutPending")
+
+        let fm = FileManager.default
+        for url in urls {
+            let destURL = targetDirectory.appendingPathComponent(url.lastPathComponent)
+            do {
+                if isCut {
+                    try fm.moveItem(at: url, to: destURL)
+                } else {
+                    try fm.copyItem(at: url, to: destURL)
+                }
+            } catch {
+                errorMessage = error.localizedDescription
+            }
+        }
+        refreshNow()
+    }
+
+    /// Rename file/folder
+    func renameNode(_ node: FileExplorerNode, to newName: String) {
+        let trimmed = newName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, trimmed != node.name else { return }
+
+        let newURL = node.url.deletingLastPathComponent().appendingPathComponent(trimmed)
+        do {
+            try FileManager.default.moveItem(at: node.url, to: newURL)
+            refreshNow()
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    /// Delete files (move to Trash)
+    func deleteNodes(_ urls: [URL]) {
+        let pathsToRemove = Set(urls.map { $0.standardizedFileURL.path })
+
+        // Immediately remove from UI
+        func filterNodes(_ nodes: [FileExplorerNode]) -> [FileExplorerNode] {
+            nodes.compactMap { node in
+                if pathsToRemove.contains(node.url.standardizedFileURL.path) { return nil }
+                if let children = node.children {
+                    let filtered = filterNodes(children)
+                    return FileExplorerNode(id: node.id, url: node.url, name: node.name,
+                                            isDirectory: node.isDirectory, gitState: node.gitState,
+                                            children: filtered)
+                }
+                return node
+            }
+        }
+        rootNodes = filterNodes(rootNodes)
+
+        for id in pathsToRemove {
+            nodeIndex.removeValue(forKey: id)
+            if selectedNodeID == id { selectedNodeID = nil; previewState = .none }
+        }
+
+        // Trash in background
+        DispatchQueue.global(qos: .userInitiated).async {
+            for url in urls {
+                try? FileManager.default.trashItem(at: url, resultingItemURL: nil)
+            }
+        }
+    }
+
     func openInTerminal(_ node: FileExplorerNode) {
         let target = node.isDirectory ? node.url : node.url.deletingLastPathComponent()
         let process = Process()
@@ -231,7 +320,10 @@ final class FileExplorerStore: ObservableObject {
         defer { isRefreshing = false }
 
         let gitContext = await loadGitContext(for: projectURL)
-        let result = Self.scanProject(projectURL: projectURL, gitContext: gitContext)
+        let capturedURL = projectURL
+        let result = await Task.detached(priority: .userInitiated) {
+            Self.scanProject(projectURL: capturedURL, gitContext: gitContext)
+        }.value
 
         rootNodes = result.nodes
         nodeIndex = result.index
@@ -359,7 +451,7 @@ private extension FileExplorerStore {
         )
     }
 
-    static func classifyGitState(for change: GitFileChange) -> FileGitState {
+    nonisolated static func classifyGitState(for change: GitFileChange) -> FileGitState {
         let index = change.indexStatus
         let workTree = change.workTreeStatus
 
@@ -381,13 +473,13 @@ private extension FileExplorerStore {
         return .modified
     }
 
-    static func mergeGitState(_ lhs: FileGitState?, _ rhs: FileGitState?) -> FileGitState? {
+    nonisolated static func mergeGitState(_ lhs: FileGitState?, _ rhs: FileGitState?) -> FileGitState? {
         guard let lhs else { return rhs }
         guard let rhs else { return lhs }
         return lhs.priority >= rhs.priority ? lhs : rhs
     }
 
-    static func isConflict(indexStatus: Character, workTreeStatus: Character) -> Bool {
+    nonisolated static func isConflict(indexStatus: Character, workTreeStatus: Character) -> Bool {
         if indexStatus == "U" || workTreeStatus == "U" {
             return true
         }
@@ -400,7 +492,7 @@ private extension FileExplorerStore {
         return false
     }
 
-    static func compactDirectoryPrefixes(_ prefixes: [String]) -> [String] {
+    nonisolated static func compactDirectoryPrefixes(_ prefixes: [String]) -> [String] {
         let sorted = Array(Set(prefixes)).sorted { lhs, rhs in
             if lhs.count != rhs.count {
                 return lhs.count < rhs.count
@@ -421,7 +513,7 @@ private extension FileExplorerStore {
         return compacted
     }
 
-    static func quickOpenScore(for node: FileExplorerNode, query: String) -> Int? {
+    nonisolated static func quickOpenScore(for node: FileExplorerNode, query: String) -> Int? {
         let name = node.name.lowercased()
         let path = node.url.path.lowercased()
 
@@ -456,7 +548,7 @@ private extension FileExplorerStore {
         return score
     }
 
-    static func scanProject(projectURL: URL, gitContext: GitContext) -> ScanResult {
+    nonisolated static func scanProject(projectURL: URL, gitContext: GitContext) -> ScanResult {
         var index: [String: FileExplorerNode] = [:]
         let topLevelURLs = directoryEntries(at: projectURL)
         let sortedURLs = sortEntries(topLevelURLs)
@@ -468,7 +560,7 @@ private extension FileExplorerStore {
         return ScanResult(nodes: nodes, index: index)
     }
 
-    static func buildNode(
+    nonisolated static func buildNode(
         url: URL,
         gitContext: GitContext,
         index: inout [String: FileExplorerNode]
@@ -522,7 +614,7 @@ private extension FileExplorerStore {
         return node
     }
 
-    static func shouldIgnore(url: URL, gitContext: GitContext) -> Bool {
+    nonisolated static func shouldIgnore(url: URL, gitContext: GitContext) -> Bool {
         let path = url.standardizedFileURL.path
 
         if url.lastPathComponent == ".git" {
@@ -545,7 +637,7 @@ private extension FileExplorerStore {
         return false
     }
 
-    static func directoryEntries(at directoryURL: URL) -> [URL] {
+    nonisolated static func directoryEntries(at directoryURL: URL) -> [URL] {
         (try? FileManager.default.contentsOfDirectory(
             at: directoryURL,
             includingPropertiesForKeys: [.isDirectoryKey, .isSymbolicLinkKey],
@@ -553,7 +645,7 @@ private extension FileExplorerStore {
         )) ?? []
     }
 
-    static func sortEntries(_ entries: [URL]) -> [URL] {
+    nonisolated static func sortEntries(_ entries: [URL]) -> [URL] {
         entries.sorted { lhs, rhs in
             let lhsValues = try? lhs.resourceValues(forKeys: [.isDirectoryKey])
             let rhsValues = try? rhs.resourceValues(forKeys: [.isDirectoryKey])
@@ -569,7 +661,7 @@ private extension FileExplorerStore {
         }
     }
 
-    static func displayName(for url: URL) -> String {
+    nonisolated static func displayName(for url: URL) -> String {
         let name = url.lastPathComponent
         return name.isEmpty ? url.path : name
     }

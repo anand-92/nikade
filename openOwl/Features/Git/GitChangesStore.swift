@@ -20,6 +20,12 @@ final class GitChangesStore: ObservableObject {
     @Published var errorMessage: String?
     @Published var infoMessage: String?
 
+    // Git Graph
+    @Published private(set) var logEntries: [GitLogEntry] = []
+    @Published var selectedCommitHash: String?
+    @Published private(set) var hasMoreLog = true
+    private let logPageSize = 50
+
     var hasDiscardableChanges: Bool {
         guard let statusSnapshot else { return false }
         return !statusSnapshot.modified.isEmpty || !statusSnapshot.untracked.isEmpty
@@ -115,6 +121,7 @@ final class GitChangesStore: ObservableObject {
 
             try await loadBranches(using: gitService)
             await ensureSelectedDiffIsFresh(using: gitService)
+            await loadLog(using: gitService, reset: true)
         } catch {
             errorMessage = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
         }
@@ -123,6 +130,35 @@ final class GitChangesStore: ObservableObject {
     func refreshNow() {
         Task {
             await refresh()
+        }
+    }
+
+    // MARK: - Git Graph
+
+    func loadMoreLog() {
+        guard let gitService, hasMoreLog else { return }
+        Task {
+            await loadLog(using: gitService, reset: false)
+        }
+    }
+
+    func selectCommit(_ hash: String) {
+        selectedCommitHash = selectedCommitHash == hash ? nil : hash
+    }
+
+    private func loadLog(using gitService: GitService, reset: Bool) async {
+        let skip = reset ? 0 : logEntries.count
+        do {
+            let entries = try await gitService.log(limit: logPageSize, skip: skip)
+            if reset {
+                logEntries = entries
+            } else {
+                logEntries.append(contentsOf: entries)
+            }
+            hasMoreLog = entries.count >= logPageSize
+        } catch {
+            if reset { logEntries = [] }
+            hasMoreLog = false
         }
     }
 
@@ -271,7 +307,7 @@ final class GitChangesStore: ObservableObject {
         }
     }
 
-    private func stage(paths: [String]) {
+    func stage(paths: [String]) {
         guard let gitService else { return }
         guard !paths.isEmpty else { return }
 
@@ -281,7 +317,25 @@ final class GitChangesStore: ObservableObject {
         }
     }
 
-    private func unstage(paths: [String]) {
+    func discardByPath(_ relativePath: String) {
+        guard let gitService else { return }
+        guard !relativePath.isEmpty else { return }
+
+        // Find the change to determine if it's modified or untracked
+        let allChanges = (statusSnapshot?.modified ?? []) + (statusSnapshot?.untracked ?? [])
+        guard let change = allChanges.first(where: { $0.path == relativePath }) else { return }
+
+        runCommand {
+            if change.section == .untracked {
+                try await gitService.discardUntracked(paths: [relativePath])
+            } else {
+                try await gitService.discardModified(files: [relativePath])
+            }
+            self.infoMessage = "Discarded changes for \(relativePath)."
+        }
+    }
+
+    func unstage(paths: [String]) {
         guard let gitService else { return }
         guard !paths.isEmpty else { return }
 

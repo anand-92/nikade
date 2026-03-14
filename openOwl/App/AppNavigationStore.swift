@@ -1,10 +1,10 @@
 import Combine
 import Foundation
 
-enum SidebarSelection: String, CaseIterable, Hashable, Identifiable {
-    case terminal
-    case gitChanges
+enum ViewTab: String, CaseIterable, Hashable, Identifiable {
     case fileExplorer
+    case gitChanges
+    case terminal
 
     var id: String { rawValue }
 
@@ -18,9 +18,17 @@ enum SidebarSelection: String, CaseIterable, Hashable, Identifiable {
             return "Files"
         }
     }
+
+    var systemImage: String {
+        switch self {
+        case .terminal: return "terminal"
+        case .gitChanges: return "point.bottomleft.forward.to.point.topright.scurvepath"
+        case .fileExplorer: return "folder"
+        }
+    }
 }
 
 @MainActor
 final class AppNavigationStore: ObservableObject {
-    @Published var selection: SidebarSelection? = .terminal
+    @Published var activeTab: ViewTab = .terminal
 }
