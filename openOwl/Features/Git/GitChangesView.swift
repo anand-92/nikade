@@ -75,14 +75,30 @@ struct GitChangesView: View {
         VStack(spacing: 4) {
             // Commit message with AI generate button inside
             ZStack(alignment: .topTrailing) {
-                CommitMessageTextView(text: $store.commitMessage, placeholder: "Commit message")
-                    .frame(minHeight: 28, maxHeight: 64)
+                TextEditor(text: $store.commitMessage)
+                    .font(.system(size: 11))
+                    .scrollContentBackground(.hidden)
+                    .scrollDisabled(true)
+                    .frame(height: store.commitMessage.contains("\n") ? 52 : 28)
+                    .padding(.horizontal, 4)
+                    .padding(.vertical, 2)
+                    .padding(.trailing, 18)
                     .background(Color(nsColor: .textBackgroundColor).opacity(0.5))
                     .clipShape(RoundedRectangle(cornerRadius: 4))
                     .overlay(
                         RoundedRectangle(cornerRadius: 4)
                             .stroke(Color.secondary.opacity(0.3), lineWidth: 1)
                     )
+                    .overlay(alignment: .topLeading) {
+                        if store.commitMessage.isEmpty {
+                            Text("Commit message")
+                                .font(.system(size: 11))
+                                .foregroundStyle(.tertiary)
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 5)
+                                .allowsHitTesting(false)
+                        }
+                    }
 
                 if store.isGeneratingMessage {
                     Button {
