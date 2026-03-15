@@ -6,15 +6,17 @@ struct TerminalWorkspaceView: View {
 
     @EnvironmentObject private var workspace: TerminalWorkspaceStore
     @EnvironmentObject private var ghosttyManager: GhosttyAppManager
+    @State private var activatedTabIDs: Set<UUID> = []
 
     var body: some View {
         VStack(spacing: 0) {
             TerminalTabBarView()
 
             ZStack {
-                // Only render tabs for the current project (lazy: other projects' shells don't start)
-                ForEach(workspace.visibleTabs) { tab in
-                    let isActive = workspace.activeTabID == tab.id
+                // Lazy: only render tabs that have been activated at least once
+                // Once rendered, keep alive forever (opacity hide, never removed from tree)
+                ForEach(workspace.tabs.filter { activatedTabIDs.contains($0.id) }) { tab in
+                    let isActive = workspace.activeTabID == tab.id && workspace.isTabVisible(tab.id)
                     TerminalTabContentView(ghosttyApp: ghosttyApp, tab: tab)
                         .opacity(isActive ? 1 : 0)
                         .allowsHitTesting(isActive)
@@ -29,10 +31,21 @@ struct TerminalWorkspaceView: View {
                 }
             }
             workspace.ensureInitialTab()
+            activateVisibleTabs()
             focusCurrentPaneIfPossible()
         }
         .onChange(of: workspace.activeTabID) { _, _ in
+            activateVisibleTabs()
             focusCurrentPaneIfPossible()
+        }
+        .onChange(of: workspace.activeProjectID) { _, _ in
+            activateVisibleTabs()
+        }
+    }
+
+    private func activateVisibleTabs() {
+        for tab in workspace.visibleTabs {
+            activatedTabIDs.insert(tab.id)
         }
     }
 
@@ -49,6 +62,7 @@ struct TerminalWorkspaceView: View {
 
 private struct TerminalTabBarView: View {
     @EnvironmentObject private var workspace: TerminalWorkspaceStore
+    @State private var hoveredTabID: UUID?
 
     private var displayTabs: [TerminalTabState] { workspace.visibleTabs }
     private var hasMultipleTabs: Bool { displayTabs.count > 1 }
@@ -57,6 +71,9 @@ private struct TerminalTabBarView: View {
         HStack(spacing: 0) {
             // Tab 列表 (only current project's tabs)
             ForEach(Array(displayTabs.enumerated()), id: \.element.id) { index, tab in
+                let isActive = workspace.activeTabID == tab.id
+                let isHovered = hoveredTabID == tab.id
+
                 HStack(spacing: 4) {
                     Button {
                         workspace.activeTabID = tab.id
@@ -69,7 +86,7 @@ private struct TerminalTabBarView: View {
                             // ⌘N 快捷键标签
                             if index < 9 {
                                 Text("⌘\(index + 1)")
-                                    .font(.system(size: 9))
+                                    .font(AppFonts.badge)
                                     .foregroundStyle(.tertiary)
                             }
                         }
@@ -88,16 +105,24 @@ private struct TerminalTabBarView: View {
                                 .font(.system(size: 8, weight: .semibold))
                         }
                         .buttonStyle(.plain)
-                        .opacity(0.5)
+                        .opacity(isHovered ? 1.0 : 0.7)
                     }
                 }
                 .padding(.horizontal, 8)
-                .frame(height: AppConstants.terminalToolbarHeight)
-                .background(workspace.activeTabID == tab.id ? Color(nsColor: .windowBackgroundColor) : Color.clear)
-                .overlay(alignment: .bottom) {
-                    Rectangle()
-                        .fill(workspace.activeTabID == tab.id ? Color.accentColor : Color.clear)
-                        .frame(height: 2)
+                .padding(.vertical, 4)
+                .background(
+                    RoundedRectangle(cornerRadius: AppSpacing.cornerRadius)
+                        .fill(
+                            isActive
+                                ? AppColors.activeBackground
+                                : (isHovered ? AppColors.hoverBackground : Color.clear)
+                        )
+                )
+                .onHover { hoveredTabID = $0 ? tab.id : nil }
+
+                // Tab 分隔线
+                if index < displayTabs.count - 1 {
+                    TerminalTabDivider()
                 }
             }
 
@@ -138,15 +163,34 @@ private struct TerminalTabBarView: View {
                 if let tab = workspace.tabs.first(where: { $0.id == workspace.activeTabID }),
                    tab.splitTree.leafCount > 1 {
                     Text("\(tab.splitTree.leafCount)")
-                        .font(.system(size: 9, weight: .medium))
+                        .font(AppFonts.badge)
                         .foregroundStyle(.secondary)
                         .padding(.horizontal, 4)
                 }
             }
             .padding(.trailing, 8)
         }
+        .padding(.horizontal, 4)
         .frame(height: AppConstants.terminalToolbarHeight)
         .background(Color(nsColor: .underPageBackgroundColor))
+        .animation(.easeInOut(duration: 0.15), value: workspace.activeTabID)
+    }
+}
+
+// MARK: - Terminal Tab Divider
+
+private struct TerminalTabDivider: View {
+    @Environment(\.colorScheme) var colorScheme
+
+    var body: some View {
+        Rectangle()
+            .frame(width: 1)
+            .padding(.vertical, 8)
+            .foregroundColor(
+                colorScheme == .dark
+                    ? Color.white.opacity(0.12)
+                    : Color.black.opacity(0.12)
+            )
     }
 }
 
@@ -194,8 +238,9 @@ private struct TerminalTabContentView: View {
                     .contentShape(Rectangle())
                     .clipped()
                     .overlay {
+                        // 非聚焦 pane 遮罩（轻柔）
                         if isMultiPane, !workspace.isFocusedPane(paneID, in: tab.id) {
-                            Color.black.opacity(0.15)
+                            Color.black.opacity(0.06)
                                 .allowsHitTesting(false)
                         }
                     }
@@ -312,27 +357,36 @@ private struct DropZoneHighlightView: View {
         switch zone {
         case .left:
             HStack(spacing: 0) {
-                Color.accentColor.opacity(0.2)
+                dropZoneContent
                 Color.clear
             }
         case .right:
             HStack(spacing: 0) {
                 Color.clear
-                Color.accentColor.opacity(0.2)
+                dropZoneContent
             }
         case .top:
             VStack(spacing: 0) {
-                Color.accentColor.opacity(0.2)
+                dropZoneContent
                 Color.clear
             }
         case .bottom:
             VStack(spacing: 0) {
                 Color.clear
-                Color.accentColor.opacity(0.2)
+                dropZoneContent
             }
         case .center:
             Color.accentColor.opacity(0.15)
         }
+    }
+
+    private var dropZoneContent: some View {
+        Color.accentColor.opacity(0.2)
+            .overlay(
+                RoundedRectangle(cornerRadius: 4)
+                    .strokeBorder(Color.accentColor.opacity(0.4), style: StrokeStyle(lineWidth: 2, dash: [6, 4]))
+                    .padding(4)
+            )
     }
 }
 

@@ -316,8 +316,6 @@ final class TerminalWorkspaceStore: ObservableObject {
     @Published var dragOverPaneID: UUID?
     @Published var dropZone: PaneDropZone?
 
-    private var nextTabNumber = 1
-
     // Per-project terminal tracking
     @Published private(set) var activeProjectID: String?
     private var tabProjectMap: [UUID: String] = [:]  // tabID → projectID
@@ -355,17 +353,19 @@ final class TerminalWorkspaceStore: ObservableObject {
     func newTab(makeActive: Bool = true, forProject projectID: String? = nil) -> UUID {
         let paneID = UUID()
         let tabID = UUID()
+        let ownerProject = projectID ?? activeProjectID
 
+        // Number tabs per project: Tab 1, Tab 2, etc.
+        let projectTabCount = tabs.filter { tabProjectMap[$0.id] == ownerProject }.count
         let tab = TerminalTabState(
             id: tabID,
-            title: "Tab \(nextTabNumber)",
+            title: "Tab \(projectTabCount + 1)",
             splitTree: .leaf(paneID),
             focusedPaneID: paneID
         )
-        nextTabNumber += 1
 
         tabs.append(tab)
-        tabProjectMap[tabID] = projectID ?? activeProjectID
+        tabProjectMap[tabID] = ownerProject
 
         if makeActive {
             activeTabID = tabID

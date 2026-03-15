@@ -15,6 +15,7 @@ struct OutlineTreeView: NSViewControllerRepresentable {
     var onPaste: ((URL) -> Void)?
     var onCopyPath: ((URL) -> Void)?
     var onDropFiles: ((URL, [URL]) -> Void)?
+    var onExpandDirectory: ((String) -> Void)?
 
     func makeNSViewController(context: Context) -> OutlineTreeViewController {
         let controller = OutlineTreeViewController()
@@ -29,6 +30,7 @@ struct OutlineTreeView: NSViewControllerRepresentable {
         controller.onPaste = onPaste
         controller.onCopyPath = onCopyPath
         controller.onDropFiles = onDropFiles
+        controller.onExpandDirectory = onExpandDirectory
 
         // Initial data load
         controller.updateData(rootNodes: store.rootNodes, nodeIndex: store.nodeIndex)
@@ -53,6 +55,7 @@ struct OutlineTreeView: NSViewControllerRepresentable {
         controller.onPaste = onPaste
         controller.onCopyPath = onCopyPath
         controller.onDropFiles = onDropFiles
+        controller.onExpandDirectory = onExpandDirectory
     }
 
     func makeCoordinator() -> Coordinator {

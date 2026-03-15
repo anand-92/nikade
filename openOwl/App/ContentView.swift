@@ -3,87 +3,52 @@ import SwiftUI
 struct ContentView: View {
     @EnvironmentObject var ghosttyManager: GhosttyAppManager
     @EnvironmentObject var navigationStore: AppNavigationStore
+    @EnvironmentObject var fileExplorerStore: FileExplorerStore
 
-    @State private var sidebarWidth: CGFloat = AppConstants.sidebarWidth
-    @State private var sidebarCollapsed = false
-    @State private var sidebarDragDelta: CGFloat? = nil
-
-    /// Width before collapse, for restore
-    @State private var sidebarWidthBeforeCollapse: CGFloat = AppConstants.sidebarWidth
+    @State private var columnVisibility: NavigationSplitViewVisibility = .all
 
     var body: some View {
-        ZStack(alignment: .leading) {
-            // Main layout
-            HStack(spacing: 0) {
-                if !sidebarCollapsed {
-                    SidebarView(onToggleCollapse: { toggleSidebar() })
-                        .frame(width: sidebarWidth)
-                }
+        NavigationSplitView(columnVisibility: $columnVisibility) {
+            SidebarView()
+                .navigationSplitViewColumnWidth(min: 180, ideal: 250, max: 500)
+        } detail: {
+            VStack(spacing: 0) {
+                ZStack {
+                    terminalContent
+                        .opacity(navigationStore.activeTab == .terminal ? 1 : 0)
+                        .allowsHitTesting(navigationStore.activeTab == .terminal)
 
-                SidebarDivider(
-                    collapsed: sidebarCollapsed,
-                    onToggle: { toggleSidebar() }
-                )
-                .gesture(
-                    DragGesture(minimumDistance: 1, coordinateSpace: .global)
-                        .onChanged { value in
-                            sidebarDragDelta = value.translation.width
-                        }
-                        .onEnded { value in
-                            let newWidth = sidebarWidth + value.translation.width
-                            if newWidth < 80 {
-                                withAnimation(.easeInOut(duration: 0.15)) {
-                                    sidebarCollapsed = true
-                                }
-                            } else {
-                                sidebarWidth = min(max(newWidth, 140), 500)
-                            }
-                            sidebarDragDelta = nil
-                        }
-                )
-
-                // 右面板
-                VStack(spacing: 0) {
-                    ViewTabBar(activeTab: $navigationStore.activeTab)
-
-                    Divider()
-
-                    ZStack {
-                        terminalContent
-                            .opacity(navigationStore.activeTab == .terminal ? 1 : 0)
-                            .allowsHitTesting(navigationStore.activeTab == .terminal)
-
-                        if navigationStore.activeTab == .gitChanges {
-                            GitChangesView()
-                        }
-
-                        if navigationStore.activeTab == .fileExplorer {
-                            FileExplorerView()
-                        }
+                    if navigationStore.activeTab == .gitChanges {
+                        GitChangesView()
                     }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                }
-            }
 
-            // Drag indicator line — lightweight overlay, no sidebar re-render
-            if let delta = sidebarDragDelta, !sidebarCollapsed {
-                Rectangle()
-                    .fill(Color.accentColor.opacity(0.6))
-                    .frame(width: 2)
-                    .offset(x: min(max(sidebarWidth + delta, 140), 500) - 1)
-                    .allowsHitTesting(false)
+                    if navigationStore.activeTab == .fileExplorer {
+                        FileExplorerView()
+                    }
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+                Divider()
+
+                StatusBarView()
             }
         }
-        .animation(.easeInOut(duration: 0.15), value: sidebarCollapsed)
-    }
-
-    private func toggleSidebar() {
-        if sidebarCollapsed {
-            sidebarCollapsed = false
-            sidebarWidth = sidebarWidthBeforeCollapse
-        } else {
-            sidebarWidthBeforeCollapse = sidebarWidth
-            sidebarCollapsed = true
+        .navigationSplitViewStyle(.balanced)
+        .toolbar {
+            ToolbarItemGroup(placement: .principal) {
+                ViewTabBar(activeTab: $navigationStore.activeTab)
+            }
+        }
+        .navigationTitle("")
+        .background {
+            Button("") { fileExplorerStore.presentQuickOpen() }
+                .keyboardShortcut("p", modifiers: [.command])
+                .hidden()
+        }
+        .sheet(isPresented: $fileExplorerStore.isQuickOpenPresented, onDismiss: {
+            fileExplorerStore.dismissQuickOpen()
+        }) {
+            QuickOpenSheet()
         }
     }
 
@@ -110,78 +75,53 @@ struct ContentView: View {
     }
 }
 
-// MARK: - Sidebar Divider
-
-private struct SidebarDivider: View {
-    let collapsed: Bool
-    let onToggle: () -> Void
-
-    @State private var isHovered = false
-
-    var body: some View {
-        ZStack {
-            Rectangle()
-                .fill(isHovered ? Color.accentColor.opacity(0.4) : Color(nsColor: .separatorColor))
-                .frame(width: isHovered ? 3 : 1)
-
-            // Collapse/expand arrow button shown on hover
-            if isHovered {
-                Button(action: onToggle) {
-                    Image(systemName: collapsed ? "chevron.right" : "chevron.left")
-                        .font(.system(size: 11, weight: .bold))
-                        .foregroundStyle(.secondary)
-                        .frame(width: 20, height: 36)
-                        .background(Color(nsColor: .windowBackgroundColor))
-                        .cornerRadius(6)
-                }
-                .buttonStyle(.plain)
-            }
-        }
-        .frame(width: 7)
-        .contentShape(Rectangle())
-        .onHover { hovering in
-            isHovered = hovering
-            if hovering {
-                NSCursor.resizeLeftRight.push()
-            } else {
-                NSCursor.pop()
-            }
-        }
-    }
-}
-
 // MARK: - View Tab Bar
 
 private struct ViewTabBar: View {
     @Binding var activeTab: ViewTab
+    @State private var hoveredTab: ViewTab?
 
     var body: some View {
-        HStack(spacing: 0) {
+        HStack(spacing: 2) {
             ForEach(ViewTab.allCases) { tab in
                 Button {
                     activeTab = tab
                 } label: {
-                    HStack(spacing: 5) {
+                    HStack(spacing: 4) {
                         Image(systemName: tab.systemImage)
-                            .font(.system(size: 11))
+                            .font(.system(size: 10))
                         Text(tab.title)
                             .font(.system(size: 12, weight: .medium))
                     }
                     .foregroundStyle(activeTab == tab ? .primary : .secondary)
-                    .padding(.horizontal, 12)
-                    .frame(height: AppConstants.headerHeight)
-                    .contentShape(Rectangle())
-                    .overlay(alignment: .bottom) {
-                        Rectangle()
-                            .fill(activeTab == tab ? Color.accentColor : Color.clear)
-                            .frame(height: 2)
-                    }
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 3)
+                    .background(
+                        RoundedRectangle(cornerRadius: 4)
+                            .fill(activeTab == tab ? Color.accentColor.opacity(0.15) : (hoveredTab == tab ? Color.secondary.opacity(0.1) : Color.clear))
+                    )
                 }
                 .buttonStyle(.plain)
+                .onHover { hoveredTab = $0 ? tab : nil }
             }
-
-            Spacer()
         }
-        .background(Color(nsColor: .windowBackgroundColor))
+        .animation(.easeInOut(duration: 0.15), value: activeTab)
+    }
+}
+
+// MARK: - Tab Divider
+
+private struct TabDivider: View {
+    @Environment(\.colorScheme) var colorScheme
+
+    var body: some View {
+        Rectangle()
+            .frame(width: 1)
+            .padding(.vertical, 8)
+            .foregroundColor(
+                colorScheme == .dark
+                    ? Color.white.opacity(0.12)
+                    : Color.black.opacity(0.12)
+            )
     }
 }

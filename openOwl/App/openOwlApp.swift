@@ -59,6 +59,7 @@ struct openOwlApp: App {
                 )
         }
         .defaultSize(width: 1200, height: 800)
+        .windowToolbarStyle(.unifiedCompact(showsTitle: false))
     }
 
     private static func setupEnvironment() {

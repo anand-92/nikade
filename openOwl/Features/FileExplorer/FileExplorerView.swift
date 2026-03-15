@@ -59,7 +59,7 @@ struct FileExplorerView: View {
             treePanel
                 .frame(width: 240)
 
-            Divider()
+            PanelDivider()
 
             editorPanel
         }
@@ -77,11 +77,6 @@ struct FileExplorerView: View {
         .onDisappear {
             if isEditorDirty { saveCurrentFile() }
         }
-        .sheet(isPresented: $store.isQuickOpenPresented, onDismiss: {
-            store.dismissQuickOpen()
-        }) {
-            quickOpenSheet
-        }
         .background {
             Button("") { saveCurrentFile() }
                 .keyboardShortcut("s", modifiers: [.command])
@@ -96,7 +91,7 @@ struct FileExplorerView: View {
             // Header
             HStack {
                 Text("EXPLORER")
-                    .font(.system(size: 11, weight: .semibold))
+                    .font(AppFonts.sectionHeader)
                     .foregroundStyle(.secondary)
 
                 Spacer()
@@ -117,11 +112,13 @@ struct FileExplorerView: View {
             .padding(.horizontal, 12)
             .frame(height: AppConstants.headerHeight)
 
-            Divider()
+            PanelDivider()
 
             if let errorMessage = store.errorMessage {
-                HStack {
-                    Text(errorMessage).font(.system(size: 10)).lineLimit(1)
+                HStack(spacing: 6) {
+                    Image(systemName: "exclamationmark.triangle")
+                        .font(.system(size: 10))
+                    Text(errorMessage).font(AppFonts.caption).lineLimit(1)
                     Spacer()
                     Button { store.errorMessage = nil } label: {
                         Image(systemName: "xmark").font(.system(size: 8))
@@ -129,7 +126,7 @@ struct FileExplorerView: View {
                 }
                 .foregroundStyle(.red)
                 .padding(.horizontal, 8).padding(.vertical, 4)
-                .background(Color.red.opacity(0.08))
+                .background(Color.red.opacity(0.12))
             }
 
             if store.rootNodes.isEmpty {
@@ -162,7 +159,7 @@ struct FileExplorerView: View {
                 )
             }
         }
-        .background(Color(nsColor: .underPageBackgroundColor))
+        .background(EffectView(material: .sidebar, blendingMode: .behindWindow))
     }
 
     // MARK: - Editor
@@ -273,7 +270,7 @@ struct FileExplorerView: View {
                         .font(.system(size: 10))
                         .foregroundStyle(.secondary)
                     Text(node.name)
-                        .font(.system(size: 11, weight: .medium))
+                        .font(AppFonts.primaryLabel)
                         .lineLimit(1)
 
                     if isEditorDirty {
@@ -286,15 +283,22 @@ struct FileExplorerView: View {
 
                 if isEditorDirty {
                     Text("Modified")
-                        .font(.system(size: 9))
+                        .font(AppFonts.badge)
                         .foregroundStyle(.secondary)
+                }
+
+                // 图片尺寸信息
+                if isImageFile, let image = previewImage {
+                    Text("\(Int(image.size.width)) × \(Int(image.size.height))")
+                        .font(AppFonts.caption)
+                        .foregroundStyle(.tertiary)
                 }
             }
             .padding(.horizontal, 10)
             .frame(height: AppConstants.headerHeight)
             .background(Color(nsColor: .windowBackgroundColor))
 
-            Divider()
+            PanelDivider()
 
             if editingFileURL != nil, isImageFile, let image = previewImage {
                 // Image preview
@@ -336,10 +340,23 @@ struct FileExplorerView: View {
     private var quickOpenSheet: some View {
         VStack(spacing: 10) {
             HStack(spacing: 8) {
-                TextField("Search files", text: $store.quickOpenQuery)
-                    .textFieldStyle(.roundedBorder)
-                    .focused($quickOpenInputFocused)
-                    .onSubmit { openQuickOpenSelection() }
+                HStack(spacing: 6) {
+                    Image(systemName: "magnifyingglass")
+                        .font(.system(size: 12))
+                        .foregroundStyle(.tertiary)
+                    TextField("Search files", text: $store.quickOpenQuery)
+                        .textFieldStyle(.plain)
+                        .focused($quickOpenInputFocused)
+                        .onSubmit { openQuickOpenSelection() }
+                }
+                .padding(.horizontal, 8)
+                .padding(.vertical, 6)
+                .background(Color(nsColor: .textBackgroundColor))
+                .clipShape(RoundedRectangle(cornerRadius: AppSpacing.cornerRadius))
+                .overlay(
+                    RoundedRectangle(cornerRadius: AppSpacing.cornerRadius)
+                        .stroke(Color.secondary.opacity(0.3), lineWidth: 1)
+                )
 
                 Button("Open") { openQuickOpenSelection() }
                     .disabled(store.quickOpenMatches.isEmpty)
@@ -376,10 +393,16 @@ struct FileExplorerView: View {
         .padding(14)
         .frame(minWidth: 560, minHeight: 420)
         .onAppear {
+            store.updateQuickOpenResults()
             store.syncQuickOpenSelection()
             DispatchQueue.main.async { quickOpenInputFocused = true }
         }
-        .onChange(of: store.quickOpenQuery) { _, _ in store.syncQuickOpenSelection() }
+        .onChange(of: store.quickOpenQuery) { _, _ in
+            store.updateQuickOpenResults()
+        }
+        .onChange(of: store.quickOpenResults) { _, _ in
+            store.syncQuickOpenSelection()
+        }
     }
 
     private func openQuickOpenSelection() {

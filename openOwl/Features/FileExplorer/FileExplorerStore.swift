@@ -47,6 +47,9 @@ struct FileExplorerNode: Identifiable, Hashable {
     let isDirectory: Bool
     let gitState: FileGitState?
     let children: [FileExplorerNode]?
+    // For directories: children == nil means "not yet scanned" (lazy)
+    // children == [] means "scanned and empty"
+    // For files: children is always nil
 }
 
 enum FilePreviewState {
@@ -80,48 +83,87 @@ final class FileExplorerStore: ObservableObject {
     private var searchableFileNodes: [FileExplorerNode] = []
     private var watcher: FileWatcher?
 
+    // Cache scan results per project to avoid re-scanning on switch
+    private struct ProjectCache {
+        let nodes: [FileExplorerNode]
+        let index: [String: FileExplorerNode]
+    }
+    private var projectScanCache: [String: ProjectCache] = [:]
+
     var selectedNode: FileExplorerNode? {
         guard let selectedNodeID else { return nil }
         return nodeIndex[selectedNodeID]
     }
 
-    var quickOpenMatches: [FileQuickOpenMatch] {
-        guard !searchableFileNodes.isEmpty else { return [] }
+    @Published private(set) var quickOpenResults: [FileQuickOpenMatch] = []
+    private var quickOpenWorkItem: DispatchWorkItem?
+
+    var quickOpenMatches: [FileQuickOpenMatch] { quickOpenResults }
+
+    func updateQuickOpenResults() {
+        quickOpenWorkItem?.cancel()
 
         let query = quickOpenQuery
             .trimmingCharacters(in: .whitespacesAndNewlines)
             .lowercased()
+        let nodes = searchableFileNodes
 
-        guard !query.isEmpty else {
-            return searchableFileNodes
-                .prefix(200)
-                .map { FileQuickOpenMatch(node: $0, score: 0) }
+        guard !nodes.isEmpty else {
+            quickOpenResults = []
+            return
         }
 
-        return searchableFileNodes
-            .compactMap { node in
-                guard let score = Self.quickOpenScore(for: node, query: query) else { return nil }
-                return FileQuickOpenMatch(node: node, score: score)
-            }
-            .sorted { lhs, rhs in
-                if lhs.score != rhs.score {
-                    return lhs.score > rhs.score
+        guard !query.isEmpty else {
+            quickOpenResults = Array(nodes.prefix(200).map { FileQuickOpenMatch(node: $0, score: 0) })
+            return
+        }
+
+        // Debounce 50ms then compute off main thread
+        let item = DispatchWorkItem { [weak self] in
+            let results: [FileQuickOpenMatch] = nodes
+                .compactMap { node -> FileQuickOpenMatch? in
+                    guard let score = FileExplorerStore.quickOpenScore(for: node, query: query) else { return nil }
+                    return FileQuickOpenMatch(node: node, score: score)
                 }
-                return lhs.node.url.path.localizedStandardCompare(rhs.node.url.path) == .orderedAscending
+                .sorted { lhs, rhs in
+                    if lhs.score != rhs.score { return lhs.score > rhs.score }
+                    return lhs.node.url.path.localizedStandardCompare(rhs.node.url.path) == .orderedAscending
+                }
+            let top = Array(results.prefix(200))
+            DispatchQueue.main.async { [weak self] in
+                self?.quickOpenResults = top
             }
-            .prefix(200)
-            .map { $0 }
+        }
+        quickOpenWorkItem = item
+        DispatchQueue.global(qos: .userInteractive).asyncAfter(deadline: .now() + 0.05, execute: item)
     }
 
     func setProject(_ url: URL?) {
         let standardized = url?.standardizedFileURL
         guard projectURL != standardized else { return }
 
+        // Save current project's state to cache
+        if let oldURL = projectURL, !rootNodes.isEmpty {
+            projectScanCache[oldURL.path] = ProjectCache(nodes: rootNodes, index: nodeIndex)
+        }
+
         projectURL = standardized
         selectedNodeID = nil
         previewState = .none
         errorMessage = nil
         dismissQuickOpen()
+
+        // Restore from cache if available (instant)
+        if let standardized, let cached = projectScanCache[standardized.path] {
+            rootNodes = cached.nodes
+            nodeIndex = cached.index
+            searchableFileNodes = cached.index.values
+                .filter { !$0.isDirectory }
+                .sorted { $0.url.path.localizedStandardCompare($1.url.path) == .orderedAscending }
+        } else {
+            rootNodes = []
+            nodeIndex = [:]
+        }
 
         configureWatcher()
         refreshNow()
@@ -130,6 +172,62 @@ final class FileExplorerStore: ObservableObject {
     func refreshNow() {
         Task {
             await refresh()
+        }
+    }
+
+    /// Lazily scan a directory's children when user expands it
+    func expandDirectory(_ dirPath: String) {
+        guard let node = nodeIndex[dirPath], node.isDirectory, node.children == nil else { return }
+
+        // Scan this directory synchronously (single directory is fast)
+        let childURLs = Self.sortEntries(Self.directoryEntries(at: node.url))
+        var newChildren: [FileExplorerNode] = []
+        for url in childURLs {
+            if Self.shouldIgnore(url: url, gitContext: .empty) { continue }
+            let path = url.standardizedFileURL.path
+            let rv = try? url.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey])
+            let isDir = rv?.isDirectory ?? false
+            let isSym = rv?.isSymbolicLink ?? false
+            let child = FileExplorerNode(
+                id: path, url: url,
+                name: Self.displayName(for: url),
+                isDirectory: isDir && !isSym,
+                gitState: nil,
+                children: (isDir && !isSym) ? nil : nil // lazy for subdirs too
+            )
+            nodeIndex[child.id] = child
+            newChildren.append(child)
+        }
+
+        // Update the parent node with children
+        let updated = FileExplorerNode(
+            id: node.id, url: node.url, name: node.name,
+            isDirectory: true, gitState: node.gitState,
+            children: newChildren
+        )
+        nodeIndex[updated.id] = updated
+
+        // Update in rootNodes tree
+        rootNodes = Self.replaceNode(in: rootNodes, id: dirPath, with: updated)
+
+        // Add new files to searchable list
+        let newFiles = newChildren.filter { !$0.isDirectory }
+        if !newFiles.isEmpty {
+            searchableFileNodes.append(contentsOf: newFiles)
+        }
+    }
+
+    private static func replaceNode(in nodes: [FileExplorerNode], id: String, with replacement: FileExplorerNode) -> [FileExplorerNode] {
+        nodes.map { node in
+            if node.id == id { return replacement }
+            if let children = node.children {
+                let updated = replaceNode(in: children, id: id, with: replacement)
+                if updated != children {
+                    return FileExplorerNode(id: node.id, url: node.url, name: node.name,
+                                           isDirectory: node.isDirectory, gitState: node.gitState, children: updated)
+                }
+            }
+            return node
         }
     }
 
@@ -322,42 +420,49 @@ final class FileExplorerStore: ObservableObject {
         let capturedURL = projectURL
         let t0 = CFAbsoluteTimeGetCurrent()
 
-        // Phase 1: Scan without git (fast, show tree immediately)
-        let quickResult = await Task.detached(priority: .userInitiated) {
-            Self.scanProject(projectURL: capturedURL, gitContext: .empty)
+        // Phase 1: Scan root level only (instant, ~1ms)
+        let shallowResult = await Task.detached(priority: .userInitiated) {
+            Self.scanProject(projectURL: capturedURL, gitContext: .empty, maxDepth: 1)
         }.value
-        NSLog("FileExplorer: phase1 scan %.0fms (%d nodes)", (CFAbsoluteTimeGetCurrent() - t0) * 1000, quickResult.index.count)
+        NSLog("FileExplorer: shallow scan %.0fms (%d nodes)", (CFAbsoluteTimeGetCurrent() - t0) * 1000, shallowResult.index.count)
 
-        rootNodes = quickResult.nodes
-        nodeIndex = quickResult.index
+        rootNodes = shallowResult.nodes
+        nodeIndex = shallowResult.index
 
-        // Phase 2: Load git context in background, then merge
+        // Phase 2: Full scan with gitignore + git status
         let t1 = CFAbsoluteTimeGetCurrent()
-        let gitContext = await loadGitContext(for: capturedURL)
-        NSLog("FileExplorer: git context %.0fms", (CFAbsoluteTimeGetCurrent() - t1) * 1000)
+        async let ignoreCtx = loadIgnoreContext(for: capturedURL)
+        async let statusMap = loadGitStatus(for: capturedURL)
+        let (ignore, status) = await (ignoreCtx, statusMap)
         guard projectURL == capturedURL else { return }
 
-        if !gitContext.statusByAbsolutePath.isEmpty || !gitContext.ignoredExactPaths.isEmpty {
-            let t2 = CFAbsoluteTimeGetCurrent()
-            let fullResult = await Task.detached(priority: .userInitiated) {
-                Self.scanProject(projectURL: capturedURL, gitContext: gitContext)
-            }.value
-            NSLog("FileExplorer: phase2 scan %.0fms (%d nodes)", (CFAbsoluteTimeGetCurrent() - t2) * 1000, fullResult.index.count)
-            rootNodes = fullResult.nodes
-            nodeIndex = fullResult.index
-        }
+        let gitContext = GitContext(
+            statusByAbsolutePath: status,
+            ignoredExactPaths: ignore.ignoredExactPaths,
+            ignoredDirectoryPrefixes: ignore.ignoredDirectoryPrefixes
+        )
+        let (fullResult, sortedFiles) = await Task.detached(priority: .userInitiated) {
+            let result = Self.scanProject(projectURL: capturedURL, gitContext: gitContext)
+            let files = result.index.values
+                .filter { !$0.isDirectory }
+                .sorted { $0.url.path.localizedStandardCompare($1.url.path) == .orderedAscending }
+            return (result, files)
+        }.value
+        guard projectURL == capturedURL else { return }
+        NSLog("FileExplorer: full scan %.0fms (%d nodes)", (CFAbsoluteTimeGetCurrent() - t1) * 1000, fullResult.index.count)
 
-        searchableFileNodes = nodeIndex.values
-            .filter { !$0.isDirectory }
-            .sorted { lhs, rhs in
-                lhs.url.path.localizedStandardCompare(rhs.url.path) == .orderedAscending
-            }
+        rootNodes = fullResult.nodes
+        nodeIndex = fullResult.index
+        searchableFileNodes = sortedFiles
 
         if let selectedNodeID, nodeIndex[selectedNodeID] == nil {
             self.selectedNodeID = nil
         }
         syncQuickOpenSelection()
         loadPreviewForSelection()
+
+        // Update cache
+        projectScanCache[capturedURL.path] = ProjectCache(nodes: rootNodes, index: nodeIndex)
     }
 
     private func configureWatcher() {
@@ -389,28 +494,21 @@ final class FileExplorerStore: ObservableObject {
         previewState = Self.makePreviewState(for: node.url)
     }
 
-    private func loadGitContext(for projectURL: URL) async -> GitContext {
+    private var cachedRepoRoot: [String: URL] = [:]
+
+    private func repoRoot(for projectURL: URL) async -> URL? {
+        let key = projectURL.path
+        if let cached = cachedRepoRoot[key] { return cached }
         let probe = GitService(workingDirectory: projectURL)
-        guard let repositoryRoot = try? await probe.repositoryRoot() else {
-            return GitContext.empty
-        }
+        guard let root = try? await probe.repositoryRoot() else { return nil }
+        cachedRepoRoot[key] = root
+        return root
+    }
 
+    /// Fast: only gitignore list, no status
+    private func loadIgnoreContext(for projectURL: URL) async -> GitContext {
+        guard let repositoryRoot = await repoRoot(for: projectURL) else { return .empty }
         let gitService = GitService(workingDirectory: repositoryRoot)
-        var statusByAbsolutePath: [String: FileGitState] = [:]
-
-        if let snapshot = try? await gitService.status() {
-            let allChanges = snapshot.staged + snapshot.modified + snapshot.untracked
-            for change in allChanges {
-                let absolutePath = repositoryRoot
-                    .appendingPathComponent(change.path)
-                    .standardizedFileURL
-                    .path
-
-                let state = Self.classifyGitState(for: change)
-                let existing = statusByAbsolutePath[absolutePath]
-                statusByAbsolutePath[absolutePath] = Self.mergeGitState(existing, state)
-            }
-        }
 
         var ignoredExactPaths: Set<String> = []
         var ignoredDirectoryPrefixes: [String] = []
@@ -445,10 +543,31 @@ final class FileExplorerStore: ObservableObject {
         })
 
         return GitContext(
-            statusByAbsolutePath: statusByAbsolutePath,
+            statusByAbsolutePath: [:],
             ignoredExactPaths: compactedExactPaths,
             ignoredDirectoryPrefixes: compactedPrefixes
         )
+    }
+
+    /// Slower: git status for change markers (A/M/D)
+    private func loadGitStatus(for projectURL: URL) async -> [String: FileGitState] {
+        guard let repositoryRoot = await repoRoot(for: projectURL) else { return [:] }
+        let gitService = GitService(workingDirectory: repositoryRoot)
+        var statusMap: [String: FileGitState] = [:]
+
+        if let snapshot = try? await gitService.status() {
+            let allChanges = snapshot.staged + snapshot.modified + snapshot.untracked
+            for change in allChanges {
+                let absolutePath = repositoryRoot
+                    .appendingPathComponent(change.path)
+                    .standardizedFileURL
+                    .path
+                let state = Self.classifyGitState(for: change)
+                let existing = statusMap[absolutePath]
+                statusMap[absolutePath] = Self.mergeGitState(existing, state)
+            }
+        }
+        return statusMap
     }
 }
 
@@ -567,13 +686,13 @@ private extension FileExplorerStore {
         return score
     }
 
-    nonisolated static func scanProject(projectURL: URL, gitContext: GitContext) -> ScanResult {
+    nonisolated static func scanProject(projectURL: URL, gitContext: GitContext, maxDepth: Int = .max) -> ScanResult {
         var index: [String: FileExplorerNode] = [:]
         let topLevelURLs = directoryEntries(at: projectURL)
         let sortedURLs = sortEntries(topLevelURLs)
 
         let nodes = sortedURLs.compactMap { url in
-            buildNode(url: url, gitContext: gitContext, index: &index)
+            buildNode(url: url, gitContext: gitContext, index: &index, depth: 0, maxDepth: maxDepth)
         }
 
         return ScanResult(nodes: nodes, index: index)
@@ -582,7 +701,9 @@ private extension FileExplorerStore {
     nonisolated static func buildNode(
         url: URL,
         gitContext: GitContext,
-        index: inout [String: FileExplorerNode]
+        index: inout [String: FileExplorerNode],
+        depth: Int = 0,
+        maxDepth: Int = .max
     ) -> FileExplorerNode? {
         if shouldIgnore(url: url, gitContext: gitContext) {
             return nil
@@ -594,19 +715,29 @@ private extension FileExplorerStore {
         let isSymbolicLink = resourceValues?.isSymbolicLink ?? false
 
         if isDirectory && !isSymbolicLink {
-            let childURLs = sortEntries(directoryEntries(at: url))
-            var children: [FileExplorerNode] = []
-            children.reserveCapacity(childURLs.count)
-
-            for childURL in childURLs {
-                if let childNode = buildNode(url: childURL, gitContext: gitContext, index: &index) {
-                    children.append(childNode)
+            // Don't recurse into gitignored directories (node_modules etc.)
+            // Show the directory itself with children=nil (lazy, scan on expand)
+            let isGitIgnored = Self.isGitIgnored(path: path, gitContext: gitContext)
+            let children: [FileExplorerNode]?
+            if depth >= maxDepth || isGitIgnored {
+                children = nil // lazy: will scan when user expands
+            } else {
+                let childURLs = sortEntries(directoryEntries(at: url))
+                var built: [FileExplorerNode] = []
+                built.reserveCapacity(childURLs.count)
+                for childURL in childURLs {
+                    if let childNode = buildNode(url: childURL, gitContext: gitContext, index: &index, depth: depth + 1, maxDepth: maxDepth) {
+                        built.append(childNode)
+                    }
                 }
+                children = built
             }
 
             var state = gitContext.statusByAbsolutePath[path]
-            for child in children {
-                state = mergeGitState(state, child.gitState)
+            if let children {
+                for child in children {
+                    state = mergeGitState(state, child.gitState)
+                }
             }
 
             let node = FileExplorerNode(
@@ -634,25 +765,15 @@ private extension FileExplorerStore {
     }
 
     nonisolated static func shouldIgnore(url: URL, gitContext: GitContext) -> Bool {
-        let path = url.standardizedFileURL.path
+        let name = url.lastPathComponent
+        return name == ".git" || name == ".DS_Store"
+    }
 
-        if url.lastPathComponent == ".git" {
-            return true
-        }
-        if url.lastPathComponent == ".DS_Store" {
-            return true
-        }
-
-        if gitContext.ignoredExactPaths.contains(path) {
-            return true
-        }
-
+    nonisolated static func isGitIgnored(path: String, gitContext: GitContext) -> Bool {
+        if gitContext.ignoredExactPaths.contains(path) { return true }
         for prefix in gitContext.ignoredDirectoryPrefixes {
-            if path == prefix || path.hasPrefix(prefix + "/") {
-                return true
-            }
+            if path == prefix || path.hasPrefix(prefix + "/") { return true }
         }
-
         return false
     }
 

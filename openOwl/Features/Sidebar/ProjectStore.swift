@@ -23,8 +23,9 @@ struct ProjectItem: Identifiable, Hashable, Codable {
     }
 
     init(path: String, name: String, id: String = UUID().uuidString, worktreeOf: String? = nil, worktreeBranch: String? = nil) {
+        let normalized = URL(fileURLWithPath: path, isDirectory: true).standardizedFileURL
         self.id = id
-        self.path = path
+        self.path = normalized.path
         self.name = name
         self.worktreeOf = worktreeOf
         self.worktreeBranch = worktreeBranch
@@ -215,7 +216,9 @@ final class ProjectStore: ObservableObject {
         // Try new JSON format first
         if let data = defaults.data(forKey: storeKey),
            let decoded = try? JSONDecoder().decode([ProjectItem].self, from: data) {
-            projects = decoded.filter { Self.isReasonableProjectPath(URL(fileURLWithPath: $0.path)) }
+            projects = decoded
+                .filter { Self.isReasonableProjectPath(URL(fileURLWithPath: $0.path)) }
+                .uniqued()
         } else {
             // Migrate from old string array format
             let paths = defaults.stringArray(forKey: "openowl.projects.paths") ?? []
@@ -259,6 +262,9 @@ final class ProjectStore: ObservableObject {
 private extension Array where Element == ProjectItem {
     func uniqued() -> [ProjectItem] {
         var seen: Set<String> = []
-        return filter { seen.insert($0.path).inserted }
+        return filter {
+            let normalized = URL(fileURLWithPath: $0.path, isDirectory: true).standardizedFileURL.path
+            return seen.insert(normalized).inserted
+        }
     }
 }

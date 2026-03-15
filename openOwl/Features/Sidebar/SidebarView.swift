@@ -1,127 +1,137 @@
 import SwiftUI
 
 struct SidebarView: View {
-    var onToggleCollapse: (() -> Void)?
-
     @EnvironmentObject private var projectStore: ProjectStore
 
-    var body: some View {
-        VStack(spacing: 0) {
-            // 头部 "PROJECTS" + 按钮
-            HStack(spacing: 6) {
-                // Collapse sidebar button
-                if let onToggleCollapse {
-                    Button(action: onToggleCollapse) {
-                        Image(systemName: "sidebar.left")
-                            .font(.system(size: 11))
-                    }
-                    .buttonStyle(.plain)
-                    .foregroundStyle(.secondary)
-                    .help("Collapse sidebar")
+    /// Maps between List's visual selection tag and the real activeProjectID.
+    /// - Expanded root with branch → highlight "branch-{id}" (not the header)
+    /// - Collapsed root / no branch → highlight project.id (the header)
+    /// - Worktree → highlight wt.id directly
+    private var listSelection: Binding<String?> {
+        Binding(
+            get: {
+                guard let activeID = projectStore.activeProjectID,
+                      let active = projectStore.projects.first(where: { $0.id == activeID })
+                else { return nil }
+
+                // Worktree: tag is its own id
+                if active.isWorktree { return activeID }
+
+                // Root project, expanded with a branch → highlight the branch row
+                if projectStore.isExpanded(activeID), active.lastBranch != nil {
+                    return "branch-\(activeID)"
                 }
 
-                Text("PROJECTS")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(.secondary)
-
-                Spacer()
-
-                Button {
-                    projectStore.openProjectPicker()
-                } label: {
-                    Image(systemName: "plus")
-                        .font(.system(size: 12))
+                // Root project, collapsed or no branch → highlight header
+                return activeID
+            },
+            set: { tag in
+                guard let tag else { return }
+                if tag.hasPrefix("branch-") {
+                    let projectID = String(tag.dropFirst("branch-".count))
+                    projectStore.activateProject(id: projectID)
+                } else {
+                    projectStore.activateProject(id: tag)
                 }
-                .buttonStyle(.plain)
-                .help("Open project folder")
             }
-            .padding(.horizontal, 12)
-            .frame(height: AppConstants.headerHeight)
+        )
+    }
 
-            Divider()
+    var body: some View {
+        List(selection: listSelection) {
+            ForEach(projectStore.rootProjects) { project in
+                // 1) Project header row
+                ProjectHeaderRow(project: project)
+                    .tag(project.id)
 
-            // 项目列表
-            if projectStore.projects.isEmpty {
-                Spacer()
-                VStack(spacing: 8) {
-                    Image(systemName: "folder.badge.plus")
-                        .font(.system(size: 24))
-                        .foregroundStyle(.secondary)
-                    Button("Open a folder") {
-                        projectStore.openProjectPicker()
+                // 2) Expanded children: branch row + worktree rows
+                if projectStore.isExpanded(project.id) {
+                    if let branch = project.lastBranch {
+                        BranchRow(branch: branch)
+                            .tag("branch-\(project.id)")
                     }
-                    .buttonStyle(.plain)
-                    .foregroundStyle(Color.accentColor)
-                    .font(.system(size: 13))
-                }
-                Spacer()
-            } else {
-                ScrollView {
-                    LazyVStack(spacing: 0) {
-                        ForEach(projectStore.rootProjects) { project in
-                            ProjectItemView(project: project)
-                        }
+
+                    ForEach(projectStore.worktrees(for: project.id)) { wt in
+                        WorktreeRow(wt: wt)
+                            .tag(wt.id)
                     }
                 }
             }
         }
-        .background(Color(nsColor: .underPageBackgroundColor))
+        .listStyle(.sidebar)
+        .navigationTitle("Projects")
+        .overlay {
+            if projectStore.projects.isEmpty {
+                ContentUnavailableView {
+                    Label("No Projects", systemImage: "folder.badge.plus")
+                } description: {
+                    Text("Open a folder to get started")
+                } actions: {
+                    Button("Open Folder") {
+                        projectStore.openProjectPicker()
+                    }
+                    .buttonStyle(.bordered)
+                }
+            }
+        }
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button {
+                    projectStore.openProjectPicker()
+                } label: {
+                    Image(systemName: "plus")
+                }
+                .help("Open project folder")
+            }
+        }
     }
 }
 
-// MARK: - Project Item (root project with worktrees)
+// MARK: - Project Header Row (flat, no nested children)
 
-private struct ProjectItemView: View {
+private struct ProjectHeaderRow: View {
     let project: ProjectItem
     @EnvironmentObject private var projectStore: ProjectStore
     @State private var creating = false
+    @State private var hovering = false
 
-    private var isActive: Bool { projectStore.activeProjectID == project.id }
     private var expanded: Bool { projectStore.isExpanded(project.id) }
-    private var worktrees: [ProjectItem] { projectStore.worktrees(for: project.id) }
 
     var body: some View {
-        VStack(spacing: 0) {
-            // Project row
-            HStack(spacing: 6) {
-                // Expand/collapse chevron
-                Button {
-                    withAnimation(.easeInOut(duration: 0.15)) {
-                        projectStore.toggleExpanded(project.id)
-                    }
-                } label: {
-                    Image(systemName: expanded ? "chevron.down" : "chevron.right")
-                        .font(.system(size: 9, weight: .semibold))
-                        .foregroundStyle(.tertiary)
-                        .frame(width: 12, height: 12)
+        HStack(spacing: 4) {
+            // Expand/collapse chevron — intercepts tap, does NOT trigger List selection
+            Button {
+                withAnimation(.easeInOut(duration: 0.15)) {
+                    projectStore.toggleExpanded(project.id)
                 }
-                .buttonStyle(.plain)
+            } label: {
+                Image(systemName: expanded ? "chevron.down" : "chevron.right")
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(.tertiary)
+                    .frame(width: 12, height: 12)
+            }
+            .buttonStyle(.plain)
 
-                Image(systemName: "folder.fill")
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
+            Image(systemName: "folder.fill")
+                .font(.system(size: 12))
+                .foregroundStyle(.blue)
 
-                Button {
-                    projectStore.activateProject(id: project.id)
-                } label: {
-                    HStack(spacing: 4) {
-                        Text(project.displayName)
-                            .lineLimit(1)
-                            .font(.system(size: 12, weight: isActive ? .semibold : .regular))
+            Text(project.displayName)
+                .font(.system(size: 12, weight: .regular))
+                .lineLimit(1)
 
-                        // Show branch inline when collapsed
-                        if !expanded, let branch = project.lastBranch {
-                            Text(branch)
-                                .font(.system(size: 10))
-                                .foregroundStyle(.tertiary)
-                                .lineLimit(1)
-                        }
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                }
-                .buttonStyle(.plain)
+            // Show branch inline when collapsed
+            if !expanded, let branch = project.lastBranch {
+                Text(branch)
+                    .font(.system(size: 10))
+                    .foregroundStyle(.tertiary)
+                    .lineLimit(1)
+            }
 
-                // Create worktree button
+            Spacer(minLength: 0)
+
+            // Create worktree button (on hover)
+            if hovering || creating {
                 Button {
                     Task { await createWorktree() }
                 } label: {
@@ -132,44 +142,21 @@ private struct ProjectItemView: View {
                     } else {
                         Image(systemName: "plus.diamond")
                             .font(.system(size: 10))
+                            .foregroundStyle(.secondary)
                     }
                 }
                 .buttonStyle(.plain)
-                .opacity(0.6)
                 .help("Create worktree")
                 .disabled(creating)
             }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 5)
-            .contextMenu {
-                Button("Reveal in Finder") {
-                    NSWorkspace.shared.activateFileViewerSelecting([project.url])
-                }
-                Button("Remove Project", role: .destructive) {
-                    projectStore.removeProject(id: project.id)
-                }
+        }
+        .onHover { hovering = $0 }
+        .contextMenu {
+            Button("Reveal in Finder") {
+                NSWorkspace.shared.activateFileViewerSelecting([project.url])
             }
-
-            // Expanded: show main branch + worktrees
-            if expanded {
-                if let branch = project.lastBranch {
-                    BranchRow(
-                        label: branch,
-                        isActive: isActive,
-                        copyPath: project.path,
-                        onSelect: { projectStore.activateProject(id: project.id) }
-                    )
-                }
-
-                ForEach(worktrees) { wt in
-                    WorktreeRow(
-                        wt: wt,
-                        isActive: projectStore.activeProjectID == wt.id,
-                        onSelect: { projectStore.activateProject(id: wt.id) },
-                        onArchive: { Task { await archiveWorktree(wt) } },
-                        onRename: { newBranch in projectStore.renameWorktreeProject(id: wt.id, newBranch: newBranch) }
-                    )
-                }
+            Button("Remove Project", role: .destructive) {
+                projectStore.removeProject(id: project.id)
             }
         }
     }
@@ -193,9 +180,100 @@ private struct ProjectItemView: View {
             print("Failed to create worktree: \(error)")
         }
     }
+}
 
-    private func archiveWorktree(_ wt: ProjectItem) async {
-        // Check for uncommitted changes
+// MARK: - Branch Row (main branch, same style as worktree rows)
+
+private struct BranchRow: View {
+    let branch: String
+
+    var body: some View {
+        Label(branch, systemImage: "arrow.triangle.branch")
+            .font(.system(size: 12))
+            .padding(.leading, 16)
+    }
+}
+
+// MARK: - Worktree Row (indented child item)
+
+private struct WorktreeRow: View {
+    let wt: ProjectItem
+    @EnvironmentObject private var projectStore: ProjectStore
+
+    @State private var hovering = false
+    @State private var isRenaming = false
+    @State private var renameText = ""
+    @FocusState private var renameFieldFocused: Bool
+
+    var body: some View {
+        HStack(spacing: 5) {
+            if isRenaming {
+                Image(systemName: "arrow.triangle.branch")
+                    .font(.system(size: 10))
+                    .foregroundStyle(.secondary)
+                TextField("", text: $renameText)
+                    .textFieldStyle(.roundedBorder)
+                    .focused($renameFieldFocused)
+                    .onSubmit {
+                        let trimmed = renameText.trimmingCharacters(in: .whitespacesAndNewlines)
+                        if !trimmed.isEmpty {
+                            projectStore.renameWorktreeProject(id: wt.id, newBranch: trimmed)
+                        }
+                        isRenaming = false
+                    }
+                    .onExitCommand { isRenaming = false }
+            } else {
+                Label(wt.worktreeBranch ?? wt.name, systemImage: "arrow.triangle.branch")
+                    .font(.system(size: 12))
+            }
+
+            Spacer(minLength: 4)
+
+            if hovering && !isRenaming {
+                Button {
+                    Task { await archiveWorktree() }
+                } label: {
+                    Image(systemName: "archivebox")
+                        .font(.system(size: 9))
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.tertiary)
+                .help("Archive worktree")
+
+                Button {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(wt.path, forType: .string)
+                } label: {
+                    Image(systemName: "doc.on.doc")
+                        .font(.system(size: 9))
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.tertiary)
+                .help("Copy path")
+            }
+        }
+        .padding(.leading, 16)
+        .onHover { hovering = $0 }
+        .contextMenu {
+            Button("Rename Branch") {
+                renameText = wt.worktreeBranch ?? wt.name
+                isRenaming = true
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                    renameFieldFocused = true
+                }
+            }
+            Button("Copy Path") {
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(wt.path, forType: .string)
+            }
+            Divider()
+            Button("Archive Worktree", role: .destructive) {
+                Task { await archiveWorktree() }
+            }
+        }
+    }
+
+    private func archiveWorktree() async {
         do {
             let dirty = try await GitService.hasUncommittedChanges(at: wt.url)
             if dirty {
@@ -210,16 +288,12 @@ private struct ProjectItemView: View {
                 }
                 guard proceed else { return }
             }
-        } catch {
-            // If check fails, proceed anyway
-        }
+        } catch {}
 
-        // Switch to parent if this is the active worktree
         if projectStore.activeProjectID == wt.id, let parentID = wt.worktreeOf {
             projectStore.activateProject(id: parentID)
         }
 
-        // Use parent's git to remove the worktree
         if let parentID = wt.worktreeOf,
            let parent = projectStore.projects.first(where: { $0.id == parentID }) {
             let parentGit = GitService(workingDirectory: parent.url)
@@ -231,147 +305,5 @@ private struct ProjectItemView: View {
         }
 
         projectStore.removeWorktreeProject(id: wt.id)
-    }
-}
-
-// MARK: - Branch Row (main branch under project)
-
-private struct BranchRow: View {
-    let label: String
-    let isActive: Bool
-    let copyPath: String
-    let onSelect: () -> Void
-
-    @State private var hovering = false
-
-    var body: some View {
-        Button(action: onSelect) {
-            HStack(spacing: 5) {
-                Image(systemName: "arrow.triangle.branch")
-                    .font(.system(size: 9))
-                    .foregroundStyle(isActive ? Color.primary : .secondary)
-
-                Text(label)
-                    .font(.system(size: 11))
-                    .lineLimit(1)
-                    .foregroundStyle(isActive ? .primary : .secondary)
-
-                Spacer(minLength: 4)
-
-                if isActive && !hovering {
-                    Circle()
-                        .fill(Color.accentColor)
-                        .frame(width: 5, height: 5)
-                }
-
-                if hovering {
-                    Button {
-                        NSPasteboard.general.clearContents()
-                        NSPasteboard.general.setString(copyPath, forType: .string)
-                    } label: {
-                        Image(systemName: "doc.on.doc")
-                            .font(.system(size: 9))
-                    }
-                    .buttonStyle(.plain)
-                    .opacity(0.6)
-                    .help("Copy path")
-                }
-            }
-            .padding(.leading, 28)
-            .padding(.trailing, 10)
-            .padding(.vertical, 3)
-            .background(isActive ? Color.accentColor.opacity(0.1) : Color.clear)
-        }
-        .buttonStyle(.plain)
-        .onHover { hovering = $0 }
-    }
-}
-
-// MARK: - Worktree Row
-
-private struct WorktreeRow: View {
-    let wt: ProjectItem
-    let isActive: Bool
-    let onSelect: () -> Void
-    let onArchive: () -> Void
-    let onRename: (String) -> Void
-
-    @State private var hovering = false
-    @State private var isRenaming = false
-    @State private var renameText = ""
-
-    @FocusState private var renameFieldFocused: Bool
-
-    var body: some View {
-        HStack(spacing: 5) {
-            Image(systemName: "arrow.triangle.branch")
-                .font(.system(size: 9))
-                .foregroundStyle(isActive ? Color.primary : .secondary)
-
-            if isRenaming {
-                TextField("", text: $renameText)
-                    .font(.system(size: 11))
-                    .textFieldStyle(.roundedBorder)
-                    .focused($renameFieldFocused)
-                    .onSubmit {
-                        let trimmed = renameText.trimmingCharacters(in: .whitespacesAndNewlines)
-                        if !trimmed.isEmpty { onRename(trimmed) }
-                        isRenaming = false
-                    }
-                    .onExitCommand { isRenaming = false }
-            } else {
-                Text(wt.worktreeBranch ?? wt.name)
-                    .font(.system(size: 11))
-                    .lineLimit(1)
-                    .foregroundStyle(isActive ? .primary : .secondary)
-            }
-
-            Spacer(minLength: 4)
-
-            if isActive && !hovering && !isRenaming {
-                Circle()
-                    .fill(Color.accentColor)
-                    .frame(width: 5, height: 5)
-            }
-
-            if hovering && !isRenaming {
-                Button {
-                    onArchive()
-                } label: {
-                    Image(systemName: "archivebox")
-                        .font(.system(size: 9))
-                }
-                .buttonStyle(.plain)
-                .opacity(0.6)
-                .help("Archive worktree")
-
-                Button {
-                    NSPasteboard.general.clearContents()
-                    NSPasteboard.general.setString(wt.path, forType: .string)
-                } label: {
-                    Image(systemName: "doc.on.doc")
-                        .font(.system(size: 9))
-                }
-                .buttonStyle(.plain)
-                .opacity(0.6)
-                .help("Copy path")
-            }
-        }
-        .padding(.leading, 28)
-        .padding(.trailing, 10)
-        .padding(.vertical, 3)
-        .background(isActive ? Color.accentColor.opacity(0.1) : Color.clear)
-        .contentShape(Rectangle())
-        .onHover { hovering = $0 }
-        .onTapGesture(count: 2) {
-            renameText = wt.worktreeBranch ?? wt.name
-            isRenaming = true
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                renameFieldFocused = true
-            }
-        }
-        .onTapGesture(count: 1) {
-            if !isRenaming { onSelect() }
-        }
     }
 }

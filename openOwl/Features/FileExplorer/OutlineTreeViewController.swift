@@ -36,6 +36,7 @@ final class OutlineTreeViewController: NSViewController {
     var onRevealInFinder: ((URL) -> Void)?
     var onCopyPath: ((URL) -> Void)?
     var onDropFiles: ((URL, [URL]) -> Void)?
+    var onExpandDirectory: ((String) -> Void)?
 
     // MARK: - Data
 
@@ -466,6 +467,15 @@ extension OutlineTreeViewController: NSOutlineViewDelegate {
 
     func outlineView(_ outlineView: NSOutlineView, shouldSelectItem item: Any) -> Bool {
         true
+    }
+
+    func outlineViewItemWillExpand(_ notification: Notification) {
+        guard let item = notification.userInfo?["NSObject"] as? NSString else { return }
+        let path = item as String
+        if let node = nodeIndex[path], node.isDirectory, node.children == nil {
+            // Lazy load: scan this directory's children
+            onExpandDirectory?(path)
+        }
     }
 
     // Context menu
