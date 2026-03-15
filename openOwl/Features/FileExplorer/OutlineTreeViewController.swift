@@ -97,7 +97,6 @@ final class OutlineTreeViewController: NSViewController {
         // Initial data may have been set before loadView; apply it now
         if !rootNodes.isEmpty {
             outlineView.reloadData()
-            expandTopLevel()
         }
     }
 

@@ -258,15 +258,16 @@ final class GitService {
         let home = FileManager.default.homeDirectoryForCurrentUser.path
         let projectName = workingDirectory.lastPathComponent
         let worktreeBase = "\(home)/.openowl/workspace/projects/\(projectName)"
-        // Strip branch prefix (e.g. fix/abc → abc, feature/login → login)
         let strippedDir = dirName.components(separatedBy: "/").last ?? dirName
         let worktreePath = "\(worktreeBase)/\(strippedDir)"
 
-        // Ensure parent directory exists
         try FileManager.default.createDirectory(
             atPath: worktreeBase,
             withIntermediateDirectories: true
         )
+
+        // Detect main branch (main or master)
+        let mainBranch = await detectMainBranch()
 
         // Check if branch already exists
         let branchList = try await runGit(["branch", "--list", branch])
@@ -275,10 +276,28 @@ final class GitService {
         if exists {
             _ = try await runGit(["worktree", "add", worktreePath, branch])
         } else {
-            _ = try await runGit(["worktree", "add", "-b", branch, worktreePath])
+            // Create new branch from main
+            _ = try await runGit(["worktree", "add", "-b", branch, worktreePath, mainBranch])
         }
 
         return worktreePath
+    }
+
+    /// Detect whether the repo uses "main" or "master" as default branch.
+    private func detectMainBranch() async -> String {
+        // Check remote HEAD first
+        if let symbolic = try? await runGit(["symbolic-ref", "refs/remotes/origin/HEAD"]),
+           !symbolic.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            let ref = symbolic.trimmingCharacters(in: .whitespacesAndNewlines)
+            // refs/remotes/origin/main → main
+            return ref.components(separatedBy: "/").last ?? "main"
+        }
+        // Fallback: check if "main" branch exists
+        let branches = (try? await runGit(["branch", "--list", "main"])) ?? ""
+        if !branches.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return "main"
+        }
+        return "master"
     }
 
     func listWorktrees() async throws -> [WorktreeInfo] {
@@ -329,6 +348,37 @@ final class GitService {
     func getCurrentBranch() async throws -> String {
         let output = try await runGit(["rev-parse", "--abbrev-ref", "HEAD"])
         return output.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// Extract GitHub/GitLab username from remote origin URL.
+    /// Supports: git@github.com:user/repo.git and https://github.com/user/repo.git
+    func remoteUsername() async -> String? {
+        guard let url = try? await runGit(["config", "--get", "remote.origin.url"])
+            .trimmingCharacters(in: .whitespacesAndNewlines),
+              !url.isEmpty else { return nil }
+
+        // SSH format: git@host:user/repo.git → extract "user"
+        if let colonRange = url.range(of: ":"),
+           url.contains("@"),
+           !url.hasPrefix("http") {
+            let afterColon = url[colonRange.upperBound...]
+            if let slash = afterColon.firstIndex(of: "/") {
+                let user = String(afterColon[afterColon.startIndex..<slash])
+                if !user.isEmpty { return user }
+            }
+        }
+
+        // HTTPS format: https://host/user/repo.git → extract "user"
+        if url.hasPrefix("http"),
+           let urlObj = URL(string: url) {
+            let components = urlObj.pathComponents // ["/" , "user", "repo.git"]
+            if components.count >= 2 {
+                let user = components[1]
+                if !user.isEmpty && user != "/" { return user }
+            }
+        }
+
+        return nil
     }
 
     func ignoredPaths() async throws -> [String] {

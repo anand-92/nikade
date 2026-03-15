@@ -61,6 +61,11 @@ class TerminalNSView: NSView {
         surfaceConfig.scale_factor = Double(window.backingScaleFactor)
         surfaceConfig.font_size = 0
 
+        // Set working directory from process cwd (set by syncActiveProjectContext)
+        let cwd = FileManager.default.currentDirectoryPath
+        var cwdPtr = strdup(cwd)
+        surfaceConfig.working_directory = UnsafePointer(cwdPtr)
+
         // Inject TERMINFO_DIRS so the shell can find xterm-ghostty terminfo
         let resourcesPath = Bundle.main.resourceURL?
             .appendingPathComponent("ghostty-resources/terminfo").path
@@ -84,6 +89,7 @@ class TerminalNSView: NSView {
             surface = ghostty_surface_new(ghosttyApp, &surfaceConfig)
         }
         for ptr in envStorage { free(ptr) }
+        free(cwdPtr); cwdPtr = nil
 
         guard surface != nil else {
             NSLog("openOwl: Failed to create ghostty surface")
@@ -111,6 +117,15 @@ class TerminalNSView: NSView {
             self.surface = nil
         }
         super.removeFromSuperview()
+    }
+
+    // MARK: - Public API
+
+    func sendText(_ text: String) {
+        guard let surface else { return }
+        text.withCString { cstr in
+            ghostty_surface_text(surface, cstr, UInt(text.utf8.count))
+        }
     }
 
     // MARK: - First Responder

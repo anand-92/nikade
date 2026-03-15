@@ -32,7 +32,7 @@ struct OutlineTreeView: NSViewControllerRepresentable {
 
         // Initial data load
         controller.updateData(rootNodes: store.rootNodes, nodeIndex: store.nodeIndex)
-        controller.expandTopLevel()
+        // Start collapsed — user expands directories manually
 
         // Subscribe to store changes
         context.coordinator.subscribe(store: store, controller: controller)

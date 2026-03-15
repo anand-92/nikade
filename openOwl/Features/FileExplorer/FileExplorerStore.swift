@@ -319,15 +319,35 @@ final class FileExplorerStore: ObservableObject {
         isRefreshing = true
         defer { isRefreshing = false }
 
-        let gitContext = await loadGitContext(for: projectURL)
         let capturedURL = projectURL
-        let result = await Task.detached(priority: .userInitiated) {
-            Self.scanProject(projectURL: capturedURL, gitContext: gitContext)
-        }.value
+        let t0 = CFAbsoluteTimeGetCurrent()
 
-        rootNodes = result.nodes
-        nodeIndex = result.index
-        searchableFileNodes = result.index.values
+        // Phase 1: Scan without git (fast, show tree immediately)
+        let quickResult = await Task.detached(priority: .userInitiated) {
+            Self.scanProject(projectURL: capturedURL, gitContext: .empty)
+        }.value
+        NSLog("FileExplorer: phase1 scan %.0fms (%d nodes)", (CFAbsoluteTimeGetCurrent() - t0) * 1000, quickResult.index.count)
+
+        rootNodes = quickResult.nodes
+        nodeIndex = quickResult.index
+
+        // Phase 2: Load git context in background, then merge
+        let t1 = CFAbsoluteTimeGetCurrent()
+        let gitContext = await loadGitContext(for: capturedURL)
+        NSLog("FileExplorer: git context %.0fms", (CFAbsoluteTimeGetCurrent() - t1) * 1000)
+        guard projectURL == capturedURL else { return }
+
+        if !gitContext.statusByAbsolutePath.isEmpty || !gitContext.ignoredExactPaths.isEmpty {
+            let t2 = CFAbsoluteTimeGetCurrent()
+            let fullResult = await Task.detached(priority: .userInitiated) {
+                Self.scanProject(projectURL: capturedURL, gitContext: gitContext)
+            }.value
+            NSLog("FileExplorer: phase2 scan %.0fms (%d nodes)", (CFAbsoluteTimeGetCurrent() - t2) * 1000, fullResult.index.count)
+            rootNodes = fullResult.nodes
+            nodeIndex = fullResult.index
+        }
+
+        searchableFileNodes = nodeIndex.values
             .filter { !$0.isDirectory }
             .sorted { lhs, rhs in
                 lhs.url.path.localizedStandardCompare(rhs.url.path) == .orderedAscending
@@ -337,7 +357,6 @@ final class FileExplorerStore: ObservableObject {
             self.selectedNodeID = nil
         }
         syncQuickOpenSelection()
-
         loadPreviewForSelection()
     }
 

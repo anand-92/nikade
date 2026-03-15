@@ -12,10 +12,12 @@ struct TerminalWorkspaceView: View {
             TerminalTabBarView()
 
             ZStack {
-                ForEach(workspace.tabs) { tab in
+                // Only render tabs for the current project (lazy: other projects' shells don't start)
+                ForEach(workspace.visibleTabs) { tab in
+                    let isActive = workspace.activeTabID == tab.id
                     TerminalTabContentView(ghosttyApp: ghosttyApp, tab: tab)
-                        .opacity(workspace.activeTabID == tab.id ? 1 : 0)
-                        .allowsHitTesting(workspace.activeTabID == tab.id)
+                        .opacity(isActive ? 1 : 0)
+                        .allowsHitTesting(isActive)
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -48,15 +50,16 @@ struct TerminalWorkspaceView: View {
 private struct TerminalTabBarView: View {
     @EnvironmentObject private var workspace: TerminalWorkspaceStore
 
-    private var hasMultipleTabs: Bool { workspace.tabs.count > 1 }
+    private var displayTabs: [TerminalTabState] { workspace.visibleTabs }
+    private var hasMultipleTabs: Bool { displayTabs.count > 1 }
 
     var body: some View {
         HStack(spacing: 0) {
-            // Tab 列表
-            ForEach(Array(workspace.tabs.enumerated()), id: \.element.id) { index, tab in
+            // Tab 列表 (only current project's tabs)
+            ForEach(Array(displayTabs.enumerated()), id: \.element.id) { index, tab in
                 HStack(spacing: 4) {
                     Button {
-                        workspace.selectTab(index: index)
+                        workspace.activeTabID = tab.id
                     } label: {
                         HStack(spacing: 3) {
                             Text(tab.title)
@@ -76,7 +79,7 @@ private struct TerminalTabBarView: View {
                     // 关闭按钮：仅多 tab 时显示
                     if hasMultipleTabs {
                         Button {
-                            workspace.selectTab(index: index)
+                            workspace.activeTabID = tab.id
                             if workspace.closeCurrent() == .closeWindow {
                                 NSApp.keyWindow?.performClose(nil)
                             }

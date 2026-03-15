@@ -9,6 +9,7 @@ struct ProjectItem: Identifiable, Hashable, Codable {
     var worktreeOf: String?       // parent project id
     var worktreeBranch: String?   // worktree branch name
     var lastBranch: String?       // last known branch (persisted for non-active projects)
+    var branchPrefix: String?     // GitHub username or custom prefix for worktree branches
 
     var url: URL { URL(fileURLWithPath: path, isDirectory: true) }
     var displayName: String { name }
@@ -34,13 +35,21 @@ struct ProjectItem: Identifiable, Hashable, Codable {
 final class ProjectStore: ObservableObject {
     @Published private(set) var projects: [ProjectItem] = []
     @Published var activeProjectID: String?
-    @Published var branchPrefix: String = "openowl"
     @Published var collapsedProjectIDs: Set<String> = []
 
     private let defaults = UserDefaults.standard
     private let storeKey = "openowl.projects.store"
     private let activeProjectKey = "openowl.projects.active"
-    private let branchPrefixKey = "openowl.branchPrefix"
+
+    /// Branch prefix for the active root project (reads from ProjectItem.branchPrefix)
+    var branchPrefix: String {
+        guard let activeID = activeProjectID,
+              let project = projects.first(where: { $0.id == activeID }) else { return "dev" }
+        let root = project.isWorktree
+            ? projects.first(where: { $0.id == project.worktreeOf }) ?? project
+            : project
+        return root.branchPrefix ?? "dev"
+    }
 
     // MARK: - Computed
 
@@ -112,6 +121,30 @@ final class ProjectStore: ObservableObject {
         guard projects.contains(where: { $0.id == id }) else { return }
         activeProjectID = id
         persist()
+        detectBranchPrefix(for: id)
+    }
+
+    private func detectBranchPrefix(for projectID: String) {
+        guard let project = projects.first(where: { $0.id == projectID }) else { return }
+        // Find root project
+        let rootID = project.isWorktree ? (project.worktreeOf ?? projectID) : projectID
+        guard let rootIndex = projects.firstIndex(where: { $0.id == rootID }) else { return }
+
+        // Already detected
+        if projects[rootIndex].branchPrefix != nil { return }
+
+        let rootURL = projects[rootIndex].url
+        Task {
+            let git = GitService(workingDirectory: rootURL)
+            let username = await git.remoteUsername()
+                ?? NSFullUserName().lowercased().replacingOccurrences(of: " ", with: "")
+
+            await MainActor.run {
+                guard let idx = self.projects.firstIndex(where: { $0.id == rootID }) else { return }
+                self.projects[idx].branchPrefix = username
+                self.persist()
+            }
+        }
     }
 
     func removeProject(id: String) {
@@ -193,8 +226,6 @@ final class ProjectStore: ObservableObject {
                 .uniqued()
         }
 
-        branchPrefix = defaults.string(forKey: branchPrefixKey) ?? "openowl"
-
         let storedActiveProject = defaults.string(forKey: activeProjectKey)
         if let storedActiveProject,
            projects.contains(where: { $0.id == storedActiveProject }) {
@@ -222,7 +253,6 @@ final class ProjectStore: ObservableObject {
             defaults.set(data, forKey: storeKey)
         }
         defaults.set(activeProjectID, forKey: activeProjectKey)
-        defaults.set(branchPrefix, forKey: branchPrefixKey)
     }
 }
 

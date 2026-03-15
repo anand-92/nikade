@@ -166,7 +166,8 @@ private struct ProjectItemView: View {
                         wt: wt,
                         isActive: projectStore.activeProjectID == wt.id,
                         onSelect: { projectStore.activateProject(id: wt.id) },
-                        onArchive: { Task { await archiveWorktree(wt) } }
+                        onArchive: { Task { await archiveWorktree(wt) } },
+                        onRename: { newBranch in projectStore.renameWorktreeProject(id: wt.id, newBranch: newBranch) }
                     )
                 }
             }
@@ -293,58 +294,84 @@ private struct WorktreeRow: View {
     let isActive: Bool
     let onSelect: () -> Void
     let onArchive: () -> Void
+    let onRename: (String) -> Void
 
     @State private var hovering = false
+    @State private var isRenaming = false
+    @State private var renameText = ""
+
+    @FocusState private var renameFieldFocused: Bool
 
     var body: some View {
-        Button(action: onSelect) {
-            HStack(spacing: 5) {
-                Image(systemName: "arrow.triangle.branch")
-                    .font(.system(size: 9))
-                    .foregroundStyle(isActive ? Color.primary : .secondary)
+        HStack(spacing: 5) {
+            Image(systemName: "arrow.triangle.branch")
+                .font(.system(size: 9))
+                .foregroundStyle(isActive ? Color.primary : .secondary)
 
+            if isRenaming {
+                TextField("", text: $renameText)
+                    .font(.system(size: 11))
+                    .textFieldStyle(.roundedBorder)
+                    .focused($renameFieldFocused)
+                    .onSubmit {
+                        let trimmed = renameText.trimmingCharacters(in: .whitespacesAndNewlines)
+                        if !trimmed.isEmpty { onRename(trimmed) }
+                        isRenaming = false
+                    }
+                    .onExitCommand { isRenaming = false }
+            } else {
                 Text(wt.worktreeBranch ?? wt.name)
                     .font(.system(size: 11))
                     .lineLimit(1)
                     .foregroundStyle(isActive ? .primary : .secondary)
-
-                Spacer(minLength: 4)
-
-                if isActive && !hovering {
-                    Circle()
-                        .fill(Color.accentColor)
-                        .frame(width: 5, height: 5)
-                }
-
-                if hovering {
-                    Button {
-                        onArchive()
-                    } label: {
-                        Image(systemName: "archivebox")
-                            .font(.system(size: 9))
-                    }
-                    .buttonStyle(.plain)
-                    .opacity(0.6)
-                    .help("Archive worktree")
-
-                    Button {
-                        NSPasteboard.general.clearContents()
-                        NSPasteboard.general.setString(wt.path, forType: .string)
-                    } label: {
-                        Image(systemName: "doc.on.doc")
-                            .font(.system(size: 9))
-                    }
-                    .buttonStyle(.plain)
-                    .opacity(0.6)
-                    .help("Copy path")
-                }
             }
-            .padding(.leading, 28)
-            .padding(.trailing, 10)
-            .padding(.vertical, 3)
-            .background(isActive ? Color.accentColor.opacity(0.1) : Color.clear)
+
+            Spacer(minLength: 4)
+
+            if isActive && !hovering && !isRenaming {
+                Circle()
+                    .fill(Color.accentColor)
+                    .frame(width: 5, height: 5)
+            }
+
+            if hovering && !isRenaming {
+                Button {
+                    onArchive()
+                } label: {
+                    Image(systemName: "archivebox")
+                        .font(.system(size: 9))
+                }
+                .buttonStyle(.plain)
+                .opacity(0.6)
+                .help("Archive worktree")
+
+                Button {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(wt.path, forType: .string)
+                } label: {
+                    Image(systemName: "doc.on.doc")
+                        .font(.system(size: 9))
+                }
+                .buttonStyle(.plain)
+                .opacity(0.6)
+                .help("Copy path")
+            }
         }
-        .buttonStyle(.plain)
+        .padding(.leading, 28)
+        .padding(.trailing, 10)
+        .padding(.vertical, 3)
+        .background(isActive ? Color.accentColor.opacity(0.1) : Color.clear)
+        .contentShape(Rectangle())
         .onHover { hovering = $0 }
+        .onTapGesture(count: 2) {
+            renameText = wt.worktreeBranch ?? wt.name
+            isRenaming = true
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                renameFieldFocused = true
+            }
+        }
+        .onTapGesture(count: 1) {
+            if !isRenaming { onSelect() }
+        }
     }
 }

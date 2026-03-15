@@ -6,12 +6,20 @@ struct openOwlApp: App {
     @StateObject private var ghosttyManager: GhosttyAppManager
     @StateObject private var workspaceStore = TerminalWorkspaceStore()
     @StateObject private var navigationStore = AppNavigationStore()
-    @StateObject private var projectStore = ProjectStore()
+    @StateObject private var projectStore: ProjectStore
     @StateObject private var gitChangesStore = GitChangesStore()
     @StateObject private var fileExplorerStore = FileExplorerStore()
 
     init() {
         Self.setupEnvironment()
+
+        // Set cwd to active project BEFORE ghostty starts, so the first shell
+        // opens in the project directory instead of ~
+        let store = ProjectStore()
+        if let url = store.activeProjectURL {
+            FileManager.default.changeCurrentDirectoryPath(url.path)
+        }
+        _projectStore = StateObject(wrappedValue: store)
         _ghosttyManager = StateObject(wrappedValue: GhosttyAppManager())
     }
 
@@ -92,9 +100,19 @@ struct openOwlApp: App {
 
     @MainActor
     private func syncActiveProjectContext() {
+        let t0 = CFAbsoluteTimeGetCurrent()
         guard let projectURL = projectStore.activeProjectURL else { return }
+        NSLog("syncProject: start %@", projectURL.lastPathComponent)
         gitChangesStore.setPreferredDirectory(projectURL)
         fileExplorerStore.setProject(projectURL)
+        NSLog("syncProject: setProject done %.0fms", (CFAbsoluteTimeGetCurrent() - t0) * 1000)
+
+        // Switch terminal workspace to this project
+        if let activeID = projectStore.activeProjectID {
+            FileManager.default.changeCurrentDirectoryPath(projectURL.path)
+            workspaceStore.switchProject(activeID)
+            NSLog("syncProject: switchProject done %.0fms", (CFAbsoluteTimeGetCurrent() - t0) * 1000)
+        }
 
         // Fetch current branch immediately for sidebar display
         // (don't wait for Git tab to be opened)

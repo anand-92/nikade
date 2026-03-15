@@ -318,13 +318,41 @@ final class TerminalWorkspaceStore: ObservableObject {
 
     private var nextTabNumber = 1
 
+    // Per-project terminal tracking
+    @Published private(set) var activeProjectID: String?
+    private var tabProjectMap: [UUID: String] = [:]  // tabID → projectID
+
+    func switchProject(_ projectID: String?) {
+        activeProjectID = projectID
+
+        // Create initial tab if project has none
+        let projectTabs = tabs.filter { tabProjectMap[$0.id] == projectID }
+        if projectTabs.isEmpty, let projectID {
+            _ = newTab(forProject: projectID)
+        } else if let firstTab = projectTabs.first {
+            activeTabID = firstTab.id
+        }
+    }
+
+    /// Tabs for the currently active project
+    var visibleTabs: [TerminalTabState] {
+        guard let activeProjectID else { return tabs }
+        return tabs.filter { tabProjectMap[$0.id] == activeProjectID }
+    }
+
+    /// Check if a tab belongs to the active project
+    func isTabVisible(_ tabID: UUID) -> Bool {
+        guard let activeProjectID else { return true }
+        return tabProjectMap[tabID] == activeProjectID
+    }
+
     func ensureInitialTab() {
         guard tabs.isEmpty else { return }
         _ = newTab()
     }
 
     @discardableResult
-    func newTab(makeActive: Bool = true) -> UUID {
+    func newTab(makeActive: Bool = true, forProject projectID: String? = nil) -> UUID {
         let paneID = UUID()
         let tabID = UUID()
 
@@ -337,6 +365,7 @@ final class TerminalWorkspaceStore: ObservableObject {
         nextTabNumber += 1
 
         tabs.append(tab)
+        tabProjectMap[tabID] = projectID ?? activeProjectID
 
         if makeActive {
             activeTabID = tabID
@@ -386,16 +415,22 @@ final class TerminalWorkspaceStore: ObservableObject {
         }
 
         if tabs.count > 1 {
+            let removedID = tabs[index].id
+            tabProjectMap.removeValue(forKey: removedID)
             tabs.remove(at: index)
-            let fallbackIndex = min(index, tabs.count - 1)
-            activeTabID = tabs[fallbackIndex].id
 
-            if tabs[fallbackIndex].focusedPaneID == nil {
-                tabs[fallbackIndex].focusedPaneID = tabs[fallbackIndex].splitTree.firstPaneID
-            }
+            // Switch to next visible tab for this project
+            let visible = visibleTabs
+            let fallback = visible.first ?? tabs.last
+            activeTabID = fallback?.id
 
-            if let paneID = tabs[fallbackIndex].focusedPaneID {
-                requestFocus(for: paneID)
+            if let fbID = activeTabID, let fbIdx = tabs.firstIndex(where: { $0.id == fbID }) {
+                if tabs[fbIdx].focusedPaneID == nil {
+                    tabs[fbIdx].focusedPaneID = tabs[fbIdx].splitTree.firstPaneID
+                }
+                if let paneID = tabs[fbIdx].focusedPaneID {
+                    requestFocus(for: paneID)
+                }
             }
             return .none
         }
