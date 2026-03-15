@@ -37,6 +37,7 @@ final class GitChangesStore: ObservableObject {
     private var watcher: FileWatcher?
     private var hasStarted = false
     private let commitMessageGenerator = CommitMessageGenerator()
+    private var generateTask: Task<Void, Never>?
 
     private var preferredDirectory: URL
 
@@ -214,31 +215,44 @@ final class GitChangesStore: ObservableObject {
     }
 
     func generateCommitMessage() {
-        guard let gitService else { return }
-        guard !isGeneratingMessage else { return }
+        guard let gitService else { NSLog("generateCommitMessage: no gitService"); return }
+        guard !isGeneratingMessage else { NSLog("generateCommitMessage: already generating"); return }
+        NSLog("generateCommitMessage: starting")
         isGeneratingMessage = true
 
-        Task {
+        generateTask = Task {
             defer { isGeneratingMessage = false }
             do {
                 let diff = try await gitService.diff(staged: true)
+                try Task.checkCancellation()
                 guard !diff.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-                    // No staged changes — try all changes
                     let allDiff = try await gitService.diff(staged: false)
+                    try Task.checkCancellation()
                     guard !allDiff.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
                         errorMessage = "No changes to generate message for."
                         return
                     }
                     let message = try await commitMessageGenerator.generate(diff: allDiff)
+                    try Task.checkCancellation()
                     if !message.isEmpty { commitMessage = message }
                     return
                 }
                 let message = try await commitMessageGenerator.generate(diff: diff)
+                try Task.checkCancellation()
                 if !message.isEmpty { commitMessage = message }
+            } catch is CancellationError {
+                // cancelled by user
             } catch {
                 errorMessage = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
             }
         }
+    }
+
+    func cancelGenerateCommitMessage() {
+        generateTask?.cancel()
+        generateTask = nil
+        commitMessageGenerator.cancel()
+        isGeneratingMessage = false
     }
 
     func commit() {

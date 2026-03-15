@@ -6,6 +6,11 @@ options:
   xcodeVersion: "16.0"
   createIntermediateGroups: true
 
+packages:
+  CodeEditSourceEditor:
+    url: https://github.com/CodeEditApp/CodeEditSourceEditor
+    from: "0.15.2"
+
 settings:
   base:
     SWIFT_OBJC_BRIDGING_HEADER: openOwl/Ghostty/openOwl-Bridging-Header.h
@@ -54,6 +59,9 @@ targets:
           - "-framework Security"
           - "-lz"
           - "-lc++"
+    dependencies:
+      - package: CodeEditSourceEditor
+        product: CodeEditSourceEditor
     entitlements:
       path: openOwl/Resources/openOwl.entitlements
       properties:

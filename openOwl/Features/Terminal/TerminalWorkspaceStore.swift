@@ -23,6 +23,16 @@ enum TerminalFocusDirection {
     case down
 }
 
+struct SplitDividerInfo: Identifiable {
+    /// Stable ID derived from the two pane IDs this divider separates
+    var id: String { "\(firstPaneID)-\(secondPaneID)" }
+    let axis: TerminalSplitAxis
+    let ratio: Double
+    let frame: CGRect
+    let firstPaneID: UUID
+    let secondPaneID: UUID
+}
+
 enum PaneDropZone: Equatable {
     case left, right, top, bottom, center
 }
@@ -216,46 +226,79 @@ indirect enum TerminalSplitNode: Equatable {
         }
     }
 
+    /// All leaf pane IDs in tree order.
+    var allPaneIDs: [UUID] {
+        switch self {
+        case .leaf(let id): return [id]
+        case .split(_, _, let first, let second):
+            return first.allPaneIDs + second.allPaneIDs
+        }
+    }
+
     func normalizedPaneFrames() -> [UUID: CGRect] {
         paneFrames(in: CGRect(x: 0, y: 0, width: 1, height: 1))
     }
 
-    private func paneFrames(in rect: CGRect) -> [UUID: CGRect] {
+    /// Calculate pane frames in actual pixel coordinates.
+    func paneFrames(in rect: CGRect) -> [UUID: CGRect] {
         switch self {
         case .leaf(let paneID):
             return [paneID: rect]
 
         case .split(let axis, let ratio, let first, let second):
-            let clampedRatio = min(max(ratio, 0.1), 0.9)
-
-            let firstRect: CGRect
-            let secondRect: CGRect
-
-            switch axis {
-            case .horizontal:
-                let firstWidth = rect.width * clampedRatio
-                firstRect = CGRect(x: rect.minX, y: rect.minY, width: firstWidth, height: rect.height)
-                secondRect = CGRect(
-                    x: rect.minX + firstWidth,
-                    y: rect.minY,
-                    width: rect.width - firstWidth,
-                    height: rect.height
-                )
-
-            case .vertical:
-                let firstHeight = rect.height * clampedRatio
-                firstRect = CGRect(x: rect.minX, y: rect.minY, width: rect.width, height: firstHeight)
-                secondRect = CGRect(
-                    x: rect.minX,
-                    y: rect.minY + firstHeight,
-                    width: rect.width,
-                    height: rect.height - firstHeight
-                )
-            }
-
+            let (firstRect, secondRect) = splitRects(rect: rect, axis: axis, ratio: ratio)
             var output = first.paneFrames(in: firstRect)
             output.merge(second.paneFrames(in: secondRect)) { _, new in new }
             return output
+        }
+    }
+
+    /// Info about each divider in the tree for flat rendering.
+    func dividerInfos(in rect: CGRect) -> [SplitDividerInfo] {
+        switch self {
+        case .leaf:
+            return []
+        case .split(let axis, let ratio, let first, let second):
+            let (firstRect, secondRect) = splitRects(rect: rect, axis: axis, ratio: ratio)
+            let clampedRatio = min(max(ratio, 0.1), 0.9)
+
+            let dividerFrame: CGRect
+            switch axis {
+            case .horizontal:
+                let x = rect.minX + rect.width * clampedRatio
+                dividerFrame = CGRect(x: x - 0.5, y: rect.minY, width: 1, height: rect.height)
+            case .vertical:
+                let y = rect.minY + rect.height * clampedRatio
+                dividerFrame = CGRect(x: rect.minX, y: y - 0.5, width: rect.width, height: 1)
+            }
+
+            let info = SplitDividerInfo(
+                axis: axis,
+                ratio: clampedRatio,
+                frame: dividerFrame,
+                firstPaneID: first.firstPaneID ?? UUID(),
+                secondPaneID: second.firstPaneID ?? UUID()
+            )
+
+            return [info] + first.dividerInfos(in: firstRect) + second.dividerInfos(in: secondRect)
+        }
+    }
+
+    private func splitRects(rect: CGRect, axis: TerminalSplitAxis, ratio: Double) -> (CGRect, CGRect) {
+        let clampedRatio = min(max(ratio, 0.1), 0.9)
+        switch axis {
+        case .horizontal:
+            let w = rect.width * clampedRatio
+            return (
+                CGRect(x: rect.minX, y: rect.minY, width: w, height: rect.height),
+                CGRect(x: rect.minX + w, y: rect.minY, width: rect.width - w, height: rect.height)
+            )
+        case .vertical:
+            let h = rect.height * clampedRatio
+            return (
+                CGRect(x: rect.minX, y: rect.minY, width: rect.width, height: h),
+                CGRect(x: rect.minX, y: rect.minY + h, width: rect.width, height: rect.height - h)
+            )
         }
     }
 }
@@ -410,22 +453,31 @@ final class TerminalWorkspaceStore: ObservableObject {
         var tab = tabs[index]
 
         if zone == .center {
+            // Swap: tree shape stays the same, just swap leaf IDs
             tab.splitTree = tab.splitTree.swappingPanes(sourceID, targetID)
         } else {
+            // Edge drop: use a placeholder to avoid removing sourceID from the tree,
+            // which would destroy the terminal surface.
+            let placeholderID = UUID()
             let axis: TerminalSplitAxis
             let sourceFirst: Bool
 
             switch zone {
-            case .left:  axis = .horizontal; sourceFirst = true
-            case .right: axis = .horizontal; sourceFirst = false
-            case .top:   axis = .vertical;   sourceFirst = true
-            case .bottom: axis = .vertical;  sourceFirst = false
+            case .left:   axis = .horizontal; sourceFirst = true
+            case .right:  axis = .horizontal; sourceFirst = false
+            case .top:    axis = .vertical;   sourceFirst = true
+            case .bottom: axis = .vertical;   sourceFirst = false
             case .center: return
             }
 
-            guard let withoutSource = tab.splitTree.removingPane(sourceID) else { return }
-            guard let newTree = withoutSource.insertingPaneBeside(targetID, newPaneID: sourceID, axis: axis, newPaneFirst: sourceFirst) else { return }
-            tab.splitTree = newTree
+            // Step 1: Replace source with placeholder (keeps tree structure valid)
+            var tree = tab.splitTree.swappingPanes(sourceID, placeholderID)
+            // Step 2: Insert sourceID beside targetID
+            guard let withSplit = tree.insertingPaneBeside(targetID, newPaneID: sourceID, axis: axis, newPaneFirst: sourceFirst) else { return }
+            tree = withSplit
+            // Step 3: Remove the placeholder
+            guard let final = tree.removingPane(placeholderID) else { return }
+            tab.splitTree = final
         }
 
         tab.focusedPaneID = sourceID

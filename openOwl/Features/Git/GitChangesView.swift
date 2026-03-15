@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import SwiftUI
 
@@ -6,6 +7,8 @@ struct GitChangesView: View {
     @State private var confirmationAction: GitConfirmationAction?
     @State private var selectedIDs: Set<String> = []
     @State private var lastClickedID: String?
+    @State private var expandedHunks: Set<Int> = []
+    @State private var cachedFileLines: [String]?
 
     var body: some View {
         HSplitView {
@@ -17,14 +20,17 @@ struct GitChangesView: View {
                 gitGraphPanel
                     .frame(minHeight: 120)
             }
-            .frame(minWidth: 220)
+            .frame(idealWidth: 220, maxWidth: 280)
 
             // Right panel: diff
             diffPanel
-                .frame(minWidth: 300)
         }
         .onAppear {
             store.startIfNeeded()
+        }
+        .onChange(of: store.selectedChange?.id) { _, _ in
+            expandedHunks.removeAll()
+            cachedFileLines = nil
         }
         .alert("Confirm Action", isPresented: isShowingConfirmation, presenting: confirmationAction) { action in
             confirmationButtons(for: action)
@@ -67,68 +73,65 @@ struct GitChangesView: View {
 
     private var commitArea: some View {
         VStack(spacing: 4) {
-            // Compact textarea — 1 line default, expands when multiline
-            TextEditor(text: $store.commitMessage)
-                .font(.system(size: 11))
-                .scrollContentBackground(.hidden)
-                .frame(height: store.commitMessage.contains("\n") ? 52 : 24)
-                .padding(.horizontal, 4)
-                .padding(.vertical, 2)
-                .background(Color(nsColor: .textBackgroundColor).opacity(0.5))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 4)
-                        .stroke(Color.secondary.opacity(0.3), lineWidth: 1)
-                )
-                .overlay(alignment: .topLeading) {
-                    if store.commitMessage.isEmpty {
-                        Text("Commit message")
-                            .font(.system(size: 11))
-                            .foregroundStyle(.tertiary)
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 5)
-                            .allowsHitTesting(false)
-                    }
-                }
+            // Commit message with AI generate button inside
+            ZStack(alignment: .topTrailing) {
+                CommitMessageTextView(text: $store.commitMessage, placeholder: "Commit message")
+                    .frame(minHeight: 28, maxHeight: 64)
+                    .background(Color(nsColor: .textBackgroundColor).opacity(0.5))
+                    .clipShape(RoundedRectangle(cornerRadius: 4))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 4)
+                            .stroke(Color.secondary.opacity(0.3), lineWidth: 1)
+                    )
 
-            HStack(spacing: 4) {
-                Button {
-                    store.generateCommitMessage()
-                } label: {
-                    if store.isGeneratingMessage {
-                        ProgressView()
-                            .controlSize(.mini)
-                            .frame(width: 16, height: 16)
-                    } else {
+                if store.isGeneratingMessage {
+                    Button {
+                        store.cancelGenerateCommitMessage()
+                    } label: {
+                        Image(systemName: "stop.fill")
+                            .font(.system(size: 9))
+                            .foregroundStyle(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                    .frame(width: 20, height: 20)
+                    .help("Stop generating")
+                    .padding(4)
+                } else if store.commitMessage.isEmpty {
+                    Button {
+                        store.generateCommitMessage()
+                    } label: {
                         Image(systemName: "sparkles")
-                            .font(.system(size: 11))
+                            .font(.system(size: 10))
+                            .foregroundStyle(.secondary)
                     }
+                    .buttonStyle(.plain)
+                    .frame(width: 20, height: 20)
+                    .disabled(store.isRunningCommand || !hasAnyChanges)
+                    .help("Generate commit message")
+                    .padding(4)
                 }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
-                .disabled(store.isGeneratingMessage || store.isRunningCommand || !hasAnyChanges)
-                .help("Generate commit message (claude)")
-
-                Button {
-                    store.commit()
-                } label: {
-                    HStack(spacing: 4) {
-                        Image(systemName: "checkmark")
-                            .font(.system(size: 9, weight: .semibold))
-                        Text(store.isRunningCommand ? "Committing..." : "Commit")
-                            .font(.system(size: 11, weight: .medium))
-                    }
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 3)
-                }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.small)
-                .disabled(
-                    store.commitMessage.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                    || store.isRunningCommand
-                    || !hasAnyChanges
-                )
-                .keyboardShortcut(.return, modifiers: [.command])
             }
+
+            Button {
+                store.commit()
+            } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: "checkmark")
+                        .font(.system(size: 9, weight: .semibold))
+                    Text(store.isRunningCommand ? "Committing..." : "Commit")
+                        .font(.system(size: 11, weight: .medium))
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 3)
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.small)
+            .disabled(
+                store.commitMessage.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                || store.isRunningCommand
+                || !hasAnyChanges
+            )
+            .keyboardShortcut(.return, modifiers: [.command])
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 6)
@@ -355,20 +358,231 @@ struct GitChangesView: View {
                     .foregroundStyle(.secondary).font(.system(size: 12))
                 Spacer()
             } else {
-                ScrollView([.vertical, .horizontal]) {
-                    LazyVStack(alignment: .leading, spacing: 0) {
-                        ForEach(diffLines.indices, id: \.self) { index in
-                            let line = diffLines[index]
-                            Text(highlightedLine(line))
-                                .font(.system(size: 12, weight: .regular, design: .monospaced))
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .padding(.horizontal, 8)
-                                .background(diffBackgroundColor(for: line))
+                let rows = parseSideBySide(store.selectedDiffText)
+                GeometryReader { geo in
+                    let halfWidth = (geo.size.width - 1) / 2
+                    ScrollView(.vertical) {
+                        LazyVStack(alignment: .leading, spacing: 0) {
+                            ForEach(rows.indices, id: \.self) { i in
+                                let row = rows[i]
+                                if row.kind == .hunkHeader {
+                                    if expandedHunks.contains(row.hunkIndex), let lines = cachedFileLines {
+                                        // Show expanded unmodified lines
+                                        let fromLine = row.prevNewEnd  // 1-based
+                                        let toLine = row.newStartLine  // 1-based exclusive
+                                        ForEach(fromLine..<toLine, id: \.self) { lineNo in
+                                            let idx = lineNo - 1
+                                            let content = idx >= 0 && idx < lines.count ? lines[idx] : ""
+                                            HStack(spacing: 0) {
+                                                diffSideCell(lineNo: lineNo, content: content, kind: .context, side: .left)
+                                                    .frame(width: halfWidth)
+                                                Rectangle().fill(Color.secondary.opacity(0.2)).frame(width: 1)
+                                                diffSideCell(lineNo: lineNo, content: content, kind: .context, side: .right)
+                                                    .frame(width: halfWidth)
+                                            }
+                                            .frame(height: 18)
+                                        }
+                                    } else if row.skippedLines > 0 {
+                                        hunkHeaderBar(skippedLines: row.skippedLines, hunkIndex: row.hunkIndex)
+                                    }
+                                } else {
+                                    HStack(spacing: 0) {
+                                        diffSideCell(lineNo: row.oldLineNo, content: row.oldContent, kind: row.kind, side: .left)
+                                            .frame(width: halfWidth)
+                                        Rectangle().fill(Color.secondary.opacity(0.2)).frame(width: 1)
+                                        diffSideCell(lineNo: row.newLineNo, content: row.newContent, kind: row.kind, side: .right)
+                                            .frame(width: halfWidth)
+                                    }
+                                    .frame(height: 18)
+                                }
+                            }
                         }
                     }
-                    .padding(.vertical, 4)
                 }
             }
+        }
+        .background(diffBgColor)
+    }
+
+    private func hunkHeaderBar(skippedLines: Int, hunkIndex: Int) -> some View {
+        Button {
+            loadFileIfNeeded()
+            expandedHunks.insert(hunkIndex)
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 8))
+                    .foregroundStyle(.secondary.opacity(0.6))
+                Text("\(skippedLines) unmodified lines")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 8))
+                    .foregroundStyle(.secondary.opacity(0.6))
+            }
+            .frame(maxWidth: .infinity)
+            .frame(height: 24)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .background(Color.secondary.opacity(0.05))
+    }
+
+    private func loadFileIfNeeded() {
+        guard cachedFileLines == nil,
+              let repoURL = store.repositoryURL,
+              let path = store.selectedChange?.path else { return }
+        let fileURL = repoURL.appendingPathComponent(path)
+        if let content = try? String(contentsOf: fileURL, encoding: .utf8) {
+            cachedFileLines = content.components(separatedBy: "\n")
+        }
+    }
+
+    private func diffSideCell(lineNo: Int?, content: String?, kind: DiffRowKind, side: DiffSide) -> some View {
+        HStack(spacing: 0) {
+            Text(lineNo.map { String($0) } ?? "")
+                .font(.system(size: 11, weight: .regular, design: .monospaced))
+                .foregroundStyle(.secondary.opacity(0.5))
+                .frame(width: 36, alignment: .trailing)
+                .padding(.trailing, 6)
+
+            if let content {
+                Text(highlightCode(content))
+                    .font(.system(size: 12, weight: .regular, design: .monospaced))
+                    .lineLimit(1)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.leading, 4)
+            } else {
+                Color.clear.frame(maxWidth: .infinity)
+            }
+        }
+        .background(diffRowBackground(kind: kind, side: side))
+    }
+
+    // MARK: - Diff Parsing
+
+    private enum DiffSide { case left, right }
+    private enum DiffRowKind { case context, added, removed, hunkHeader }
+
+    private struct DiffRow {
+        let oldLineNo: Int?; let oldContent: String?
+        let newLineNo: Int?; let newContent: String?
+        let kind: DiffRowKind
+        var skippedLines: Int = 0
+        var hunkIndex: Int = 0
+        var newStartLine: Int = 0 // for expanding: first new line of this hunk
+        var prevNewEnd: Int = 0   // for expanding: last new line before this hunk
+    }
+
+    private func parseSideBySide(_ diffText: String) -> [DiffRow] {
+        var rows: [DiffRow] = []
+        var oldNo = 0, newNo = 0
+        var prevNewEnd = 1 // 1-based: next expected new line
+        var hunkIdx = 0
+
+        for line in diffText.split(separator: "\n", omittingEmptySubsequences: false).map(String.init) {
+            if isDiffMeta(line) { continue }
+            if line.hasPrefix("@@") {
+                let newOldStart: Int
+                let newNewStart: Int
+                if let m1 = line.range(of: #"-(\d+)"#, options: .regularExpression),
+                   let m2 = line.range(of: #"\+(\d+)"#, options: .regularExpression) {
+                    newOldStart = Int(line[m1].dropFirst()) ?? 1
+                    newNewStart = Int(line[m2].dropFirst()) ?? 1
+                } else {
+                    newOldStart = oldNo
+                    newNewStart = newNo
+                }
+                let skipped = max(0, newNewStart - prevNewEnd)
+                oldNo = newOldStart
+                newNo = newNewStart
+                var row = DiffRow(oldLineNo: nil, oldContent: line, newLineNo: nil, newContent: line, kind: .hunkHeader)
+                row.skippedLines = skipped
+                row.hunkIndex = hunkIdx
+                row.newStartLine = newNewStart
+                row.prevNewEnd = prevNewEnd
+                rows.append(row)
+                hunkIdx += 1
+                continue
+            }
+            if line.hasPrefix("-") {
+                rows.append(DiffRow(oldLineNo: oldNo, oldContent: String(line.dropFirst()), newLineNo: nil, newContent: nil, kind: .removed))
+                oldNo += 1
+            } else if line.hasPrefix("+") {
+                rows.append(DiffRow(oldLineNo: nil, oldContent: nil, newLineNo: newNo, newContent: String(line.dropFirst()), kind: .added))
+                newNo += 1
+                prevNewEnd = newNo
+            } else {
+                let c = line.hasPrefix(" ") ? String(line.dropFirst()) : line
+                rows.append(DiffRow(oldLineNo: oldNo, oldContent: c, newLineNo: newNo, newContent: c, kind: .context))
+                oldNo += 1; newNo += 1
+                prevNewEnd = newNo
+            }
+        }
+        return rows
+    }
+
+    private func isDiffMeta(_ line: String) -> Bool {
+        line.hasPrefix("diff ") || line.hasPrefix("index ") || line.hasPrefix("--- ") || line.hasPrefix("+++ ")
+            || line.hasPrefix("old mode") || line.hasPrefix("new mode") || line.hasPrefix("new file mode")
+            || line.hasPrefix("deleted file mode") || line.hasPrefix("similarity index")
+            || line.hasPrefix("rename ") || line.hasPrefix("copy ")
+    }
+
+    private func diffRowBackground(kind: DiffRowKind, side: DiffSide) -> Color {
+        switch kind {
+        case .added:  return side == .right ? Color(nsColor: .systemGreen).opacity(0.12) : Color(nsColor: NSColor(calibratedWhite: 0.12, alpha: 1.0))
+        case .removed: return side == .left ? Color(nsColor: .systemRed).opacity(0.12) : Color(nsColor: NSColor(calibratedWhite: 0.12, alpha: 1.0))
+        case .hunkHeader: return Color(nsColor: .systemBlue).opacity(0.06)
+        case .context: return .clear
+        }
+    }
+
+    // MARK: - Syntax Highlighting
+
+    private var selectedFileExtension: String? {
+        guard let path = store.selectedChange?.path, let ext = path.split(separator: ".").last else { return nil }
+        let n = ext.lowercased(); return n.isEmpty ? nil : n
+    }
+
+    private func highlightCode(_ code: String) -> AttributedString {
+        let text = code.isEmpty ? " " : code
+        var attr = AttributedString(text)
+        attr.foregroundColor = diffTextColor
+        guard let ext = selectedFileExtension else { return attr }
+        if let cp = commentPattern(for: ext) { applyHL(cp, Color(nsColor: NSColor(calibratedRed: 0.5, green: 0.6, blue: 0.5, alpha: 1.0)), &attr, text) }
+        applyHL(#"\"([^\"\\]|\\.)*\"|'([^'\\]|\\.)*'"#, Color(nsColor: NSColor(calibratedRed: 0.9, green: 0.5, blue: 0.5, alpha: 1.0)), &attr, text)
+        if let kp = keywordPattern(for: ext) { applyHL(kp, Color(nsColor: NSColor(calibratedRed: 0.8, green: 0.4, blue: 0.8, alpha: 1.0)), &attr, text) }
+        applyHL(#"\b\d+(\.\d+)?\b"#, Color(nsColor: NSColor(calibratedRed: 0.9, green: 0.7, blue: 0.4, alpha: 1.0)), &attr, text)
+        return attr
+    }
+
+    private func applyHL(_ pattern: String, _ color: Color, _ attr: inout AttributedString, _ text: String) {
+        guard let regex = try? NSRegularExpression(pattern: pattern) else { return }
+        for match in regex.matches(in: text, range: NSRange(text.startIndex..., in: text)) {
+            guard let r = Range(match.range, in: text), let ar = Range(r, in: attr) else { continue }
+            attr[ar].foregroundColor = color
+        }
+    }
+
+    private func keywordPattern(for ext: String) -> String? {
+        switch ext {
+        case "swift": return #"\b(import|let|var|func|struct|class|enum|protocol|extension|if|else|for|while|switch|case|default|guard|return|defer|do|catch|throw|throws|try|async|await|actor|where|in|self|Self|true|false|nil|private|public|internal|static|override)\b"#
+        case "ts", "tsx", "js", "jsx": return #"\b(import|from|export|const|let|var|function|class|interface|type|if|else|for|while|switch|case|default|return|try|catch|throw|async|await|new|typeof|this|true|false|null|undefined)\b"#
+        case "py": return #"\b(import|from|as|def|class|if|elif|else|for|while|return|try|except|finally|raise|with|lambda|async|await|yield|True|False|None|self)\b"#
+        case "go": return #"\b(package|import|func|type|struct|interface|var|const|if|else|for|switch|case|default|return|defer|go|range|map|chan|select|true|false|nil)\b"#
+        case "rs": return #"\b(use|mod|fn|struct|enum|impl|trait|let|mut|if|else|for|while|loop|match|return|pub|async|await|move|self|Self|true|false)\b"#
+        case "c", "h", "cpp", "hpp", "cc": return #"\b(include|define|typedef|struct|enum|class|if|else|for|while|switch|case|return|static|const|void|int|char|float|double|bool|auto|true|false|NULL)\b"#
+        case "yaml", "yml": return #"\b(true|false|null|yes|no|on|off)\b"#
+        default: return nil
+        }
+    }
+
+    private func commentPattern(for ext: String) -> String? {
+        switch ext {
+        case "swift", "ts", "tsx", "js", "jsx", "go", "rs", "java", "kt", "c", "h", "cpp", "hpp", "cc": return #"//.*$"#
+        case "py", "sh", "zsh", "bash", "rb", "yaml", "yml", "toml": return #"#.*$"#
+        default: return nil
         }
     }
 
@@ -416,17 +630,6 @@ struct GitChangesView: View {
         store.statusSnapshot?.hasAnyChanges ?? false
     }
 
-    private var diffLines: [String] {
-        store.selectedDiffText.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
-    }
-
-    private var selectedFileExtension: String? {
-        guard let path = store.selectedChange?.path,
-              let ext = path.split(separator: ".").last else { return nil }
-        let n = ext.lowercased()
-        return n.isEmpty ? nil : n
-    }
-
     private func statusBanner(text: String, color: Color, onDismiss: @escaping () -> Void) -> some View {
         HStack {
             Text(text).font(.system(size: 10)).lineLimit(2)
@@ -471,65 +674,10 @@ struct GitChangesView: View {
         }
     }
 
-    // MARK: - Diff Rendering
+    // MARK: - Diff Helpers
 
-    private func highlightedLine(_ line: String) -> AttributedString {
-        let outputLine = line.isEmpty ? " " : line
-        var attributed = AttributedString(outputLine)
-        attributed.foregroundColor = diffForegroundColor(for: line)
-        guard let ext = selectedFileExtension, !isDiffMetadata(line) else { return attributed }
-        if let cp = commentPattern(for: ext) { applyRegex(pattern: cp, color: .secondary, to: &attributed, sourceLine: outputLine) }
-        applyRegex(pattern: #"\"([^\"\\]|\\.)*\"|'([^'\\]|\\.)*'"#, color: .orange, to: &attributed, sourceLine: outputLine)
-        if let kp = keywordPattern(for: ext) { applyRegex(pattern: kp, color: .blue, to: &attributed, sourceLine: outputLine) }
-        return attributed
-    }
-
-    private func isDiffMetadata(_ line: String) -> Bool {
-        line.hasPrefix("diff ") || line.hasPrefix("index ") || line.hasPrefix("+++") || line.hasPrefix("---") || line.hasPrefix("@@")
-    }
-
-    private func applyRegex(pattern: String, color: Color, to attributed: inout AttributedString, sourceLine: String) {
-        guard let regex = try? NSRegularExpression(pattern: pattern) else { return }
-        let nsRange = NSRange(sourceLine.startIndex..<sourceLine.endIndex, in: sourceLine)
-        regex.matches(in: sourceLine, range: nsRange).forEach { match in
-            guard let sr = Range(match.range, in: sourceLine), let ar = Range(sr, in: attributed) else { return }
-            attributed[ar].foregroundColor = color
-        }
-    }
-
-    private func keywordPattern(for ext: String) -> String? {
-        switch ext {
-        case "swift": return #"\b(import|let|var|func|struct|class|enum|protocol|extension|if|else|for|while|switch|case|default|guard|return|defer|do|catch|throw|throws|try|async|await|actor|where|in)\b"#
-        case "ts", "tsx", "js", "jsx": return #"\b(import|from|export|const|let|var|function|class|interface|type|if|else|for|while|switch|case|default|return|try|catch|throw|async|await|new|typeof)\b"#
-        case "py": return #"\b(import|from|as|def|class|if|elif|else|for|while|return|try|except|finally|raise|with|lambda|async|await|yield)\b"#
-        case "go": return #"\b(package|import|func|type|struct|interface|var|const|if|else|for|switch|case|default|return|defer|go|range|map|chan|select)\b"#
-        case "rs": return #"\b(use|mod|fn|struct|enum|impl|trait|let|mut|if|else|for|while|loop|match|return|pub|async|await|move)\b"#
-        case "c", "h", "cpp", "hpp", "cc": return #"\b(include|define|typedef|struct|enum|class|if|else|for|while|switch|case|return|static|const|void|int|char|float|double|bool|auto)\b"#
-        default: return nil
-        }
-    }
-
-    private func commentPattern(for ext: String) -> String? {
-        switch ext {
-        case "swift", "ts", "tsx", "js", "jsx", "go", "rs", "java", "kt", "c", "h", "cpp", "hpp", "cc": return #"//.*$"#
-        case "py", "sh", "zsh", "bash", "rb", "yaml", "yml", "toml": return #"#.*$"#
-        default: return nil
-        }
-    }
-
-    private func diffForegroundColor(for line: String) -> Color {
-        if line.hasPrefix("+") && !line.hasPrefix("+++") { return Color(nsColor: .systemGreen) }
-        if line.hasPrefix("-") && !line.hasPrefix("---") { return Color(nsColor: .systemRed) }
-        if line.hasPrefix("@@") { return Color(nsColor: .systemBlue) }
-        if isDiffMetadata(line) { return .secondary }
-        return .primary
-    }
-
-    private func diffBackgroundColor(for line: String) -> Color {
-        if line.hasPrefix("+") && !line.hasPrefix("+++") { return Color(nsColor: .systemGreen).opacity(0.10) }
-        if line.hasPrefix("-") && !line.hasPrefix("---") { return Color(nsColor: .systemRed).opacity(0.10) }
-        return Color.clear
-    }
+    private let diffBgColor = Color(nsColor: NSColor(calibratedRed: 0.15, green: 0.15, blue: 0.17, alpha: 1.0))
+    private let diffTextColor = Color(nsColor: NSColor(calibratedWhite: 0.9, alpha: 1.0))
 }
 
 // MARK: - Git Graph Content (swim lanes + commit list)

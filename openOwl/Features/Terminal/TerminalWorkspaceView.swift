@@ -147,15 +147,109 @@ private struct TerminalTabBarView: View {
     }
 }
 
+/// Flat layout: all panes are positioned absolutely within a GeometryReader.
+/// This prevents SwiftUI from destroying/recreating terminal views when the
+/// split tree structure changes (add/remove/move splits).
 private struct TerminalTabContentView: View {
     let ghosttyApp: ghostty_app_t
     let tab: TerminalTabState
 
     @EnvironmentObject private var workspace: TerminalWorkspaceStore
+    @State private var dividerDragStart: [String: Double] = [:]
 
     var body: some View {
-        TerminalSplitNodeView(ghosttyApp: ghosttyApp, node: tab.splitTree, tabID: tab.id)
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        let paneIDs = tab.splitTree.allPaneIDs
+        let isMultiPane = paneIDs.count > 1
+
+        GeometryReader { geometry in
+            let size = geometry.size
+            let bounds = CGRect(origin: .zero, size: size)
+            let frames = tab.splitTree.paneFrames(in: bounds)
+            let dividers = tab.splitTree.dividerInfos(in: bounds)
+
+            ZStack(alignment: .topLeading) {
+                // All terminal panes with absolute positioning
+                ForEach(paneIDs, id: \.self) { paneID in
+                    let frame = frames[paneID] ?? .zero
+
+                    VStack(spacing: 0) {
+                        if isMultiPane {
+                            PaneDragHandle(paneID: paneID)
+                        }
+
+                        TerminalPanel(
+                            ghosttyApp: ghosttyApp,
+                            paneID: paneID,
+                            onFocus: {
+                                DispatchQueue.main.async {
+                                    workspace.focusPane(paneID)
+                                }
+                            }
+                        )
+                    }
+                    .frame(width: max(frame.width, 1), height: max(frame.height, 1))
+                    .contentShape(Rectangle())
+                    .clipped()
+                    .overlay {
+                        if isMultiPane, !workspace.isFocusedPane(paneID, in: tab.id) {
+                            Color.black.opacity(0.15)
+                                .allowsHitTesting(false)
+                        }
+                    }
+                    .overlay {
+                        if workspace.dragOverPaneID == paneID, let zone = workspace.dropZone {
+                            DropZoneHighlightView(zone: zone)
+                                .allowsHitTesting(false)
+                        }
+                    }
+                    .overlay {
+                        Color.clear
+                            .contentShape(Rectangle())
+                            .onDrop(of: [.text], delegate: PaneDropDelegate(
+                                targetPaneID: paneID,
+                                workspace: workspace,
+                                viewSize: frame.size
+                            ))
+                            .allowsHitTesting(workspace.draggingPaneID != nil && workspace.draggingPaneID != paneID)
+                    }
+                    .position(x: frame.midX, y: frame.midY)
+                    .zIndex(0)
+                }
+
+                // Dividers
+                ForEach(dividers) { divider in
+                    let isH = divider.axis == .horizontal
+                    SplitDividerView(axis: divider.axis, hitAreaThickness: 6)
+                        .frame(
+                            width: isH ? 6 : divider.frame.width,
+                            height: isH ? divider.frame.height : 6
+                        )
+                        .position(x: divider.frame.midX, y: divider.frame.midY)
+                        .zIndex(1)
+                        .gesture(DragGesture(minimumDistance: 1)
+                            .onChanged { value in
+                                if dividerDragStart[divider.id] == nil {
+                                    dividerDragStart[divider.id] = divider.ratio
+                                }
+                                let baseRatio = dividerDragStart[divider.id] ?? divider.ratio
+                                let totalSize = isH ? size.width : size.height
+                                let delta = isH ? value.translation.width : value.translation.height
+                                workspace.updateSplitRatio(
+                                    firstPaneID: divider.firstPaneID,
+                                    secondPaneID: divider.secondPaneID,
+                                    newRatio: baseRatio + delta / totalSize
+                                )
+                            }
+                            .onEnded { _ in
+                                dividerDragStart.removeValue(forKey: divider.id)
+                            }
+                        )
+                        .onTapGesture(count: 2) {
+                            workspace.equalizeSplits()
+                        }
+                }
+            }
+        }
     }
 }
 
@@ -272,88 +366,74 @@ private struct PaneDragHandle: View {
     }
 }
 
-private struct TerminalSplitNodeView: View {
-    let ghosttyApp: ghostty_app_t
-    let node: TerminalSplitNode
-    let tabID: UUID
+// Old recursive TerminalSplitNodeView and SplitContainerView removed.
+// Replaced by flat layout in TerminalTabContentView above.
 
-    @EnvironmentObject private var workspace: TerminalWorkspaceStore
+// MARK: - Pane Drop Delegate
 
-    var body: some View {
-        switch node {
-        case .leaf(let paneID):
-            let isMultiPane = (workspace.tabs.first(where: { $0.id == tabID })?.splitTree.leafCount ?? 1) > 1
+private struct PaneDropDelegate: DropDelegate {
+    let targetPaneID: UUID
+    let workspace: TerminalWorkspaceStore
+    let viewSize: CGSize
 
-            TerminalPanel(
-                ghosttyApp: ghosttyApp,
-                paneID: paneID,
-                onFocus: {
-                    DispatchQueue.main.async {
-                        workspace.focusPane(paneID)
-                    }
-                }
-            )
-            .overlay {
-                if isMultiPane, !workspace.isFocusedPane(paneID, in: tabID) {
-                    Color.black.opacity(0.15)
-                        .allowsHitTesting(false)
-                }
-            }
-            .overlay {
-                if workspace.dragOverPaneID == paneID, let zone = workspace.dropZone {
-                    DropZoneHighlightView(zone: zone)
-                        .allowsHitTesting(false)
-                }
-            }
+    func dropEntered(info: DropInfo) {
+        workspace.dragOverPaneID = targetPaneID
+    }
 
-        case .split(let axis, let ratio, let first, let second):
-            let firstID = first.firstPaneID ?? UUID()
-            let secondID = second.firstPaneID ?? UUID()
-
-            GeometryReader { geometry in
-                let isHorizontal = axis == .horizontal
-                let totalSize = isHorizontal ? geometry.size.width : geometry.size.height
-                let firstSize = max(totalSize * ratio - 0.5, 0)
-                let secondSize = max(totalSize * (1 - ratio) - 0.5, 0)
-
-                // Original proven layout — spacing: 1 is the visual divider line
-                if isHorizontal {
-                    HStack(spacing: 1) {
-                        TerminalSplitNodeView(ghosttyApp: ghosttyApp, node: first, tabID: tabID)
-                            .frame(width: firstSize)
-                        TerminalSplitNodeView(ghosttyApp: ghosttyApp, node: second, tabID: tabID)
-                            .frame(width: secondSize)
-                    }
-                } else {
-                    VStack(spacing: 1) {
-                        TerminalSplitNodeView(ghosttyApp: ghosttyApp, node: first, tabID: tabID)
-                            .frame(height: firstSize)
-                        TerminalSplitNodeView(ghosttyApp: ghosttyApp, node: second, tabID: tabID)
-                            .frame(height: secondSize)
-                    }
-                }
-
-                // Draggable divider overlay — doesn't affect terminal frame sizes
-                SplitDividerView(axis: axis, hitAreaThickness: 6)
-                    .frame(
-                        width: isHorizontal ? 6 : geometry.size.width,
-                        height: isHorizontal ? geometry.size.height : 6
-                    )
-                    .position(
-                        x: isHorizontal ? totalSize * ratio : geometry.size.width / 2,
-                        y: isHorizontal ? geometry.size.height / 2 : totalSize * ratio
-                    )
-                    .gesture(DragGesture()
-                        .onChanged { value in
-                            let delta = isHorizontal ? value.translation.width : value.translation.height
-                            let newRatio = (totalSize * ratio + delta) / totalSize
-                            workspace.updateSplitRatio(firstPaneID: firstID, secondPaneID: secondID, newRatio: newRatio)
-                        }
-                    )
-                    .onTapGesture(count: 2) {
-                        workspace.equalizeSplits()
-                    }
-            }
+    func dropUpdated(info: DropInfo) -> DropProposal? {
+        guard workspace.draggingPaneID != nil,
+              workspace.draggingPaneID != targetPaneID else {
+            return DropProposal(operation: .cancel)
         }
+
+        workspace.dragOverPaneID = targetPaneID
+        workspace.dropZone = detectZone(at: info.location)
+        return DropProposal(operation: .move)
+    }
+
+    func dropExited(info: DropInfo) {
+        if workspace.dragOverPaneID == targetPaneID {
+            workspace.dragOverPaneID = nil
+            workspace.dropZone = nil
+        }
+    }
+
+    func performDrop(info: DropInfo) -> Bool {
+        guard let sourceID = workspace.draggingPaneID,
+              sourceID != targetPaneID else {
+            cleanup()
+            return false
+        }
+
+        let zone = workspace.dropZone ?? .center
+        workspace.movePaneToTarget(sourceID: sourceID, targetID: targetPaneID, zone: zone)
+        cleanup()
+        return true
+    }
+
+    /// Detect drop zone based on cursor position within the target pane.
+    /// Edges (30% inset) → directional split. Center → swap.
+    private func detectZone(at point: CGPoint) -> PaneDropZone {
+        let w = viewSize.width
+        let h = viewSize.height
+        guard w > 0, h > 0 else { return .center }
+
+        let relX = point.x / w  // 0..1
+        let relY = point.y / h  // 0..1
+        let edgeThreshold: CGFloat = 0.3
+
+        // Check edges first
+        if relX < edgeThreshold { return .left }
+        if relX > 1 - edgeThreshold { return .right }
+        if relY < edgeThreshold { return .top }
+        if relY > 1 - edgeThreshold { return .bottom }
+
+        return .center
+    }
+
+    private func cleanup() {
+        workspace.draggingPaneID = nil
+        workspace.dragOverPaneID = nil
+        workspace.dropZone = nil
     }
 }

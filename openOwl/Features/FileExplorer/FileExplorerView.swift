@@ -1,49 +1,91 @@
 import AppKit
 import SwiftUI
+import CodeEditSourceEditor
+import CodeEditLanguages
+
+let editorConfiguration = SourceEditorConfiguration(
+    appearance: .init(
+        theme: EditorTheme(
+            text: .init(color: NSColor(calibratedWhite: 0.9, alpha: 1.0)),
+            insertionPoint: NSColor(calibratedRed: 0.3, green: 0.6, blue: 1.0, alpha: 1.0),
+            invisibles: .init(color: NSColor(calibratedWhite: 0.5, alpha: 0.3)),
+            background: NSColor(calibratedRed: 0.15, green: 0.15, blue: 0.17, alpha: 1.0),
+            lineHighlight: NSColor(calibratedRed: 0.2, green: 0.2, blue: 0.22, alpha: 1.0),
+            selection: NSColor(calibratedRed: 0.25, green: 0.35, blue: 0.5, alpha: 0.4),
+            keywords: .init(color: NSColor(calibratedRed: 0.8, green: 0.4, blue: 0.8, alpha: 1.0)),
+            commands: .init(color: NSColor(calibratedRed: 0.4, green: 0.7, blue: 0.9, alpha: 1.0)),
+            types: .init(color: NSColor(calibratedRed: 0.4, green: 0.8, blue: 0.7, alpha: 1.0)),
+            attributes: .init(color: NSColor(calibratedRed: 0.7, green: 0.6, blue: 0.4, alpha: 1.0)),
+            variables: .init(color: NSColor(calibratedRed: 0.5, green: 0.7, blue: 0.9, alpha: 1.0)),
+            values: .init(color: NSColor(calibratedRed: 0.9, green: 0.7, blue: 0.4, alpha: 1.0)),
+            numbers: .init(color: NSColor(calibratedRed: 0.9, green: 0.7, blue: 0.4, alpha: 1.0)),
+            strings: .init(color: NSColor(calibratedRed: 0.9, green: 0.5, blue: 0.5, alpha: 1.0)),
+            characters: .init(color: NSColor(calibratedRed: 0.9, green: 0.5, blue: 0.5, alpha: 1.0)),
+            comments: .init(color: NSColor(calibratedRed: 0.5, green: 0.6, blue: 0.5, alpha: 1.0))
+        ),
+        font: .monospacedSystemFont(ofSize: 12, weight: .regular),
+        wrapLines: true
+    ),
+    peripherals: .init(showMinimap: false)
+)
 
 struct FileExplorerView: View {
     @EnvironmentObject private var store: FileExplorerStore
     @EnvironmentObject private var projectStore: ProjectStore
     @EnvironmentObject private var gitStore: GitChangesStore
     @EnvironmentObject private var navigationStore: AppNavigationStore
-    @State private var expandedIDs: Set<String> = []
-    @State private var selectedIDs: Set<String> = []
-    @State private var lastClickedID: String?
-    @State private var renamingNodeID: String?
-    @State private var renameText: String = ""
     @FocusState private var quickOpenInputFocused: Bool
-    @FocusState private var renameFieldFocused: Bool
+
+    // Code editor state
+    @State private var editorText: String = ""
+    @State private var editorState = SourceEditorState()
+    @State private var editingFileURL: URL?
+    @State private var loadingFileURL: URL?
+    @State private var isEditorDirty = false
+    @State private var isEditorLoading = false
+    @State private var previewImage: NSImage?
+
+    private static let imageExtensions: Set<String> = [
+        "png", "jpg", "jpeg", "gif", "bmp", "tiff", "tif", "webp", "heic", "heif", "ico", "svg", "icns"
+    ]
+
+    private var isImageFile: Bool {
+        guard let ext = editingFileURL?.pathExtension.lowercased() else { return false }
+        return Self.imageExtensions.contains(ext)
+    }
 
     var body: some View {
-        HSplitView {
+        HStack(spacing: 0) {
             treePanel
-                .frame(minWidth: 200)
+                .frame(width: 240)
 
-            previewPanel
-                .frame(minWidth: 300)
+            Divider()
+
+            editorPanel
         }
         .onAppear {
             store.setProject(projectStore.activeProjectURL)
-            expandTopLevel()
         }
         .onChange(of: projectStore.activeProjectID) { _, _ in
+            if isEditorDirty { saveCurrentFile() }
             store.setProject(projectStore.activeProjectURL)
-            expandedIDs.removeAll()
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { expandTopLevel() }
+            editingFileURL = nil
+            loadingFileURL = nil
+            previewImage = nil
+            isEditorDirty = false
+        }
+        .onDisappear {
+            if isEditorDirty { saveCurrentFile() }
         }
         .sheet(isPresented: $store.isQuickOpenPresented, onDismiss: {
             store.dismissQuickOpen()
         }) {
             quickOpenSheet
         }
-        .onDrop(of: [.fileURL], isTargeted: nil) { providers in
-            handleFileDrop(providers)
-        }
-    }
-
-    private func expandTopLevel() {
-        for node in store.rootNodes where node.isDirectory {
-            expandedIDs.insert(node.id)
+        .background {
+            Button("") { saveCurrentFile() }
+                .keyboardShortcut("s", modifiers: [.command])
+                .hidden()
         }
     }
 
@@ -95,89 +137,124 @@ struct FileExplorerView: View {
                 Text("No files").foregroundStyle(.secondary).font(.system(size: 12))
                 Spacer()
             } else {
-                ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 0) {
-                        ForEach(flattenedTree, id: \.node.id) { item in
-                            FileTreeRowView(
-                                node: item.node,
-                                depth: item.depth,
-                                isExpanded: expandedIDs.contains(item.node.id),
-                                isSelected: selectedIDs.contains(item.node.id),
-                                selectedCount: selectedIDs.count,
-                                onSelect: { handleFileClick(item.node) },
-                                onStage: { stageFiles(from: item.node) },
-                                onDiscard: { discardFiles(from: item.node) },
-                                onOpenDiff: { openDiff(item.node) },
-                                onCopy: { copySelected() },
-                                onCut: { cutSelected() },
-                                onPaste: { pasteIntoSelected() },
-                                onDelete: { deleteSelected() },
-                                onRename: { startRename() },
-                                isRenaming: renamingNodeID == item.node.id,
-                                renameText: $renameText,
-                                onCommitRename: { commitRename() },
-                                onDropInto: item.node.isDirectory ? { providers in
-                                    handleFileDropInto(item.node.url, providers: providers)
-                                } : nil
-                            )
+                OutlineTreeView(
+                    onSelectFile: { node in
+                        store.selectNode(node.id)
+                        loadFileIntoEditor(node)
+                    },
+                    onStage: { node in stageFile(node) },
+                    onDiscard: { node in discardFile(node) },
+                    onOpenDiff: { node in openDiff(node) },
+                    onDelete: { urls in store.deleteNodes(urls) },
+                    onRename: { node, newName in store.renameNode(node, to: newName) },
+                    onCopy: { urls in store.copyFiles(urls) },
+                    onCut: { urls in store.cutFiles(urls) },
+                    onPaste: { targetDir in store.pasteFiles(into: targetDir) },
+                    onCopyPath: { url in store.copyPath(url) },
+                    onDropFiles: { targetDir, sourceURLs in
+                        let fm = FileManager.default
+                        for url in sourceURLs {
+                            let dest = targetDir.appendingPathComponent(url.lastPathComponent)
+                            try? fm.copyItem(at: url, to: dest)
                         }
+                        store.refreshNow()
                     }
-                    .padding(.vertical, 2)
-                }
+                )
             }
         }
         .background(Color(nsColor: .underPageBackgroundColor))
     }
 
-    private func handleFileClick(_ node: FileExplorerNode) {
-        let modifiers = NSEvent.modifierFlags
+    // MARK: - Editor
 
-        if node.isDirectory && !modifiers.contains(.command) && !modifiers.contains(.shift) {
-            // Normal click on folder: toggle expand + select
-            if expandedIDs.contains(node.id) {
-                expandedIDs.remove(node.id)
-            } else {
-                expandedIDs.insert(node.id)
-            }
-            selectedIDs = [node.id]
-            lastClickedID = node.id
-            store.selectNode(node.id)
+    private func loadFileIntoEditor(_ node: FileExplorerNode) {
+        guard !node.isDirectory else { return }
+        let url = node.url
+        if editingFileURL == url || loadingFileURL == url { return }
+        if isEditorDirty { saveCurrentFile() }
+
+        let fileSize = (try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? Int) ?? 0
+        if fileSize > 10_000_000 {
+            editingFileURL = nil
+            loadingFileURL = nil
+            previewImage = nil
             return
         }
 
-        if modifiers.contains(.command) {
-            if selectedIDs.contains(node.id) { selectedIDs.remove(node.id) }
-            else { selectedIDs.insert(node.id) }
-        } else if modifiers.contains(.shift), let lastID = lastClickedID {
-            let items = flattenedTree
-            if let fromIdx = items.firstIndex(where: { $0.node.id == lastID }),
-               let toIdx = items.firstIndex(where: { $0.node.id == node.id }) {
-                let range = min(fromIdx, toIdx)...max(fromIdx, toIdx)
-                for i in range { selectedIDs.insert(items[i].node.id) }
+        let ext = url.pathExtension.lowercased()
+        let isImage = Self.imageExtensions.contains(ext)
+
+        // Keep showing old editor while loading new content
+        loadingFileURL = url
+        isEditorLoading = true
+
+        if isImage {
+            Task.detached(priority: .userInitiated) {
+                let image = NSImage(contentsOf: url)
+                await MainActor.run {
+                    guard loadingFileURL == url else { return }
+                    previewImage = image
+                    editorText = ""
+                    isEditorDirty = false
+                    editingFileURL = url
+                    loadingFileURL = nil
+                    isEditorLoading = false
+                }
             }
         } else {
-            selectedIDs = [node.id]
+            // Text file — cap at 1MB
+            if fileSize > 1_000_000 {
+                editingFileURL = nil
+                loadingFileURL = nil
+                previewImage = nil
+                return
+            }
+            Task.detached(priority: .userInitiated) {
+                let content = (try? String(contentsOf: url, encoding: .utf8)) ?? ""
+                await MainActor.run {
+                    guard loadingFileURL == url else { return }
+                    previewImage = nil
+                    editorText = content
+                    editorState = SourceEditorState()
+                    isEditorDirty = false
+                    editingFileURL = url
+                    loadingFileURL = nil
+                }
+                try? await Task.sleep(for: .milliseconds(50))
+                await MainActor.run {
+                    guard editingFileURL == url else { return }
+                    isEditorLoading = false
+                }
+            }
         }
-
-        lastClickedID = node.id
-        store.selectNode(node.id)
     }
 
-    private func stageFiles(from node: FileExplorerNode) {
-        let targets = selectedIDs.count > 1
-            ? flattenedTree.filter { selectedIDs.contains($0.node.id) && $0.node.gitState != nil }.map { store.relativePath(for: $0.node) }
-            : (node.gitState != nil ? [store.relativePath(for: node)] : [])
-        guard !targets.isEmpty else { return }
-        gitStore.stage(paths: targets)
+    private func saveCurrentFile() {
+        guard let url = editingFileURL, isEditorDirty else { return }
+        do {
+            try editorText.write(to: url, atomically: true, encoding: .utf8)
+            isEditorDirty = false
+            store.refreshNow()
+        } catch {
+            store.errorMessage = "Failed to save: \(error.localizedDescription)"
+        }
     }
 
-    private func discardFiles(from node: FileExplorerNode) {
-        if selectedIDs.count > 1 {
-            let targets = flattenedTree.filter { selectedIDs.contains($0.node.id) && $0.node.gitState != nil }
-            for t in targets { gitStore.discardByPath(store.relativePath(for: t.node)) }
-        } else if node.gitState != nil {
-            gitStore.discardByPath(store.relativePath(for: node))
+    private var editorLanguage: CodeLanguage {
+        guard let url = store.selectedNode?.url else {
+            return .default
         }
+        return CodeLanguage.detectLanguageFrom(url: url)
+    }
+
+    private func stageFile(_ node: FileExplorerNode) {
+        guard node.gitState != nil else { return }
+        gitStore.stage(paths: [store.relativePath(for: node)])
+    }
+
+    private func discardFile(_ node: FileExplorerNode) {
+        guard node.gitState != nil else { return }
+        gitStore.discardByPath(store.relativePath(for: node))
     }
 
     private func openDiff(_ node: FileExplorerNode) {
@@ -186,205 +263,68 @@ struct FileExplorerView: View {
         gitStore.openDiff(forFileURL: node.url)
     }
 
-    // MARK: - Keyboard Shortcuts
+    // MARK: - Editor Panel
 
-    func copySelected() {
-        let urls = selectedURLs
-        guard !urls.isEmpty else { return }
-        store.copyFiles(urls)
-    }
-
-    func cutSelected() {
-        let urls = selectedURLs
-        guard !urls.isEmpty else { return }
-        store.cutFiles(urls)
-    }
-
-    func pasteIntoSelected() {
-        let targetDir: URL
-        if let id = selectedIDs.first, let node = store.nodeIndex[id] {
-            targetDir = node.isDirectory ? node.url : node.url.deletingLastPathComponent()
-        } else {
-            guard let projectURL = store.projectURL else { return }
-            targetDir = projectURL
-        }
-        store.pasteFiles(into: targetDir)
-    }
-
-    func deleteSelected() {
-        let urls = selectedURLs
-        guard !urls.isEmpty else { return }
-        store.deleteNodes(urls)
-        selectedIDs.removeAll()
-    }
-
-    func startRename() {
-        guard selectedIDs.count == 1, let id = selectedIDs.first,
-              let node = store.nodeIndex[id] else { return }
-        renamingNodeID = id
-        renameText = node.name
-        renameFieldFocused = true
-    }
-
-    func commitRename() {
-        guard let id = renamingNodeID, let node = store.nodeIndex[id] else {
-            renamingNodeID = nil
-            return
-        }
-        store.renameNode(node, to: renameText)
-        renamingNodeID = nil
-    }
-
-    private var selectedURLs: [URL] {
-        flattenedTree
-            .filter { selectedIDs.contains($0.node.id) }
-            .map(\.node.url)
-    }
-
-    // MARK: - Drag & Drop
-
-    private func handleFileDropInto(_ targetDir: URL, providers: [NSItemProvider]) -> Bool {
-        var handled = false
-        for provider in providers {
-            provider.loadItem(forTypeIdentifier: "public.file-url", options: nil) { data, _ in
-                guard let data = data as? Data,
-                      let url = URL(dataRepresentation: data, relativeTo: nil) else { return }
-                let dest = targetDir.appendingPathComponent(url.lastPathComponent)
-                try? FileManager.default.copyItem(at: url, to: dest)
-                DispatchQueue.main.async { self.store.refreshNow() }
-            }
-            handled = true
-        }
-        return handled
-    }
-
-    private func handleFileDrop(_ providers: [NSItemProvider]) -> Bool {
-        let targetDir: URL
-        if let id = selectedIDs.first, let node = store.nodeIndex[id], node.isDirectory {
-            targetDir = node.url
-        } else {
-            guard let projectURL = store.projectURL else { return false }
-            targetDir = projectURL
-        }
-
-        var handled = false
-        for provider in providers {
-            provider.loadItem(forTypeIdentifier: "public.file-url", options: nil) { data, _ in
-                guard let data = data as? Data,
-                      let url = URL(dataRepresentation: data, relativeTo: nil) else { return }
-                let dest = targetDir.appendingPathComponent(url.lastPathComponent)
-                try? FileManager.default.copyItem(at: url, to: dest)
-                DispatchQueue.main.async { self.store.refreshNow() }
-            }
-            handled = true
-        }
-        return handled
-    }
-
-    // MARK: - Flatten Tree
-
-    private struct FlatTreeItem {
-        let node: FileExplorerNode
-        let depth: Int
-    }
-
-    private var flattenedTree: [FlatTreeItem] {
-        var result: [FlatTreeItem] = []
-        func walk(_ nodes: [FileExplorerNode], depth: Int) {
-            for node in nodes {
-                result.append(FlatTreeItem(node: node, depth: depth))
-                if node.isDirectory && expandedIDs.contains(node.id), let children = node.children {
-                    walk(children, depth: depth + 1)
-                }
-            }
-        }
-        walk(store.rootNodes, depth: 0)
-        return result
-    }
-
-    // MARK: - Preview Panel
-
-    private var previewPanel: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            // Header
+    private var editorPanel: some View {
+        VStack(spacing: 0) {
             HStack(spacing: 6) {
                 if let node = store.selectedNode {
                     Image(systemName: fileIcon(for: node))
                         .font(.system(size: 10))
                         .foregroundStyle(.secondary)
-                    Text(store.relativePath(for: node))
-                        .font(.system(size: 11, weight: .medium, design: .monospaced))
-                        .lineLimit(1)
-                } else {
-                    Text("Preview")
+                    Text(node.name)
                         .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+
+                    if isEditorDirty {
+                        Circle()
+                            .fill(Color.primary)
+                            .frame(width: 5, height: 5)
+                    }
                 }
                 Spacer()
 
-                if store.selectedNode != nil, store.isChangedFile(store.selectedNode!) {
-                    Button("Open Diff") {
-                        if let node = store.selectedNode {
-                            navigationStore.activeTab = .gitChanges
-                            gitStore.openDiff(forFileURL: node.url)
-                        }
-                    }
-                    .font(.system(size: 10))
-                    .buttonStyle(.plain)
-                    .foregroundStyle(Color.accentColor)
+                if isEditorDirty {
+                    Text("Modified")
+                        .font(.system(size: 9))
+                        .foregroundStyle(.secondary)
                 }
             }
             .padding(.horizontal, 10)
             .frame(height: AppConstants.headerHeight)
+            .background(Color(nsColor: .windowBackgroundColor))
 
             Divider()
 
-            switch store.previewState {
-            case .none:
-                Spacer()
-                Text("Select a file to preview")
-                    .foregroundStyle(.secondary).font(.system(size: 12))
-                    .frame(maxWidth: .infinity)
-                Spacer()
-
-            case .directory(let path, let itemCount):
-                VStack(alignment: .leading, spacing: 6) {
-                    Text(path)
-                        .font(.system(size: 11, design: .monospaced))
-                        .foregroundStyle(.secondary)
-                    Text("\(itemCount) items")
-                        .font(.system(size: 11))
-                        .foregroundStyle(.tertiary)
+            if editingFileURL != nil, isImageFile, let image = previewImage {
+                // Image preview
+                ScrollView([.horizontal, .vertical]) {
+                    Image(nsImage: image)
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .padding()
                 }
-                .padding(12)
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-
-            case .text(let content, let truncated):
-                ScrollView([.vertical, .horizontal]) {
-                    Text(highlightedPreviewText(content))
-                        .font(.system(size: 12, design: .monospaced))
-                        .textSelection(.enabled)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(8)
-                }
-                .overlay(alignment: .bottomTrailing) {
-                    if truncated {
-                        Text("Truncated")
-                            .font(.system(size: 9))
-                            .foregroundStyle(.secondary)
-                            .padding(6)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(Color(nsColor: .windowBackgroundColor))
+            } else if editingFileURL != nil, !isImageFile {
+                SourceEditor(
+                    $editorText,
+                    language: editorLanguage,
+                    configuration: editorConfiguration,
+                    state: $editorState
+                )
+                .id(editingFileURL)
+                .onChange(of: editorText) { _, _ in
+                    if editingFileURL != nil, !isEditorLoading {
+                        isEditorDirty = true
                     }
                 }
-
-            case .binary:
+            } else {
                 Spacer()
-                Text("Binary file").foregroundStyle(.secondary).font(.system(size: 12))
-                    .frame(maxWidth: .infinity)
-                Spacer()
-
-            case .unavailable(let message):
-                Spacer()
-                Text(message).foregroundStyle(.secondary).font(.system(size: 12))
+                Text("Select a file to edit")
+                    .foregroundStyle(.secondary)
+                    .font(.system(size: 12))
                     .frame(maxWidth: .infinity)
                 Spacer()
             }
@@ -468,218 +408,6 @@ struct FileExplorerView: View {
         case "sh", "zsh", "bash": return "terminal"
         case "js", "ts", "tsx", "jsx": return "chevron.left.forwardslash.chevron.right"
         default: return "doc"
-        }
-    }
-
-    // MARK: - Syntax Highlighting
-
-    private var selectedFileExtension: String? {
-        guard let ext = store.selectedNode?.url.pathExtension.lowercased(), !ext.isEmpty else { return nil }
-        return ext
-    }
-
-    private func highlightedPreviewText(_ content: String) -> AttributedString {
-        let text = content.isEmpty ? " " : content
-        var attributed = AttributedString(text)
-        attributed.foregroundColor = .primary
-        guard text.count <= 120_000, let ext = selectedFileExtension else { return attributed }
-
-        if let cp = commentPattern(for: ext) { applyRegex(cp, color: .secondary, to: &attributed, text: text) }
-        applyRegex(#"\"([^\"\\]|\\.)*\"|'([^'\\]|\\.)*'"#, color: .orange, to: &attributed, text: text)
-        if let kp = keywordPattern(for: ext) { applyRegex(kp, color: .blue, to: &attributed, text: text) }
-        return attributed
-    }
-
-    private func applyRegex(_ pattern: String, color: Color, to attributed: inout AttributedString, text: String) {
-        guard let regex = try? NSRegularExpression(pattern: pattern, options: [.anchorsMatchLines]) else { return }
-        let nsRange = NSRange(text.startIndex..<text.endIndex, in: text)
-        regex.matches(in: text, range: nsRange).forEach { match in
-            guard let sr = Range(match.range, in: text), let ar = Range(sr, in: attributed) else { return }
-            attributed[ar].foregroundColor = color
-        }
-    }
-
-    private func keywordPattern(for ext: String) -> String? {
-        switch ext {
-        case "swift": return #"\b(import|let|var|func|struct|class|enum|protocol|extension|if|else|for|while|switch|case|default|guard|return|defer|do|catch|throw|throws|try|async|await|actor|where|in)\b"#
-        case "ts", "tsx", "js", "jsx": return #"\b(import|from|export|const|let|var|function|class|interface|type|if|else|for|while|switch|case|default|return|try|catch|throw|async|await|new|typeof)\b"#
-        case "py": return #"\b(import|from|as|def|class|if|elif|else|for|while|return|try|except|finally|raise|with|lambda|async|await|yield)\b"#
-        case "go": return #"\b(package|import|func|type|struct|interface|var|const|if|else|for|switch|case|default|return|defer|go|range|map|chan|select)\b"#
-        case "rs": return #"\b(use|mod|fn|struct|enum|impl|trait|let|mut|if|else|for|while|loop|match|return|pub|async|await|move)\b"#
-        case "c", "h", "cpp", "hpp", "cc": return #"\b(include|define|typedef|struct|enum|class|if|else|for|while|switch|case|return|static|const|void|int|char|float|double|bool|auto)\b"#
-        case "sh", "zsh", "bash": return #"\b(if|then|else|fi|for|in|do|done|while|case|esac|function|return|export|local)\b"#
-        default: return nil
-        }
-    }
-
-    private func commentPattern(for ext: String) -> String? {
-        switch ext {
-        case "swift", "ts", "tsx", "js", "jsx", "go", "rs", "java", "kt", "c", "h", "cpp", "hpp", "cc": return #"//.*$"#
-        case "py", "sh", "zsh", "bash", "rb", "yaml", "yml", "toml": return #"#.*$"#
-        default: return nil
-        }
-    }
-}
-
-// MARK: - File Tree Row (flat, no recursion — contextMenu works reliably)
-
-private struct FileTreeRowView: View {
-    let node: FileExplorerNode
-    let depth: Int
-    let isExpanded: Bool
-    let isSelected: Bool
-    var selectedCount: Int = 0
-    let onSelect: () -> Void
-    var onStage: (() -> Void)?
-    var onDiscard: (() -> Void)?
-    var onOpenDiff: (() -> Void)?
-    var onCopy: (() -> Void)?
-    var onCut: (() -> Void)?
-    var onPaste: (() -> Void)?
-    var onDelete: (() -> Void)?
-    var onRename: (() -> Void)?
-    var isRenaming: Bool = false
-    @Binding var renameText: String
-    var onCommitRename: (() -> Void)?
-    var onDropInto: (([NSItemProvider]) -> Bool)?
-
-    private var isBatch: Bool { isSelected && selectedCount > 1 }
-
-    @State private var hovering = false
-    @State private var dropTargeted = false
-
-    private var isChangedFile: Bool { !node.isDirectory && node.gitState != nil }
-    private let indentPerLevel: CGFloat = 16
-
-    var body: some View {
-        HStack(spacing: 3) {
-            if node.isDirectory {
-                Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
-                    .font(.system(size: 8, weight: .semibold))
-                    .foregroundStyle(.tertiary)
-                    .frame(width: 12)
-            } else {
-                Color.clear.frame(width: 12)
-            }
-
-            Image(systemName: nodeIcon)
-                .font(.system(size: 10))
-                .foregroundStyle(node.isDirectory ? Color(nsColor: .systemBlue) : .secondary)
-                .frame(width: 14)
-
-            if isRenaming {
-                TextField("", text: $renameText, onCommit: { onCommitRename?() })
-                    .font(.system(size: 11))
-                    .textFieldStyle(.plain)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            } else {
-                Text(node.name)
-                    .font(.system(size: 11))
-                    .lineLimit(1)
-                    .foregroundStyle(gitColor ?? Color.primary)
-            }
-
-            Spacer(minLength: 4)
-
-            if hovering && isChangedFile {
-                Image(systemName: "arrow.uturn.backward")
-                    .font(.system(size: 9))
-                    .foregroundStyle(.secondary)
-                    .onTapGesture { onDiscard?() }
-                    .help("Discard Changes")
-
-                Image(systemName: "plus")
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(.secondary)
-                    .onTapGesture { onStage?() }
-                    .help("Stage Changes")
-            }
-
-            if let state = node.gitState, !node.isDirectory {
-                Text(state.shortCode)
-                    .font(.system(size: 9, weight: .medium, design: .monospaced))
-                    .foregroundStyle(gitColor ?? .secondary)
-            }
-        }
-        .padding(.leading, CGFloat(depth) * indentPerLevel + 4)
-        .padding(.trailing, 8)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .frame(height: 22)
-        .background(
-            dropTargeted ? Color.accentColor.opacity(0.3)
-            : isSelected ? Color.accentColor.opacity(0.2)
-            : hovering ? Color.secondary.opacity(0.08)
-            : Color.clear
-        )
-        .overlay(
-            dropTargeted ? RoundedRectangle(cornerRadius: 2).stroke(Color.accentColor, lineWidth: 1) : nil
-        )
-        .contentShape(Rectangle())
-        .onHover { hovering = $0 }
-        .onTapGesture(count: 1) { onSelect() }
-        .if(node.isDirectory) { view in
-            view.onDrop(of: [.fileURL], isTargeted: $dropTargeted) { providers in
-                onDropInto?(providers) ?? false
-            }
-        }
-        .contextMenu {
-            Button("Reveal in Finder") { NSWorkspace.shared.activateFileViewerSelecting([node.url]) }
-            Divider()
-            Button("Cut") { onCut?() }
-            Button("Copy") { onCopy?() }
-            Button("Paste") { onPaste?() }
-            Button("Copy Path") {
-                NSPasteboard.general.clearContents()
-                NSPasteboard.general.setString(node.url.path, forType: .string)
-            }
-            Divider()
-            Button("Rename") { onRename?() }
-            Button("Delete", role: .destructive) { onDelete?() }
-
-            if isChangedFile {
-                Divider()
-                Button("Open Changes") { onOpenDiff?() }
-                Button(isBatch ? "Stage \(selectedCount) Files" : "Stage Changes") { onStage?() }
-                Button(isBatch ? "Discard \(selectedCount) Files" : "Discard Changes") { onDiscard?() }
-            }
-        }
-    }
-
-    private var nodeIcon: String {
-        if node.isDirectory { return "folder.fill" }
-        let ext = node.url.pathExtension.lowercased()
-        switch ext {
-        case "swift": return "swift"
-        case "md", "txt", "log": return "doc.text"
-        case "json", "yml", "yaml", "toml", "plist": return "curlybraces"
-        case "png", "jpg", "jpeg", "gif", "webp", "svg": return "photo"
-        case "sh", "zsh", "bash": return "terminal"
-        case "js", "ts", "tsx", "jsx": return "chevron.left.forwardslash.chevron.right"
-        default: return "doc"
-        }
-    }
-
-    private var gitColor: Color? {
-        guard let state = node.gitState else { return nil }
-        switch state {
-        case .added: return Color(nsColor: .systemGreen)
-        case .modified: return Color(nsColor: .systemYellow)
-        case .deleted: return Color(nsColor: .systemRed)
-        case .renamed: return Color(nsColor: .systemBlue)
-        case .conflicted: return Color(nsColor: .systemPink)
-        }
-    }
-}
-
-// MARK: - Conditional View Modifier
-
-private extension View {
-    @ViewBuilder
-    func `if`<Content: View>(_ condition: Bool, transform: (Self) -> Content) -> some View {
-        if condition {
-            transform(self)
-        } else {
-            self
         }
     }
 }

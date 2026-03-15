@@ -1,113 +1,84 @@
 import Foundation
 
 final class CommitMessageGenerator {
-    private var process: Process?
-    private let stdinPipe = Pipe()
-    private let stdoutPipe = Pipe()
-
-    func start() {
-        guard process == nil || process?.isRunning == false else { return }
-
-        let proc = Process()
-        proc.executableURL = URL(fileURLWithPath: "/bin/zsh")
-        proc.arguments = ["-l"]
-        proc.standardInput = stdinPipe
-        proc.standardOutput = stdoutPipe
-        proc.standardError = stdoutPipe
-
-        do {
-            try proc.run()
-            process = proc
-            send("PS1='' PS2='' PROMPT='' RPROMPT=''")
-        } catch {
-            NSLog("CommitMessageGenerator: failed to start shell: \(error)")
-        }
-    }
+    private let maxDiffChars = 20_000
+    private var runningProcess: Process?
 
     func generate(diff: String) async throws -> String {
-        if process == nil || process?.isRunning == false {
-            start()
-        }
-        guard let process, process.isRunning else {
-            throw GeneratorError.shellNotRunning
+        let truncatedDiff: String
+        if diff.count > maxDiffChars {
+            truncatedDiff = String(diff.prefix(maxDiffChars))
+                + "\n\n[... diff truncated, \(diff.count - maxDiffChars) more characters ...]"
+        } else {
+            truncatedDiff = diff
         }
 
         let tmpFile = FileManager.default.temporaryDirectory
             .appendingPathComponent("openowl-diff-\(UUID().uuidString).txt")
-        try diff.write(to: tmpFile, atomically: true, encoding: .utf8)
-
-        let id = Int.random(in: 100000...999999)
-        let startMarker = "___OWLSTART\(id)___"
-        let endMarker = "___OWLEND\(id)___"
+        try truncatedDiff.write(to: tmpFile, atomically: true, encoding: .utf8)
+        defer { try? FileManager.default.removeItem(at: tmpFile) }
 
         let prompt = "Write a commit message for this diff. One summary line, then bullet points. Only output the message."
 
+        // Find user's default shell
+        let shell = ProcessInfo.processInfo.environment["SHELL"] ?? "/bin/zsh"
+
+        let proc = Process()
+        proc.executableURL = URL(fileURLWithPath: shell)
+        // -lc: login shell + run command (loads PATH from profile but not interactive)
+        proc.arguments = ["-lic", "cat '\(tmpFile.path)' | claude -p '\(prompt)'"]
+
+        let stdoutPipe = Pipe()
+        let stderrPipe = Pipe()
+        proc.standardOutput = stdoutPipe
+        proc.standardError = stderrPipe
+
+        runningProcess = proc
+
         return try await withCheckedThrowingContinuation { continuation in
-            let lock = NSLock()
-            var buffer = ""
-            var resumed = false
+            proc.terminationHandler = { [weak self] process in
+                self?.runningProcess = nil
 
-            // Timeout after 30s
-            let timeoutItem = DispatchWorkItem {
-                lock.lock()
-                defer { lock.unlock() }
-                guard !resumed else { return }
-                resumed = true
-                try? FileManager.default.removeItem(at: tmpFile)
-                continuation.resume(throwing: GeneratorError.timeout)
-            }
-            DispatchQueue.global().asyncAfter(deadline: .now() + 30, execute: timeoutItem)
+                let outData = stdoutPipe.fileHandleForReading.readDataToEndOfFile()
+                let errData = stderrPipe.fileHandleForReading.readDataToEndOfFile()
+                let output = (String(data: outData, encoding: .utf8) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                let errOutput = (String(data: errData, encoding: .utf8) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
 
-            stdoutPipe.fileHandleForReading.readabilityHandler = { handle in
-                let data = handle.availableData
-                guard !data.isEmpty, let str = String(data: data, encoding: .utf8) else { return }
-
-                lock.lock()
-                defer { lock.unlock() }
-                guard !resumed else { return }
-
-                buffer += str
-
-                guard buffer.contains(endMarker) else { return }
-                resumed = true
-                timeoutItem.cancel()
-                try? FileManager.default.removeItem(at: tmpFile)
-
-                if let startRange = buffer.range(of: startMarker),
-                   let endRange = buffer.range(of: endMarker) {
-                    let output = String(buffer[startRange.upperBound..<endRange.lowerBound])
-                        .trimmingCharacters(in: .whitespacesAndNewlines)
-                    continuation.resume(returning: output)
-                } else {
-                    continuation.resume(throwing: GeneratorError.emptyResponse)
+                if process.terminationStatus != 0 || output.isEmpty {
+                    let msg = errOutput.isEmpty ? (output.isEmpty ? "claude returned no output" : output) : errOutput
+                    if msg.contains("command not found") {
+                        continuation.resume(throwing: GeneratorError.cliError("claude CLI not found. Install: npm i -g @anthropic-ai/claude-code"))
+                    } else {
+                        continuation.resume(throwing: GeneratorError.cliError(msg))
+                    }
+                    return
                 }
+
+                NSLog("CommitMessageGenerator: got response, length=%d", output.count)
+                continuation.resume(returning: output)
             }
 
-            let cmd = "echo '\(startMarker)'; cat '\(tmpFile.path)' | claude -p '\(prompt)' 2>/dev/null; echo '\(endMarker)'"
-            send(cmd)
+            do {
+                try proc.run()
+                NSLog("CommitMessageGenerator: process started, pid=%d", proc.processIdentifier)
+            } catch {
+                runningProcess = nil
+                continuation.resume(throwing: GeneratorError.cliError(error.localizedDescription))
+            }
         }
     }
 
-    func stop() {
-        stdoutPipe.fileHandleForReading.readabilityHandler = nil
-        process?.terminate()
-        process = nil
-    }
-
-    private func send(_ command: String) {
-        stdinPipe.fileHandleForWriting.write((command + "\n").data(using: .utf8)!)
+    func cancel() {
+        runningProcess?.terminate()
+        runningProcess = nil
     }
 
     enum GeneratorError: LocalizedError {
-        case shellNotRunning
-        case emptyResponse
-        case timeout
+        case cliError(String)
 
         var errorDescription: String? {
             switch self {
-            case .shellNotRunning: return "Background shell failed to start"
-            case .emptyResponse: return "No response from claude CLI. Is it installed?"
-            case .timeout: return "Commit message generation timed out"
+            case .cliError(let msg): return msg
             }
         }
     }

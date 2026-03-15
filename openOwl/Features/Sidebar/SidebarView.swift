@@ -1,12 +1,25 @@
 import SwiftUI
 
 struct SidebarView: View {
+    var onToggleCollapse: (() -> Void)?
+
     @EnvironmentObject private var projectStore: ProjectStore
 
     var body: some View {
         VStack(spacing: 0) {
-            // 头部 "PROJECTS" + 添加按钮
-            HStack {
+            // 头部 "PROJECTS" + 按钮
+            HStack(spacing: 6) {
+                // Collapse sidebar button
+                if let onToggleCollapse {
+                    Button(action: onToggleCollapse) {
+                        Image(systemName: "sidebar.left")
+                            .font(.system(size: 11))
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(.secondary)
+                    .help("Collapse sidebar")
+                }
+
                 Text("PROJECTS")
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(.secondary)
@@ -71,6 +84,19 @@ private struct ProjectItemView: View {
         VStack(spacing: 0) {
             // Project row
             HStack(spacing: 6) {
+                // Expand/collapse chevron
+                Button {
+                    withAnimation(.easeInOut(duration: 0.15)) {
+                        projectStore.toggleExpanded(project.id)
+                    }
+                } label: {
+                    Image(systemName: expanded ? "chevron.down" : "chevron.right")
+                        .font(.system(size: 9, weight: .semibold))
+                        .foregroundStyle(.tertiary)
+                        .frame(width: 12, height: 12)
+                }
+                .buttonStyle(.plain)
+
                 Image(systemName: "folder.fill")
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
