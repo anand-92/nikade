@@ -34,8 +34,6 @@ struct FileExplorerView: View {
     @EnvironmentObject private var projectStore: ProjectStore
     @EnvironmentObject private var gitStore: GitChangesStore
     @EnvironmentObject private var navigationStore: AppNavigationStore
-    @FocusState private var quickOpenInputFocused: Bool
-
     // Code editor state
     @State private var editorText: String = ""
     @State private var editorState = SourceEditorState()
@@ -335,88 +333,6 @@ struct FileExplorerView: View {
         }
     }
 
-    // MARK: - Quick Open
-
-    private var quickOpenSheet: some View {
-        VStack(spacing: 10) {
-            HStack(spacing: 8) {
-                HStack(spacing: 6) {
-                    Image(systemName: "magnifyingglass")
-                        .font(.system(size: 12))
-                        .foregroundStyle(.tertiary)
-                    TextField("Search files", text: $store.quickOpenQuery)
-                        .textFieldStyle(.plain)
-                        .focused($quickOpenInputFocused)
-                        .onSubmit { openQuickOpenSelection() }
-                }
-                .padding(.horizontal, 8)
-                .padding(.vertical, 6)
-                .background(Color(nsColor: .textBackgroundColor))
-                .clipShape(RoundedRectangle(cornerRadius: AppSpacing.cornerRadius))
-                .overlay(
-                    RoundedRectangle(cornerRadius: AppSpacing.cornerRadius)
-                        .stroke(Color.secondary.opacity(0.3), lineWidth: 1)
-                )
-
-                Button("Open") { openQuickOpenSelection() }
-                    .disabled(store.quickOpenMatches.isEmpty)
-                Button("Cancel") { store.dismissQuickOpen() }
-            }
-
-            if store.quickOpenMatches.isEmpty {
-                Spacer()
-                Text("No matching files").foregroundStyle(.secondary)
-                Spacer()
-            } else {
-                List(selection: Binding(
-                    get: { store.quickOpenSelectionID },
-                    set: { store.selectQuickOpenResult($0) }
-                )) {
-                    ForEach(store.quickOpenMatches) { match in
-                        HStack(spacing: 6) {
-                            Image(systemName: fileIcon(for: match.node))
-                                .font(.system(size: 10)).foregroundStyle(.secondary)
-                            Text(match.node.name)
-                                .font(.system(size: 12, weight: .medium))
-                                .lineLimit(1)
-                            Spacer()
-                            Text(store.relativePath(for: match.node))
-                                .font(.system(size: 10)).foregroundStyle(.tertiary).lineLimit(1)
-                        }
-                        .tag(match.id)
-                        .onTapGesture(count: 2) { openQuickOpenNode(match.node) }
-                    }
-                }
-                .listStyle(.inset)
-            }
-        }
-        .padding(14)
-        .frame(minWidth: 560, minHeight: 420)
-        .onAppear {
-            store.updateQuickOpenResults()
-            store.syncQuickOpenSelection()
-            DispatchQueue.main.async { quickOpenInputFocused = true }
-        }
-        .onChange(of: store.quickOpenQuery) { _, _ in
-            store.updateQuickOpenResults()
-        }
-        .onChange(of: store.quickOpenResults) { _, _ in
-            store.syncQuickOpenSelection()
-        }
-    }
-
-    private func openQuickOpenSelection() {
-        guard let node = store.openQuickOpenSelection() else { return }
-        if store.isChangedFile(node) {
-            navigationStore.activeTab = .gitChanges
-            gitStore.openDiff(forFileURL: node.url)
-        }
-    }
-
-    private func openQuickOpenNode(_ node: FileExplorerNode) {
-        store.selectNode(node.id)
-        store.dismissQuickOpen()
-    }
 
     // MARK: - Helpers
 
