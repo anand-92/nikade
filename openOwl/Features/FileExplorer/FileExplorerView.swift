@@ -29,26 +29,61 @@ let editorConfiguration = SourceEditorConfiguration(
     peripherals: .init(showMinimap: false)
 )
 
+// MARK: - Editor Tab
+
+private struct EditorTab: Identifiable, Equatable {
+    let url: URL
+    var id: URL { url }
+    var name: String { url.lastPathComponent }
+}
+
+// MARK: - Dirty Tracking Coordinator
+
+/// Detects text changes in SourceEditor and marks the active tab as dirty.
+private class EditTracker: TextViewCoordinator {
+    var onTextChanged: (() -> Void)?
+
+    func prepareCoordinator(controller: TextViewController) {}
+
+    func textViewDidChangeText(controller: TextViewController) {
+        onTextChanged?()
+    }
+
+    func textViewDidChangeSelection(controller: TextViewController, newPositions: [CursorPosition]) {}
+
+    func destroy() {}
+}
+
+// MARK: - FileExplorerView
+
 struct FileExplorerView: View {
     @EnvironmentObject private var store: FileExplorerStore
     @EnvironmentObject private var projectStore: ProjectStore
     @EnvironmentObject private var gitStore: GitChangesStore
     @EnvironmentObject private var navigationStore: AppNavigationStore
-    // Code editor state
-    @State private var editorText: String = ""
+
+    // Tab management
+    @State private var openTabs: [EditorTab] = []
+    @State private var activeTabURL: URL?
+    @State private var tabStorages: [URL: NSTextStorage] = [:]
+    @State private var tabImageCache: [URL: NSImage] = [:]
+    @State private var dirtyTabs: Set<URL> = []
+
+    // Editor state
     @State private var editorState = SourceEditorState()
-    @State private var editingFileURL: URL?
-    @State private var loadingFileURL: URL?
-    @State private var isEditorDirty = false
-    @State private var isEditorLoading = false
     @State private var previewImage: NSImage?
+    @State private var isEditorLoading = false
+    @State private var loadingFileURL: URL?
+
+    // Dirty tracking coordinator (shared across tab switches)
+    @State private var editTracker = EditTracker()
 
     private static let imageExtensions: Set<String> = [
         "png", "jpg", "jpeg", "gif", "bmp", "tiff", "tif", "webp", "heic", "heif", "ico", "svg", "icns"
     ]
 
-    private var isImageFile: Bool {
-        guard let ext = editingFileURL?.pathExtension.lowercased() else { return false }
+    private var isActiveTabImage: Bool {
+        guard let ext = activeTabURL?.pathExtension.lowercased() else { return false }
         return Self.imageExtensions.contains(ext)
     }
 
@@ -63,22 +98,49 @@ struct FileExplorerView: View {
         }
         .onAppear {
             store.setProject(projectStore.activeProjectURL)
+            setupEditTracker()
         }
         .onChange(of: projectStore.activeProjectID) { _, _ in
-            if isEditorDirty { saveCurrentFile() }
+            saveAllDirtyTabs()
             store.setProject(projectStore.activeProjectURL)
-            editingFileURL = nil
-            loadingFileURL = nil
+            openTabs = []
+            activeTabURL = nil
+            tabStorages.removeAll()
+            tabImageCache.removeAll()
+            dirtyTabs.removeAll()
             previewImage = nil
-            isEditorDirty = false
+        }
+        .onChange(of: store.selectedNodeID) { _, newID in
+            // Auto-open file when selected externally (e.g. QuickOpen)
+            guard let newID,
+                  let node = store.nodeIndex[newID],
+                  !node.isDirectory else { return }
+            openFileInTab(node)
         }
         .onDisappear {
-            if isEditorDirty { saveCurrentFile() }
+            saveAllDirtyTabs()
         }
         .background {
-            Button("") { saveCurrentFile() }
+            Button("") { saveCurrentTab() }
                 .keyboardShortcut("s", modifiers: [.command])
                 .hidden()
+        }
+        .background {
+            if !openTabs.isEmpty {
+                Button("") { closeActiveTab() }
+                    .keyboardShortcut("w", modifiers: [.command])
+                    .hidden()
+            }
+        }
+    }
+
+    private func setupEditTracker() {
+        editTracker.onTextChanged = { [editTracker] in
+            // editTracker captured to keep reference alive; only using self's state
+            _ = editTracker
+            if let url = activeTabURL, !isEditorLoading {
+                dirtyTabs.insert(url)
+            }
         }
     }
 
@@ -135,7 +197,7 @@ struct FileExplorerView: View {
                 OutlineTreeView(
                     onSelectFile: { node in
                         store.selectNode(node.id)
-                        loadFileIntoEditor(node)
+                        openFileInTab(node)
                     },
                     onStage: { node in stageFile(node) },
                     onDiscard: { node in discardFile(node) },
@@ -160,26 +222,93 @@ struct FileExplorerView: View {
         .background(EffectView(material: .sidebar, blendingMode: .behindWindow))
     }
 
-    // MARK: - Editor
+    // MARK: - Editor Panel
 
-    private func loadFileIntoEditor(_ node: FileExplorerNode) {
+    private var editorPanel: some View {
+        VStack(spacing: 0) {
+            // Tab bar
+            if !openTabs.isEmpty {
+                editorTabBar
+            }
+
+            PanelDivider()
+
+            // Editor content
+            if let url = activeTabURL {
+                if isActiveTabImage, let image = previewImage {
+                    ScrollView([.horizontal, .vertical]) {
+                        Image(nsImage: image)
+                            .resizable()
+                            .aspectRatio(contentMode: .fit)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            .padding()
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .background(Color(nsColor: .windowBackgroundColor))
+                } else if !isActiveTabImage, let storage = tabStorages[url] {
+                    SourceEditor(
+                        storage,
+                        language: editorLanguage(for: url),
+                        configuration: editorConfiguration,
+                        state: $editorState,
+                        coordinators: [editTracker]
+                    )
+                    .id(url)
+                }
+            } else {
+                Spacer()
+                Text("Select a file to edit")
+                    .foregroundStyle(.secondary)
+                    .font(.system(size: 12))
+                    .frame(maxWidth: .infinity)
+                Spacer()
+            }
+        }
+    }
+
+    // MARK: - Tab Bar
+
+    private var editorTabBar: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 0) {
+                ForEach(openTabs) { tab in
+                    EditorTabButton(
+                        tab: tab,
+                        isActive: tab.url == activeTabURL,
+                        isDirty: dirtyTabs.contains(tab.url),
+                        onSelect: { switchToTab(tab.url) },
+                        onClose: { closeTab(tab.url) }
+                    )
+                }
+            }
+        }
+        .frame(height: AppSpacing.editorTabBarHeight)
+        .background(Color(nsColor: .windowBackgroundColor))
+    }
+
+    // MARK: - Tab Management
+
+    private func openFileInTab(_ node: FileExplorerNode) {
         guard !node.isDirectory else { return }
         let url = node.url
-        if editingFileURL == url || loadingFileURL == url { return }
-        if isEditorDirty { saveCurrentFile() }
 
-        let fileSize = (try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? Int) ?? 0
-        if fileSize > 10_000_000 {
-            editingFileURL = nil
-            loadingFileURL = nil
-            previewImage = nil
+        // Already open — just switch
+        if openTabs.contains(where: { $0.url == url }) {
+            if activeTabURL != url {
+                switchToTab(url)
+            }
             return
         }
+
+        // Size check
+        let fileSize = (try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? Int) ?? 0
+        if fileSize > 10_000_000 { return }
 
         let ext = url.pathExtension.lowercased()
         let isImage = Self.imageExtensions.contains(ext)
 
-        // Keep showing old editor while loading new content
+        // Add new tab
+        openTabs.append(EditorTab(url: url))
         loadingFileURL = url
         isEditorLoading = true
 
@@ -188,59 +317,140 @@ struct FileExplorerView: View {
                 let image = NSImage(contentsOf: url)
                 await MainActor.run {
                     guard loadingFileURL == url else { return }
+                    tabImageCache[url] = image
                     previewImage = image
-                    editorText = ""
-                    isEditorDirty = false
-                    editingFileURL = url
+                    activeTabURL = url
                     loadingFileURL = nil
                     isEditorLoading = false
                 }
             }
         } else {
-            // Text file — cap at 1MB
             if fileSize > 1_000_000 {
-                editingFileURL = nil
+                openTabs.removeAll { $0.url == url }
                 loadingFileURL = nil
-                previewImage = nil
+                isEditorLoading = false
                 return
             }
             Task.detached(priority: .userInitiated) {
                 let content = (try? String(contentsOf: url, encoding: .utf8)) ?? ""
+                let storage = NSTextStorage(string: content)
                 await MainActor.run {
                     guard loadingFileURL == url else { return }
+                    tabStorages[url] = storage
                     previewImage = nil
-                    editorText = content
                     editorState = SourceEditorState()
-                    isEditorDirty = false
-                    editingFileURL = url
+                    activeTabURL = url
                     loadingFileURL = nil
                 }
                 try? await Task.sleep(for: .milliseconds(50))
                 await MainActor.run {
-                    guard editingFileURL == url else { return }
+                    guard activeTabURL == url else { return }
                     isEditorLoading = false
                 }
             }
         }
     }
 
-    private func saveCurrentFile() {
-        guard let url = editingFileURL, isEditorDirty else { return }
+    private func switchToTab(_ url: URL) {
+        guard url != activeTabURL else { return }
+        guard openTabs.contains(where: { $0.url == url }) else { return }
+
+        isEditorLoading = true
+        activeTabURL = url
+        editorState = SourceEditorState()
+
+        let ext = url.pathExtension.lowercased()
+        let isImage = Self.imageExtensions.contains(ext)
+
+        if isImage {
+            previewImage = tabImageCache[url]
+            isEditorLoading = false
+        } else {
+            previewImage = nil
+            // Storage already in tabStorages — SourceEditor recreated via .id(url)
+            Task {
+                try? await Task.sleep(for: .milliseconds(50))
+                guard activeTabURL == url else { return }
+                isEditorLoading = false
+            }
+        }
+
+        // Sync tree selection
+        store.selectNode(url.standardizedFileURL.path)
+    }
+
+    private func closeTab(_ url: URL) {
+        // Auto-save dirty tab
+        if dirtyTabs.contains(url) {
+            if let storage = tabStorages[url] {
+                try? storage.string.write(to: url, atomically: true, encoding: .utf8)
+            }
+        }
+
+        guard let index = openTabs.firstIndex(where: { $0.url == url }) else { return }
+        let wasActive = url == activeTabURL
+
+        openTabs.remove(at: index)
+        tabStorages.removeValue(forKey: url)
+        tabImageCache.removeValue(forKey: url)
+        dirtyTabs.remove(url)
+
+        if wasActive {
+            if openTabs.isEmpty {
+                activeTabURL = nil
+                previewImage = nil
+            } else {
+                let newIndex = min(index, openTabs.count - 1)
+                let newURL = openTabs[newIndex].url
+                isEditorLoading = true
+                activeTabURL = newURL
+                editorState = SourceEditorState()
+
+                let ext = newURL.pathExtension.lowercased()
+                if Self.imageExtensions.contains(ext) {
+                    previewImage = tabImageCache[newURL]
+                    isEditorLoading = false
+                } else {
+                    previewImage = nil
+                    Task {
+                        try? await Task.sleep(for: .milliseconds(50))
+                        guard activeTabURL == newURL else { return }
+                        isEditorLoading = false
+                    }
+                }
+            }
+        }
+    }
+
+    private func closeActiveTab() {
+        guard let url = activeTabURL else { return }
+        closeTab(url)
+    }
+
+    // MARK: - Save
+
+    private func saveCurrentTab() {
+        guard let url = activeTabURL,
+              dirtyTabs.contains(url),
+              let storage = tabStorages[url] else { return }
         do {
-            try editorText.write(to: url, atomically: true, encoding: .utf8)
-            isEditorDirty = false
+            try storage.string.write(to: url, atomically: true, encoding: .utf8)
+            dirtyTabs.remove(url)
             store.refreshNow()
         } catch {
             store.errorMessage = "Failed to save: \(error.localizedDescription)"
         }
     }
 
-    private var editorLanguage: CodeLanguage {
-        guard let url = store.selectedNode?.url else {
-            return .default
+    private func saveAllDirtyTabs() {
+        for url in dirtyTabs {
+            guard let storage = tabStorages[url] else { continue }
+            try? storage.string.write(to: url, atomically: true, encoding: .utf8)
         }
-        return CodeLanguage.detectLanguageFrom(url: url)
+        dirtyTabs.removeAll()
     }
+
+    // MARK: - Git Actions
 
     private func stageFile(_ node: FileExplorerNode) {
         guard node.gitState != nil else { return }
@@ -258,87 +468,14 @@ struct FileExplorerView: View {
         gitStore.openDiff(forFileURL: node.url)
     }
 
-    // MARK: - Editor Panel
-
-    private var editorPanel: some View {
-        VStack(spacing: 0) {
-            HStack(spacing: 6) {
-                if let node = store.selectedNode {
-                    Image(systemName: fileIcon(for: node))
-                        .font(.system(size: 10))
-                        .foregroundStyle(.secondary)
-                    Text(node.name)
-                        .font(AppFonts.primaryLabel)
-                        .lineLimit(1)
-
-                    if isEditorDirty {
-                        Circle()
-                            .fill(Color.primary)
-                            .frame(width: 5, height: 5)
-                    }
-                }
-                Spacer()
-
-                if isEditorDirty {
-                    Text("Modified")
-                        .font(AppFonts.badge)
-                        .foregroundStyle(.secondary)
-                }
-
-                // 图片尺寸信息
-                if isImageFile, let image = previewImage {
-                    Text("\(Int(image.size.width)) × \(Int(image.size.height))")
-                        .font(AppFonts.caption)
-                        .foregroundStyle(.tertiary)
-                }
-            }
-            .padding(.horizontal, 10)
-            .frame(height: AppConstants.headerHeight)
-            .background(Color(nsColor: .windowBackgroundColor))
-
-            PanelDivider()
-
-            if editingFileURL != nil, isImageFile, let image = previewImage {
-                // Image preview
-                ScrollView([.horizontal, .vertical]) {
-                    Image(nsImage: image)
-                        .resizable()
-                        .aspectRatio(contentMode: .fit)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .padding()
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(Color(nsColor: .windowBackgroundColor))
-            } else if editingFileURL != nil, !isImageFile {
-                SourceEditor(
-                    $editorText,
-                    language: editorLanguage,
-                    configuration: editorConfiguration,
-                    state: $editorState
-                )
-                .id(editingFileURL)
-                .onChange(of: editorText) { _, _ in
-                    if editingFileURL != nil, !isEditorLoading {
-                        isEditorDirty = true
-                    }
-                }
-            } else {
-                Spacer()
-                Text("Select a file to edit")
-                    .foregroundStyle(.secondary)
-                    .font(.system(size: 12))
-                    .frame(maxWidth: .infinity)
-                Spacer()
-            }
-        }
-    }
-
-
     // MARK: - Helpers
 
-    private func fileIcon(for node: FileExplorerNode) -> String {
-        if node.isDirectory { return "folder.fill" }
-        let ext = node.url.pathExtension.lowercased()
+    private func editorLanguage(for url: URL) -> CodeLanguage {
+        CodeLanguage.detectLanguageFrom(url: url)
+    }
+
+    fileprivate static func fileIconName(for url: URL) -> String {
+        let ext = url.pathExtension.lowercased()
         switch ext {
         case "swift": return "swift"
         case "md", "txt", "log": return "doc.text"
@@ -347,6 +484,84 @@ struct FileExplorerView: View {
         case "sh", "zsh", "bash": return "terminal"
         case "js", "ts", "tsx", "jsx": return "chevron.left.forwardslash.chevron.right"
         default: return "doc"
+        }
+    }
+
+    fileprivate static func fileIconColor(for url: URL) -> Color {
+        let ext = url.pathExtension.lowercased()
+        switch ext {
+        case "swift": return Color(nsColor: .systemOrange)
+        case "js", "ts", "tsx", "jsx": return Color(nsColor: .systemYellow)
+        case "py": return Color(nsColor: .systemGreen)
+        case "json", "yml", "yaml": return Color(nsColor: .systemPurple)
+        default: return .secondary
+        }
+    }
+
+    private func fileIcon(for node: FileExplorerNode) -> String {
+        if node.isDirectory { return "folder.fill" }
+        return Self.fileIconName(for: node.url)
+    }
+}
+
+// MARK: - Editor Tab Button
+
+private struct EditorTabButton: View {
+    let tab: EditorTab
+    let isActive: Bool
+    let isDirty: Bool
+    let onSelect: () -> Void
+    let onClose: () -> Void
+
+    @State private var isHovering = false
+
+    var body: some View {
+        HStack(spacing: 4) {
+            Image(systemName: FileExplorerView.fileIconName(for: tab.url))
+                .font(.system(size: 10))
+                .foregroundStyle(FileExplorerView.fileIconColor(for: tab.url))
+
+            Text(tab.name)
+                .font(.system(size: 11))
+                .lineLimit(1)
+
+            // Dirty indicator / close button
+            closeOrDirtyIndicator
+        }
+        .padding(.horizontal, 8)
+        .frame(height: AppSpacing.editorTabBarHeight)
+        .background(isActive ? AppColors.activeBackground : (isHovering ? AppColors.hoverBackground : Color.clear))
+        .overlay(alignment: .trailing) {
+            Rectangle()
+                .fill(Color.secondary.opacity(0.15))
+                .frame(width: 1)
+        }
+        .contentShape(Rectangle())
+        .onTapGesture { onSelect() }
+        .onHover { isHovering = $0 }
+        .contextMenu {
+            Button("Close") { onClose() }
+        }
+    }
+
+    @ViewBuilder
+    private var closeOrDirtyIndicator: some View {
+        if isDirty && !isHovering {
+            Circle()
+                .fill(Color.primary.opacity(0.6))
+                .frame(width: 6, height: 6)
+                .frame(width: 16, height: 16)
+        } else if isHovering || isActive {
+            Button(action: onClose) {
+                Image(systemName: "xmark")
+                    .font(.system(size: 8, weight: .bold))
+                    .foregroundStyle(.tertiary)
+                    .frame(width: 16, height: 16)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+        } else {
+            Color.clear.frame(width: 16, height: 16)
         }
     }
 }

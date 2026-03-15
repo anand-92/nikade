@@ -63,6 +63,7 @@ enum FilePreviewState {
 struct FileQuickOpenMatch: Identifiable, Hashable {
     let node: FileExplorerNode
     let score: Int
+    let matchedIndices: [Int] // character indices in node.name that matched the query
 
     var id: String { node.id }
 }
@@ -114,7 +115,7 @@ final class FileExplorerStore: ObservableObject {
         }
 
         guard !query.isEmpty else {
-            quickOpenResults = Array(nodes.prefix(200).map { FileQuickOpenMatch(node: $0, score: 0) })
+            quickOpenResults = Array(nodes.prefix(200).map { FileQuickOpenMatch(node: $0, score: 0, matchedIndices: []) })
             return
         }
 
@@ -122,14 +123,14 @@ final class FileExplorerStore: ObservableObject {
         let item = DispatchWorkItem { [weak self] in
             let results: [FileQuickOpenMatch] = nodes
                 .compactMap { node -> FileQuickOpenMatch? in
-                    guard let score = FileExplorerStore.quickOpenScore(for: node, query: query) else { return nil }
-                    return FileQuickOpenMatch(node: node, score: score)
+                    guard let result = FileExplorerStore.quickOpenScore(for: node, query: query) else { return nil }
+                    return FileQuickOpenMatch(node: node, score: result.score, matchedIndices: result.indices)
                 }
                 .sorted { lhs, rhs in
                     if lhs.score != rhs.score { return lhs.score > rhs.score }
                     return lhs.node.url.path.localizedStandardCompare(rhs.node.url.path) == .orderedAscending
                 }
-            let top = Array(results.prefix(200))
+            let top = Array(results.prefix(50))
             DispatchQueue.main.async { [weak self] in
                 self?.quickOpenResults = top
             }
@@ -244,9 +245,13 @@ final class FileExplorerStore: ObservableObject {
     }
 
     func dismissQuickOpen() {
-        isQuickOpenPresented = false
-        quickOpenQuery = ""
-        quickOpenSelectionID = nil
+        // Defer to avoid "Publishing changes from within view updates"
+        // when called from .onChange or other view-update contexts.
+        DispatchQueue.main.async {
+            self.isQuickOpenPresented = false
+            self.quickOpenQuery = ""
+            self.quickOpenSelectionID = nil
+        }
     }
 
     func selectQuickOpenResult(_ resultID: String?) {
@@ -428,6 +433,9 @@ final class FileExplorerStore: ObservableObject {
 
         rootNodes = shallowResult.nodes
         nodeIndex = shallowResult.index
+        searchableFileNodes = shallowResult.index.values
+            .filter { !$0.isDirectory }
+            .sorted { $0.url.path.localizedStandardCompare($1.url.path) == .orderedAscending }
 
         // Phase 2: Full scan with gitignore + git status
         let t1 = CFAbsoluteTimeGetCurrent()
@@ -651,39 +659,69 @@ private extension FileExplorerStore {
         return compacted
     }
 
-    nonisolated static func quickOpenScore(for node: FileExplorerNode, query: String) -> Int? {
-        let name = node.name.lowercased()
-        let path = node.url.path.lowercased()
+    /// Fuzzy match: query characters must appear in order but not contiguously.
+    /// Returns (score, matchedIndices in name) or nil if no match.
+    nonisolated static func fuzzyMatch(name: String, path: String, query: String) -> (score: Int, indices: [Int])? {
+        let nameLower = name.lowercased()
+        let pathLower = path.lowercased()
+        let nameChars = Array(nameLower)
+        let queryChars = Array(query)
 
-        guard path.contains(query) else { return nil }
+        guard !queryChars.isEmpty else { return (0, []) }
 
+        // Try matching against name first
+        if let (nameScore, indices) = fuzzyScoreString(nameChars, query: queryChars) {
+            var score = nameScore + 500
+            if nameLower == query { score += 1000 }
+            if nameLower.hasPrefix(query) { score += 600 }
+            let depth = pathLower.split(separator: "/").count
+            score += max(100 - depth * 3, 0)
+            return (score, indices)
+        }
+
+        // Fallback: substring match against path (not fuzzy — avoids false positives)
+        if pathLower.contains(query) {
+            let depth = pathLower.split(separator: "/").count
+            let score = 50 + max(100 - depth * 3, 0)
+            return (score, [])
+        }
+
+        return nil
+    }
+
+    /// Score a fuzzy match of query against target characters.
+    /// Returns (score, matched indices) or nil.
+    private nonisolated static func fuzzyScoreString(_ target: [Character], query: [Character]) -> (Int, [Int])? {
+        var queryIdx = 0
+        var matchedIndices: [Int] = []
         var score = 0
+        var prevMatchIdx = -1
 
-        if name == query {
-            score += 1200
-        }
-        if name.hasPrefix(query) {
-            score += 700
-        }
-
-        if let nameMatchRange = name.range(of: query) {
-            let distance = name.distance(from: name.startIndex, to: nameMatchRange.lowerBound)
-            score += max(420 - distance * 12, 80)
-        }
-
-        if let pathMatchRange = path.range(of: query) {
-            let distance = path.distance(from: path.startIndex, to: pathMatchRange.lowerBound)
-            score += max(240 - distance, 30)
-        }
-
-        let pathDepth = path.split(separator: "/").count
-        score += max(90 - pathDepth * 2, 0)
-
-        if node.gitState != nil {
-            score += 16
+        for (i, ch) in target.enumerated() {
+            guard queryIdx < query.count else { break }
+            if ch == query[queryIdx] {
+                matchedIndices.append(i)
+                // Consecutive match bonus
+                if prevMatchIdx == i - 1 { score += 8 }
+                // Start of word bonus (after separator or camelCase)
+                if i == 0 || target[i - 1] == "/" || target[i - 1] == "." || target[i - 1] == "-" || target[i - 1] == "_"
+                    || (target[i - 1].isLowercase && ch.isUppercase) {
+                    score += 12
+                }
+                // Early match bonus
+                score += max(10 - i, 0)
+                score += 4 // base per-character match
+                prevMatchIdx = i
+                queryIdx += 1
+            }
         }
 
-        return score
+        guard queryIdx == query.count else { return nil } // not all query chars matched
+        return (score, matchedIndices)
+    }
+
+    nonisolated static func quickOpenScore(for node: FileExplorerNode, query: String) -> (score: Int, indices: [Int])? {
+        fuzzyMatch(name: node.name, path: node.url.path.lowercased(), query: query)
     }
 
     nonisolated static func scanProject(projectURL: URL, gitContext: GitContext, maxDepth: Int = .max) -> ScanResult {
@@ -764,9 +802,13 @@ private extension FileExplorerStore {
         return node
     }
 
+    private static let alwaysIgnoredNames: Set<String> = [
+        ".git", ".DS_Store", ".build", "DerivedData",
+        "ghostty-resources", "GhosttyKit.xcframework"
+    ]
+
     nonisolated static func shouldIgnore(url: URL, gitContext: GitContext) -> Bool {
-        let name = url.lastPathComponent
-        return name == ".git" || name == ".DS_Store"
+        alwaysIgnoredNames.contains(url.lastPathComponent)
     }
 
     nonisolated static func isGitIgnored(path: String, gitContext: GitContext) -> Bool {

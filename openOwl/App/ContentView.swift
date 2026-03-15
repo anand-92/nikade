@@ -45,11 +45,15 @@ struct ContentView: View {
                 .keyboardShortcut("p", modifiers: [.command])
                 .hidden()
         }
-        .sheet(isPresented: $fileExplorerStore.isQuickOpenPresented, onDismiss: {
-            fileExplorerStore.dismissQuickOpen()
-        }) {
-            QuickOpenSheet()
+        .overlay(alignment: .top) {
+            if fileExplorerStore.isQuickOpenPresented {
+                QuickOpenPanel()
+                    .padding(.top, 8)
+                    .transition(.move(edge: .top).combined(with: .opacity))
+                    .zIndex(100)
+            }
         }
+        .animation(.easeOut(duration: 0.15), value: fileExplorerStore.isQuickOpenPresented)
     }
 
     @ViewBuilder

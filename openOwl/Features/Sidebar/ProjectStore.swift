@@ -120,9 +120,11 @@ final class ProjectStore: ObservableObject {
 
     func activateProject(id: String) {
         guard projects.contains(where: { $0.id == id }) else { return }
-        activeProjectID = id
-        persist()
-        detectBranchPrefix(for: id)
+        DispatchQueue.main.async {
+            self.activeProjectID = id
+            self.persist()
+            self.detectBranchPrefix(for: id)
+        }
     }
 
     private func detectBranchPrefix(for projectID: String) {

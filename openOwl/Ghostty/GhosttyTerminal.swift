@@ -66,15 +66,26 @@ class TerminalNSView: NSView {
         var cwdPtr = strdup(cwd)
         surfaceConfig.working_directory = UnsafePointer(cwdPtr)
 
-        // Inject TERMINFO_DIRS so the shell can find xterm-ghostty terminfo
+        // Inject environment variables for shell integration
         let resourcesPath = Bundle.main.resourceURL?
             .appendingPathComponent("ghostty-resources/terminfo").path
         var envVars: [ghostty_env_var_s] = []
         var envStorage: [UnsafeMutablePointer<CChar>] = []
 
+        // TERMINFO_DIRS: so the shell can find xterm-ghostty terminfo
         if let terminfoPath = resourcesPath {
             let keyPtr = strdup("TERMINFO_DIRS")!
             let valPtr = strdup(terminfoPath)!
+            envStorage.append(contentsOf: [keyPtr, valPtr])
+            envVars.append(ghostty_env_var_s(key: keyPtr, value: valPtr))
+        }
+
+        // GHOSTTY_SHELL_FEATURES: enables shell integration SSH wrapper
+        // that sets TERM=xterm-256color for remote connections (prevents
+        // garbled output on servers without xterm-ghostty terminfo)
+        do {
+            let keyPtr = strdup("GHOSTTY_SHELL_FEATURES")!
+            let valPtr = strdup("cursor,sudo,title,ssh-env,ssh-terminfo")!
             envStorage.append(contentsOf: [keyPtr, valPtr])
             envVars.append(ghostty_env_var_s(key: keyPtr, value: valPtr))
         }
