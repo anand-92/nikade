@@ -4,6 +4,7 @@
 
 - M2: Git 变更管理（主体完成，待运行时手测）
 - M3: 文件浏览器 + 侧边栏（已完成 T3.1-T3.7 主体实现，待运行时手测）
+- REQ-004: 本地部署服务（主体实现完成，待运行时手测）
 
 ## Done
 
@@ -28,6 +29,14 @@
 - [x] M3-T3.6 文件拖拽 — 文件树拖拽到 Terminal 粘贴路径
 - [x] M3-T3.7 状态优化 — A/M/D/R/U 细粒度状态 + ignored 前缀压缩
 - [x] 编译验证通过 (`xcodebuild -scheme openOwl -configuration Debug build`)
+- [x] REQ-004-T1 DeploymentProcessManager — Process 生命周期、SIGTERM→SIGKILL、日志流式写入
+- [x] REQ-004-T2 DeploymentStore — 创建/启动/停止/重启/删除、UserDefaults 持久化、分支轮询、PID 恢复
+- [x] REQ-004-T3 ViewTab + ContentView 集成 — `.deployments` tab + DeploymentPanelView
+- [x] REQ-004-T4 DeploymentPanelView — 左侧列表 + 右侧详情（状态/按钮/配置/实时日志）
+- [x] REQ-004-T5 DeploymentRow + SidebarView — Sidebar 状态行 + 右键菜单 + 点击跳转 Deploy tab
+- [x] REQ-004-T6 CreateDeploymentSheet — 创建部署表单 + 自动获取 remote URL + Deploy 按钮
+- [x] REQ-004-T7 MenuBarExtra 系统托盘 — 托盘图标 + 部署状态菜单 + Start/Stop 操作
+- [x] REQ-004-T8 AppDelegate — 有运行中部署时关闭窗口不退出 app
 
 ## Pending Issues
 

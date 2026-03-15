@@ -63,24 +63,36 @@ struct OutlineTreeView: NSViewControllerRepresentable {
     }
 
     final class Coordinator {
-        private var cancellable: AnyCancellable?
+        private var cancellables = Set<AnyCancellable>()
 
         @MainActor
         func subscribe(store: FileExplorerStore, controller: OutlineTreeViewController) {
-            cancellable?.cancel()
-            // Only reload when the actual tree data changes, not on every store property change
-            // (selectedNodeID, previewState, quickOpen etc. don't need a tree reload)
-            cancellable = store.$rootNodes
-                .dropFirst() // skip initial value (already loaded in makeNSViewController)
+            cancellables.removeAll()
+
+            // Reload tree when data changes
+            store.$rootNodes
+                .dropFirst()
                 .receive(on: RunLoop.main)
                 .sink { [weak controller, weak store] newRootNodes in
                     guard let controller, let store else { return }
                     controller.updateData(rootNodes: newRootNodes, nodeIndex: store.nodeIndex)
                 }
+                .store(in: &cancellables)
+
+            // Reveal & select node when selectedNodeID changes (e.g. from Quick Open)
+            store.$selectedNodeID
+                .dropFirst()
+                .removeDuplicates()
+                .receive(on: RunLoop.main)
+                .sink { [weak controller] newID in
+                    guard let controller, let newID else { return }
+                    controller.selectAndReveal(nodeID: newID)
+                }
+                .store(in: &cancellables)
         }
 
         deinit {
-            cancellable?.cancel()
+            cancellables.removeAll()
         }
     }
 }

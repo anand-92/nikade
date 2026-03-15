@@ -6,11 +6,38 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     weak var ghosttyManager: GhosttyAppManager?
     var workspaceStore: TerminalWorkspaceStore?
     weak var navigationStore: AppNavigationStore?
+    weak var deploymentStore: DeploymentStore?
     private var localKeyMonitor: Any?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.regular)
+        ensureEditMenu()
         installLocalKeyMonitor()
+    }
+
+    /// SwiftUI sometimes omits the Edit menu. Ensure Cut/Copy/Paste/Select All exist
+    /// so that TextField and TextEditor support Cmd+C/V/X/A.
+    private func ensureEditMenu() {
+        guard let mainMenu = NSApp.mainMenu else { return }
+
+        // Check if Edit menu already exists
+        if mainMenu.item(withTitle: "Edit") != nil { return }
+
+        let editMenu = NSMenu(title: "Edit")
+        editMenu.addItem(withTitle: "Undo", action: Selector(("undo:")), keyEquivalent: "z")
+        editMenu.addItem(withTitle: "Redo", action: Selector(("redo:")), keyEquivalent: "Z")
+        editMenu.addItem(.separator())
+        editMenu.addItem(withTitle: "Cut", action: #selector(NSText.cut(_:)), keyEquivalent: "x")
+        editMenu.addItem(withTitle: "Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
+        editMenu.addItem(withTitle: "Paste", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
+        editMenu.addItem(withTitle: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
+
+        let editMenuItem = NSMenuItem(title: "Edit", action: nil, keyEquivalent: "")
+        editMenuItem.submenu = editMenu
+
+        // Insert after the app menu (index 1)
+        let insertIndex = min(1, mainMenu.items.count)
+        mainMenu.insertItem(editMenuItem, at: insertIndex)
     }
 
     deinit {
@@ -20,7 +47,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
-        true
+        !(deploymentStore?.hasRunningDeployments() ?? false)
     }
 
     private func installLocalKeyMonitor() {

@@ -1,0 +1,109 @@
+import SwiftUI
+
+struct DeploymentTrayMenu: View {
+    @EnvironmentObject private var deploymentStore: DeploymentStore
+    @EnvironmentObject private var navigationStore: AppNavigationStore
+    @EnvironmentObject private var projectStore: ProjectStore
+
+    var body: some View {
+        if deploymentStore.deployments.isEmpty {
+            Text("No Deployments")
+                .foregroundStyle(.secondary)
+        } else {
+            ForEach(deploymentStore.deployments) { dep in
+                if dep.isRemote {
+                    remoteMenuItem(dep)
+                } else {
+                    localMenuItem(dep)
+                }
+            }
+        }
+
+        Divider()
+
+        Button("Open openOwl") {
+            NSApp.activate(ignoringOtherApps: true)
+            for window in NSApp.windows where window.canBecomeMain {
+                window.makeKeyAndOrderFront(nil)
+                break
+            }
+        }
+
+        Button("Quit openOwl") {
+            for dep in deploymentStore.deployments where !dep.isRemote && dep.status == .running {
+                Task { await deploymentStore.stop(id: dep.id) }
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                NSApp.terminate(nil)
+            }
+        }
+    }
+
+    // MARK: - Local: Start/Stop/Restart
+
+    private func localMenuItem(_ dep: Deployment) -> some View {
+        Menu {
+            if dep.status == .running {
+                Button("Stop") {
+                    Task { await deploymentStore.stop(id: dep.id) }
+                }
+                Button("Restart") {
+                    Task { try? await deploymentStore.restart(id: dep.id) }
+                }
+            } else if dep.status != .building {
+                Button("Start") {
+                    Task { try? await deploymentStore.start(id: dep.id) }
+                }
+            }
+            Divider()
+            Button("Open Config") {
+                openDeployment(dep.id)
+            }
+        } label: {
+            Text("\(dep.name)  \(statusLabel(dep.status))")
+        }
+    }
+
+    // MARK: - Remote: read-only health status
+
+    private func remoteMenuItem(_ dep: Deployment) -> some View {
+        let healthy = deploymentStore.healthStatus[dep.id]
+        let label = healthy == true ? "Healthy" : (healthy == false ? "Down" : "Checking")
+
+        return Button("\(dep.name)  \(label)") {
+            openDeployment(dep.id)
+        }
+    }
+
+    private func openDeployment(_ id: String) {
+        NSApp.activate(ignoringOtherApps: true)
+        for window in NSApp.windows where window.canBecomeMain {
+            window.makeKeyAndOrderFront(nil)
+            break
+        }
+        // Notify main window via NotificationCenter — MenuBarExtra .menu style
+        // doesn't reliably share SwiftUI environment writes.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+            NotificationCenter.default.post(
+                name: .openDeployment,
+                object: nil,
+                userInfo: ["id": id]
+            )
+        }
+    }
+
+    // MARK: - Helpers
+
+    private func statusLabel(_ status: DeploymentStatus) -> String {
+        switch status {
+        case .running: return "Running"
+        case .building: return "Building…"
+        case .error: return "Error"
+        case .stopped: return "Stopped"
+        }
+    }
+}
+
+extension Notification.Name {
+    static let openDeployment = Notification.Name("openowl.openDeployment")
+}

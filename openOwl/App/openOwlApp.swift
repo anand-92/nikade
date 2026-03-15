@@ -9,6 +9,7 @@ struct openOwlApp: App {
     @StateObject private var projectStore: ProjectStore
     @StateObject private var gitChangesStore = GitChangesStore()
     @StateObject private var fileExplorerStore = FileExplorerStore()
+    @StateObject private var deploymentStore = DeploymentStore()
 
     init() {
         Self.setupEnvironment()
@@ -32,10 +33,13 @@ struct openOwlApp: App {
                 .environmentObject(projectStore)
                 .environmentObject(gitChangesStore)
                 .environmentObject(fileExplorerStore)
+                .environmentObject(deploymentStore)
                 .onAppear {
                     appDelegate.workspaceStore = workspaceStore
                     appDelegate.ghosttyManager = ghosttyManager
                     appDelegate.navigationStore = navigationStore
+                    appDelegate.deploymentStore = deploymentStore
+                    deploymentStore.recoverRunningDeployments()
                     ghosttyManager.onPaneTitleChanged = { paneID, title in
                         workspaceStore.updateTitle(for: paneID, title: title)
                     }
@@ -60,6 +64,14 @@ struct openOwlApp: App {
         }
         .defaultSize(width: 1200, height: 800)
         .windowToolbarStyle(.unifiedCompact(showsTitle: false))
+
+        MenuBarExtra("openOwl", image: "MenuBarIcon") {
+            DeploymentTrayMenu()
+                .environmentObject(deploymentStore)
+                .environmentObject(navigationStore)
+                .environmentObject(projectStore)
+        }
+        .menuBarExtraStyle(.menu)
     }
 
     private static func setupEnvironment() {

@@ -5,6 +5,7 @@ enum ViewTab: String, CaseIterable, Hashable, Identifiable {
     case fileExplorer
     case gitChanges
     case terminal
+    case deployments
 
     var id: String { rawValue }
 
@@ -16,6 +17,8 @@ enum ViewTab: String, CaseIterable, Hashable, Identifiable {
             return "Git Changes"
         case .fileExplorer:
             return "Files"
+        case .deployments:
+            return "Deploy"
         }
     }
 
@@ -24,6 +27,7 @@ enum ViewTab: String, CaseIterable, Hashable, Identifiable {
         case .terminal: return "terminal"
         case .gitChanges: return "point.bottomleft.forward.to.point.topright.scurvepath"
         case .fileExplorer: return "folder"
+        case .deployments: return "shippingbox"
         }
     }
 }

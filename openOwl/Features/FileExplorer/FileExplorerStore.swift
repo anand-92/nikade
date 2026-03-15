@@ -83,6 +83,18 @@ final class FileExplorerStore: ObservableObject {
     private(set) var nodeIndex: [String: FileExplorerNode] = [:]
     private var searchableFileNodes: [FileExplorerNode] = []
     private var watcher: FileWatcher?
+    private var querySubscription: AnyCancellable?
+
+    func setupQueryAutoSearch() {
+        guard querySubscription == nil else { return }
+        querySubscription = $quickOpenQuery
+            .dropFirst()
+            .removeDuplicates()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                self?.updateQuickOpenResults()
+            }
+    }
 
     // Cache scan results per project to avoid re-scanning on switch
     private struct ProjectCache {
@@ -98,11 +110,13 @@ final class FileExplorerStore: ObservableObject {
 
     @Published private(set) var quickOpenResults: [FileQuickOpenMatch] = []
     private var quickOpenWorkItem: DispatchWorkItem?
+    private var quickOpenGeneration: Int = 0
 
     var quickOpenMatches: [FileQuickOpenMatch] { quickOpenResults }
 
     func updateQuickOpenResults() {
         quickOpenWorkItem?.cancel()
+        quickOpenWorkItem = nil
 
         let query = quickOpenQuery
             .trimmingCharacters(in: .whitespacesAndNewlines)
@@ -119,24 +133,17 @@ final class FileExplorerStore: ObservableObject {
             return
         }
 
-        // Debounce 50ms then compute off main thread
-        let item = DispatchWorkItem { [weak self] in
-            let results: [FileQuickOpenMatch] = nodes
-                .compactMap { node -> FileQuickOpenMatch? in
-                    guard let result = FileExplorerStore.quickOpenScore(for: node, query: query) else { return nil }
-                    return FileQuickOpenMatch(node: node, score: result.score, matchedIndices: result.indices)
-                }
-                .sorted { lhs, rhs in
-                    if lhs.score != rhs.score { return lhs.score > rhs.score }
-                    return lhs.node.url.path.localizedStandardCompare(rhs.node.url.path) == .orderedAscending
-                }
-            let top = Array(results.prefix(50))
-            DispatchQueue.main.async { [weak self] in
-                self?.quickOpenResults = top
+        // Synchronous fuzzy search — fast enough for <20k nodes
+        let results: [FileQuickOpenMatch] = nodes
+            .compactMap { node -> FileQuickOpenMatch? in
+                guard let result = FileExplorerStore.quickOpenScore(for: node, query: query) else { return nil }
+                return FileQuickOpenMatch(node: node, score: result.score, matchedIndices: result.indices)
             }
-        }
-        quickOpenWorkItem = item
-        DispatchQueue.global(qos: .userInteractive).asyncAfter(deadline: .now() + 0.05, execute: item)
+            .sorted { lhs, rhs in
+                if lhs.score != rhs.score { return lhs.score > rhs.score }
+                return lhs.node.url.path.localizedStandardCompare(rhs.node.url.path) == .orderedAscending
+            }
+        quickOpenResults = Array(results.prefix(50))
     }
 
     func setProject(_ url: URL?) {
@@ -239,17 +246,23 @@ final class FileExplorerStore: ObservableObject {
 
     func presentQuickOpen() {
         guard !searchableFileNodes.isEmpty else { return }
+        quickOpenGeneration += 1  // Invalidate any pending dismiss async block
         quickOpenQuery = ""
         isQuickOpenPresented = true
         syncQuickOpenSelection()
     }
 
     func dismissQuickOpen() {
+        quickOpenWorkItem?.cancel()
+        quickOpenGeneration += 1
+        let gen = quickOpenGeneration
         // Defer to avoid "Publishing changes from within view updates"
         // when called from .onChange or other view-update contexts.
-        DispatchQueue.main.async {
+        DispatchQueue.main.async { [weak self] in
+            guard let self, self.quickOpenGeneration == gen else { return }
             self.isQuickOpenPresented = false
             self.quickOpenQuery = ""
+            self.quickOpenResults = []
             self.quickOpenSelectionID = nil
         }
     }

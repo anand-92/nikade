@@ -12,31 +12,31 @@
 
 ### P0 — 部署版本管理
 
-- [ ] 创建部署版本：用户在 Sidebar 的 Project 下新增部署版本
+- [x] 创建部署版本：用户在 Sidebar 的 Project 下新增部署版本
   - 配置项：名称、监听分支、构建命令（可选）、启动命令、环境变量文件路径
   - 隔离方式：`git clone` 到 `~/.openowl/deployments/<project>-<name>/`
   - 创建后自动执行首次 clone → build → start
-- [ ] 环境变量：用户指定一个纯文本文件路径，格式为一行一个 `KEY=VALUE`
-- [ ] 启动/停止/重启：手动控制部署版本的运行状态
-- [ ] 状态展示：Sidebar 中部署版本显示运行状态（运行中 / 已停止 / 构建中 / 异常）
+- [x] 环境变量：用户指定一个纯文本文件路径，格式为一行一个 `KEY=VALUE`
+- [x] 启动/停止/重启：手动控制部署版本的运行状态
+- [x] 状态展示：Sidebar 中部署版本显示运行状态（运行中 / 已停止 / 构建中 / 异常）
 
 ### P0 — 自动部署
 
-- [ ] 分支监听：定时 `git fetch` + 比较 HEAD，检测到新 commit 后自动 pull → build → restart
-- [ ] 监听间隔：内部默认合理值（如 30s），不暴露给用户
+- [x] 分支监听：定时 `git fetch` + 比较 HEAD，检测到新 commit 后自动 pull → build → restart
+- [x] 监听间隔：内部默认合理值（如 30s），不暴露给用户
 
 ### P0 — 系统托盘
 
-- [ ] 系统托盘图标（NSStatusItem / MenuBarExtra）
-- [ ] 托盘菜单显示所有部署版本及其状态
-- [ ] 托盘菜单支持 Start / Stop / Restart 操作
+- [x] 系统托盘图标（NSStatusItem / MenuBarExtra）
+- [x] 托盘菜单显示所有部署版本及其状态
+- [x] 托盘菜单支持 Start / Stop / Restart 操作
 
 ### P1 — 增强
 
-- [ ] 日志查看：查看部署版本的 stdout/stderr 输出
-- [ ] 删除部署版本：停止服务 + 清理 clone 目录
+- [x] 日志查看：查看部署版本的 stdout/stderr 输出
+- [x] 删除部署版本：停止服务 + 清理 clone 目录
 - [ ] 开机自启动：可选，重启 Mac 后自动恢复之前运行的部署版本
-- [ ] 端口展示：配置端口后，托盘菜单可快捷打开 `http://localhost:<port>`
+- [x] 端口展示：配置端口后，托盘菜单可快捷打开 `http://localhost:<port>`
 
 ## 数据模型
 

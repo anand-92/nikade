@@ -1,112 +1,22 @@
-import AppKit
 import SwiftUI
 
-// MARK: - Search field (NSTextField + delegate handles arrow keys via Binding)
-
-private struct QuickOpenSearchField: NSViewRepresentable {
-    @Binding var text: String
-    @Binding var selectedIndex: Int
-    var matchCount: Int
-    var onSubmit: () -> Void
-    var onEscape: () -> Void
-
-    func makeNSView(context: Context) -> NSTextField {
-        let field = NSTextField()
-        field.delegate = context.coordinator
-        field.font = .systemFont(ofSize: 14)
-        field.placeholderString = "Go to File"
-        field.isBordered = false
-        field.focusRingType = .none
-        field.backgroundColor = .clear
-        DispatchQueue.main.async { field.window?.makeFirstResponder(field) }
-        return field
-    }
-
-    func updateNSView(_ field: NSTextField, context: Context) {
-        if field.stringValue != text {
-            field.stringValue = text
-        }
-        context.coordinator.selectedIndex = $selectedIndex
-        context.coordinator.matchCount = matchCount
-        context.coordinator.onEscape = onEscape
-    }
-
-    func makeCoordinator() -> Coordinator {
-        Coordinator(
-            text: $text,
-            selectedIndex: $selectedIndex,
-            matchCount: matchCount,
-            onSubmit: onSubmit,
-            onEscape: onEscape
-        )
-    }
-
-    final class Coordinator: NSObject, NSTextFieldDelegate {
-        var text: Binding<String>
-        var selectedIndex: Binding<Int>
-        var matchCount: Int
-        var onSubmit: () -> Void
-        var onEscape: () -> Void
-
-        init(
-            text: Binding<String>,
-            selectedIndex: Binding<Int>,
-            matchCount: Int,
-            onSubmit: @escaping () -> Void,
-            onEscape: @escaping () -> Void
-        ) {
-            self.text = text
-            self.selectedIndex = selectedIndex
-            self.matchCount = matchCount
-            self.onSubmit = onSubmit
-            self.onEscape = onEscape
-        }
-
-        func controlTextDidChange(_ obj: Notification) {
-            guard let field = obj.object as? NSTextField else { return }
-            text.wrappedValue = field.stringValue
-        }
-
-        func control(
-            _ control: NSControl,
-            textView: NSTextView,
-            doCommandBy sel: Selector
-        ) -> Bool {
-            switch sel {
-            case #selector(NSResponder.insertNewline(_:)):
-                onSubmit()
-                return true
-            case #selector(NSResponder.moveDown(_:)):
-                moveSelection(1)
-                return true
-            case #selector(NSResponder.moveUp(_:)):
-                moveSelection(-1)
-                return true
-            case #selector(NSResponder.cancelOperation(_:)):
-                onEscape()
-                return true
-            default:
-                return false
-            }
-        }
-
-        private func moveSelection(_ delta: Int) {
-            let count = min(matchCount, 50)
-            guard count > 0 else { return }
-            selectedIndex.wrappedValue = (selectedIndex.wrappedValue + delta + count) % count
-        }
-    }
-}
-
-// MARK: - Quick Open Panel
+// MARK: - Quick Open Panel (Pure SwiftUI — no NSViewRepresentable)
 
 struct QuickOpenPanel: View {
     @EnvironmentObject private var store: FileExplorerStore
     @EnvironmentObject private var navigationStore: AppNavigationStore
     @EnvironmentObject private var gitStore: GitChangesStore
     @State private var selectedIndex: Int = 0
+    @FocusState private var isSearchFocused: Bool
 
     private var matches: [FileQuickOpenMatch] { store.quickOpenMatches }
+
+    /// Clamp selectedIndex to valid range (async results may arrive with fewer items)
+    private var safeSelectedIndex: Int {
+        let count = min(matches.count, 50)
+        guard count > 0 else { return 0 }
+        return min(selectedIndex, count - 1)
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -115,14 +25,14 @@ struct QuickOpenPanel: View {
                     .font(.system(size: 13))
                     .foregroundStyle(.secondary)
 
-                QuickOpenSearchField(
-                    text: $store.quickOpenQuery,
-                    selectedIndex: $selectedIndex,
-                    matchCount: matches.count,
-                    onSubmit: { openSelected() },
-                    onEscape: { store.dismissQuickOpen() }
-                )
-                .frame(height: 22)
+                TextField("Go to File", text: $store.quickOpenQuery)
+                    .textFieldStyle(.plain)
+                    .font(.system(size: 14))
+                    .focused($isSearchFocused)
+                    .onSubmit { openSelected() }
+                    .onKeyPress(.upArrow) { moveSelection(-1); return .handled }
+                    .onKeyPress(.downArrow) { moveSelection(1); return .handled }
+                    .onKeyPress(.escape) { store.dismissQuickOpen(); return .handled }
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 10)
@@ -144,17 +54,20 @@ struct QuickOpenPanel: View {
                                     node: match.node,
                                     relativePath: store.relativePath(for: match.node),
                                     matchedIndices: match.matchedIndices,
-                                    isSelected: index == selectedIndex
+                                    isSelected: index == safeSelectedIndex
                                 )
-                                .id(index)
+                                .id(match.id)
                                 .contentShape(Rectangle())
                                 .onTapGesture { openMatch(match) }
                             }
                         }
                     }
                     .frame(maxHeight: 340)
-                    .onChange(of: selectedIndex) { _, newIndex in
-                        withAnimation(.none) { proxy.scrollTo(newIndex, anchor: .center) }
+                    .onChange(of: safeSelectedIndex) { _, newIndex in
+                        let items = Array(matches.prefix(50))
+                        if newIndex < items.count {
+                            withAnimation(.none) { proxy.scrollTo(items[newIndex].id, anchor: .center) }
+                        }
                     }
                 }
             }
@@ -168,30 +81,42 @@ struct QuickOpenPanel: View {
         )
         .shadow(color: .black.opacity(0.3), radius: 20, y: 8)
         .onAppear {
+            store.setupQueryAutoSearch()
             store.quickOpenQuery = ""
             store.updateQuickOpenResults()
             selectedIndex = 0
+            isSearchFocused = true
         }
         .onChange(of: store.quickOpenQuery) { _, _ in
-            store.updateQuickOpenResults()
             selectedIndex = 0
         }
+    }
+
+    private func moveSelection(_ delta: Int) {
+        let count = min(matches.count, 50)
+        guard count > 0 else { return }
+        selectedIndex = (selectedIndex + delta + count) % count
     }
 
     private func openSelected() {
         let items = Array(matches.prefix(50))
-        guard selectedIndex < items.count else { return }
-        openMatch(items[selectedIndex])
+        guard !items.isEmpty else { return }
+        openMatch(items[safeSelectedIndex])
     }
 
     private func openMatch(_ match: FileQuickOpenMatch) {
-        store.selectNode(match.node.id)
+        let nodeID = match.node.id
         store.dismissQuickOpen()
+        // Switch tab FIRST so the target view is in the hierarchy
         if store.isChangedFile(match.node) {
             navigationStore.activeTab = .gitChanges
             gitStore.openDiff(forFileURL: match.node.url)
         } else {
             navigationStore.activeTab = .fileExplorer
+        }
+        // Then select node — FileExplorerView's onChange will fire
+        DispatchQueue.main.async {
+            store.selectNode(nodeID)
         }
     }
 }

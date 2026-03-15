@@ -2,6 +2,7 @@ import SwiftUI
 
 struct SidebarView: View {
     @EnvironmentObject private var projectStore: ProjectStore
+    @EnvironmentObject private var deploymentStore: DeploymentStore
 
     /// Maps between List's visual selection tag and the real activeProjectID.
     /// - Expanded root with branch → highlight "branch-{id}" (not the header)
@@ -55,6 +56,10 @@ struct SidebarView: View {
                         WorktreeRow(wt: wt)
                             .tag(wt.id)
                     }
+
+                    ForEach(deploymentStore.deployments(for: project.id)) { dep in
+                        DeploymentRow(deployment: dep)
+                    }
                 }
             }
         }
@@ -94,6 +99,7 @@ private struct ProjectHeaderRow: View {
     @EnvironmentObject private var projectStore: ProjectStore
     @State private var creating = false
     @State private var hovering = false
+    @State private var showDeploymentSheet = false
 
     private var expanded: Bool { projectStore.isExpanded(project.id) }
 
@@ -152,12 +158,20 @@ private struct ProjectHeaderRow: View {
         }
         .onHover { hovering = $0 }
         .contextMenu {
+            Button("New Deployment") {
+                projectStore.activateProject(id: project.id)
+                showDeploymentSheet = true
+            }
+            Divider()
             Button("Reveal in Finder") {
                 NSWorkspace.shared.activateFileViewerSelecting([project.url])
             }
             Button("Remove Project", role: .destructive) {
                 projectStore.removeProject(id: project.id)
             }
+        }
+        .sheet(isPresented: $showDeploymentSheet) {
+            CreateDeploymentSheet()
         }
     }
 

@@ -4,6 +4,8 @@ struct ContentView: View {
     @EnvironmentObject var ghosttyManager: GhosttyAppManager
     @EnvironmentObject var navigationStore: AppNavigationStore
     @EnvironmentObject var fileExplorerStore: FileExplorerStore
+    @EnvironmentObject var deploymentStore: DeploymentStore
+    @EnvironmentObject var projectStore: ProjectStore
 
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
 
@@ -24,6 +26,10 @@ struct ContentView: View {
 
                     if navigationStore.activeTab == .fileExplorer {
                         FileExplorerView()
+                    }
+
+                    if navigationStore.activeTab == .deployments {
+                        DeploymentPanelView()
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -54,6 +60,15 @@ struct ContentView: View {
             }
         }
         .animation(.easeOut(duration: 0.15), value: fileExplorerStore.isQuickOpenPresented)
+        .onReceive(NotificationCenter.default.publisher(for: .openDeployment)) { notification in
+            guard let id = notification.userInfo?["id"] as? String else { return }
+            // Switch to the deployment's project
+            if let dep = deploymentStore.deployments.first(where: { $0.id == id }) {
+                projectStore.activateProject(id: dep.projectID)
+            }
+            navigationStore.activeTab = .deployments
+            deploymentStore.selectedDeploymentID = id
+        }
     }
 
     @ViewBuilder

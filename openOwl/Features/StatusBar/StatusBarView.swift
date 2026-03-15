@@ -107,6 +107,14 @@ private struct StatusBarContextInfo: View {
                         .foregroundStyle(.tertiary)
                         .lineLimit(1)
                 }
+
+            case .deployments:
+                Image(systemName: "shippingbox")
+                    .font(.system(size: 10))
+                    .foregroundStyle(.tertiary)
+                Text("Deploy")
+                    .font(AppFonts.statusBar)
+                    .foregroundStyle(.tertiary)
             }
         }
     }
