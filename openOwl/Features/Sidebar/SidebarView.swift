@@ -2,12 +2,9 @@ import SwiftUI
 
 struct SidebarView: View {
     @EnvironmentObject private var projectStore: ProjectStore
-    @EnvironmentObject private var deploymentStore: DeploymentStore
 
-    /// Maps between List's visual selection tag and the real activeProjectID.
-    /// - Expanded root with branch → highlight "branch-{id}" (not the header)
-    /// - Collapsed root / no branch → highlight project.id (the header)
-    /// - Worktree → highlight wt.id directly
+    /// Selection binding — only branch rows and worktree rows are selectable.
+    /// Folder headers have no .tag() and are never highlighted.
     private var listSelection: Binding<String?> {
         Binding(
             get: {
@@ -15,24 +12,22 @@ struct SidebarView: View {
                       let active = projectStore.projects.first(where: { $0.id == activeID })
                 else { return nil }
 
-                // Worktree: tag is its own id
                 if active.isWorktree { return activeID }
 
-                // Root project, expanded with a branch → highlight the branch row
-                if projectStore.isExpanded(activeID), active.lastBranch != nil {
-                    return "branch-\(activeID)"
-                }
-
-                // Root project, collapsed or no branch → highlight header
-                return activeID
+                // Root project → always highlight the branch row
+                return "branch-\(activeID)"
             },
             set: { tag in
                 guard let tag else { return }
-                if tag.hasPrefix("branch-") {
-                    let projectID = String(tag.dropFirst("branch-".count))
-                    projectStore.activateProject(id: projectID)
-                } else {
-                    projectStore.activateProject(id: tag)
+                // Defer to avoid "publishing changes from within view updates"
+                // (List may call set during body evaluation when rows change)
+                DispatchQueue.main.async {
+                    if tag.hasPrefix("branch-") {
+                        let projectID = String(tag.dropFirst("branch-".count))
+                        projectStore.activateProject(id: projectID)
+                    } else {
+                        projectStore.activateProject(id: tag)
+                    }
                 }
             }
         )
@@ -41,24 +36,17 @@ struct SidebarView: View {
     var body: some View {
         List(selection: listSelection) {
             ForEach(projectStore.rootProjects) { project in
-                // 1) Project header row
+                // 1) Project header — no .tag(), never selectable
                 ProjectHeaderRow(project: project)
-                    .tag(project.id)
 
-                // 2) Expanded children: branch row + worktree rows
+                // 2) Expanded children: branch row (always) + worktree rows
                 if projectStore.isExpanded(project.id) {
-                    if let branch = project.lastBranch {
-                        BranchRow(branch: branch)
-                            .tag("branch-\(project.id)")
-                    }
+                    BranchRow(branch: project.lastBranch ?? "No commits yet", path: project.path)
+                        .tag("branch-\(project.id)")
 
                     ForEach(projectStore.worktrees(for: project.id)) { wt in
                         WorktreeRow(wt: wt)
                             .tag(wt.id)
-                    }
-
-                    ForEach(deploymentStore.deployments(for: project.id)) { dep in
-                        DeploymentRow(deployment: dep)
                     }
                 }
             }
@@ -99,39 +87,38 @@ private struct ProjectHeaderRow: View {
     @EnvironmentObject private var projectStore: ProjectStore
     @State private var creating = false
     @State private var hovering = false
-    @State private var showDeploymentSheet = false
-
     private var expanded: Bool { projectStore.isExpanded(project.id) }
 
     var body: some View {
         HStack(spacing: 4) {
-            // Expand/collapse chevron — intercepts tap, does NOT trigger List selection
-            Button {
-                withAnimation(.easeInOut(duration: 0.15)) {
-                    projectStore.toggleExpanded(project.id)
-                }
-            } label: {
+            // Clickable label area — toggles expand/collapse
+            HStack(spacing: 4) {
                 Image(systemName: expanded ? "chevron.down" : "chevron.right")
                     .font(.system(size: 9, weight: .semibold))
                     .foregroundStyle(.tertiary)
                     .frame(width: 12, height: 12)
-            }
-            .buttonStyle(.plain)
 
-            Image(systemName: "folder.fill")
-                .font(.system(size: 12))
-                .foregroundStyle(.blue)
+                Image(systemName: "folder.fill")
+                    .font(.system(size: 12))
+                    .foregroundStyle(.blue)
 
-            Text(project.displayName)
-                .font(.system(size: 12, weight: .regular))
-                .lineLimit(1)
-
-            // Show branch inline when collapsed
-            if !expanded, let branch = project.lastBranch {
-                Text(branch)
-                    .font(.system(size: 10))
-                    .foregroundStyle(.tertiary)
+                Text(project.displayName)
+                    .font(.system(size: 12, weight: .regular))
                     .lineLimit(1)
+
+                // Show branch inline when collapsed
+                if !expanded, let branch = project.lastBranch {
+                    Text(branch)
+                        .font(.system(size: 10))
+                        .foregroundStyle(.tertiary)
+                        .lineLimit(1)
+                }
+            }
+            .contentShape(Rectangle())
+            .onTapGesture {
+                withAnimation(.easeInOut(duration: 0.15)) {
+                    projectStore.toggleExpanded(project.id)
+                }
             }
 
             Spacer(minLength: 0)
@@ -158,9 +145,10 @@ private struct ProjectHeaderRow: View {
         }
         .onHover { hovering = $0 }
         .contextMenu {
-            Button("New Deployment") {
-                projectStore.activateProject(id: project.id)
-                showDeploymentSheet = true
+            Button(expanded ? "Collapse" : "Expand") {
+                withAnimation(.easeInOut(duration: 0.15)) {
+                    projectStore.toggleExpanded(project.id)
+                }
             }
             Divider()
             Button("Reveal in Finder") {
@@ -169,9 +157,6 @@ private struct ProjectHeaderRow: View {
             Button("Remove Project", role: .destructive) {
                 projectStore.removeProject(id: project.id)
             }
-        }
-        .sheet(isPresented: $showDeploymentSheet) {
-            CreateDeploymentSheet()
         }
     }
 
@@ -196,15 +181,44 @@ private struct ProjectHeaderRow: View {
     }
 }
 
-// MARK: - Branch Row (main branch, same style as worktree rows)
+// MARK: - Branch Row (main branch, same interaction as worktree rows)
 
 private struct BranchRow: View {
     let branch: String
+    let path: String
+
+    @State private var hovering = false
 
     var body: some View {
-        Label(branch, systemImage: "arrow.triangle.branch")
-            .font(.system(size: 12))
-            .padding(.leading, 16)
+        HStack(spacing: 5) {
+            Image(systemName: "arrow.triangle.branch")
+                .font(.system(size: 12))
+            Text(branch)
+                .font(.system(size: 12))
+
+            Spacer(minLength: 4)
+
+            if hovering {
+                Button {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(path, forType: .string)
+                } label: {
+                    Image(systemName: "doc.on.doc")
+                        .font(.system(size: 9))
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.tertiary)
+                .help("Copy path")
+            }
+        }
+        .padding(.leading, 16)
+        .onHover { hovering = $0 }
+        .contextMenu {
+            Button("Copy Path") {
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(path, forType: .string)
+            }
+        }
     }
 }
 
@@ -221,12 +235,14 @@ private struct WorktreeRow: View {
 
     var body: some View {
         HStack(spacing: 5) {
+            Image(systemName: "arrow.triangle.branch")
+                .font(.system(size: isRenaming ? 10 : 12))
+                .foregroundStyle(isRenaming ? .secondary : .primary)
+
             if isRenaming {
-                Image(systemName: "arrow.triangle.branch")
-                    .font(.system(size: 10))
-                    .foregroundStyle(.secondary)
                 TextField("", text: $renameText)
-                    .textFieldStyle(.roundedBorder)
+                    .textFieldStyle(.plain)
+                    .font(.system(size: 12))
                     .focused($renameFieldFocused)
                     .onSubmit {
                         let trimmed = renameText.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -237,7 +253,7 @@ private struct WorktreeRow: View {
                     }
                     .onExitCommand { isRenaming = false }
             } else {
-                Label(wt.worktreeBranch ?? wt.name, systemImage: "arrow.triangle.branch")
+                Text(wt.worktreeBranch ?? wt.name)
                     .font(.system(size: 12))
             }
 

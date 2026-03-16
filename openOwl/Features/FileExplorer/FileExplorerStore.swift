@@ -162,19 +162,29 @@ final class FileExplorerStore: ObservableObject {
         dismissQuickOpen()
 
         // Restore from cache if available (instant)
+        let restoredFromCache: Bool
         if let standardized, let cached = projectScanCache[standardized.path] {
             rootNodes = cached.nodes
             nodeIndex = cached.index
             searchableFileNodes = cached.index.values
                 .filter { !$0.isDirectory }
                 .sorted { $0.url.path.localizedStandardCompare($1.url.path) == .orderedAscending }
+            restoredFromCache = true
         } else {
             rootNodes = []
             nodeIndex = [:]
+            restoredFromCache = false
         }
 
         configureWatcher()
-        refreshNow()
+
+        if restoredFromCache {
+            // Cache provides the tree instantly. Run a background-only refresh
+            // that skips the shallow phase and won't flash-replace the tree.
+            Task { await refreshFullOnly() }
+        } else {
+            refreshNow()
+        }
     }
 
     func refreshNow() {
@@ -244,7 +254,17 @@ final class FileExplorerStore: ObservableObject {
         loadPreviewForSelection()
     }
 
-    func presentQuickOpen() {
+    func presentQuickOpen(projectURL fallback: URL? = nil) {
+        // Lazy-load file index if not yet scanned (e.g. opened from terminal tab)
+        if searchableFileNodes.isEmpty {
+            if let url = self.projectURL ?? fallback {
+                if self.projectURL == url.standardizedFileURL {
+                    refreshNow()  // already set, just needs scan
+                } else {
+                    setProject(url)
+                }
+            }
+        }
         guard !searchableFileNodes.isEmpty else { return }
         quickOpenGeneration += 1  // Invalidate any pending dismiss async block
         quickOpenQuery = ""
@@ -486,6 +506,50 @@ final class FileExplorerStore: ObservableObject {
         projectScanCache[capturedURL.path] = ProjectCache(nodes: rootNodes, index: nodeIndex)
     }
 
+    /// Background-only refresh: skip shallow scan, only update git status.
+    /// Used when cache already provides the tree — avoids flashing the UI.
+    private func refreshFullOnly() async {
+        guard !isRefreshing else { return }
+        guard let projectURL else { return }
+
+        isRefreshing = true
+        defer { isRefreshing = false }
+
+        let capturedURL = projectURL
+        let t1 = CFAbsoluteTimeGetCurrent()
+
+        async let ignoreCtx = loadIgnoreContext(for: capturedURL)
+        async let statusMap = loadGitStatus(for: capturedURL)
+        let (ignore, status) = await (ignoreCtx, statusMap)
+        guard self.projectURL == capturedURL else { return }
+
+        let gitContext = GitContext(
+            statusByAbsolutePath: status,
+            ignoredExactPaths: ignore.ignoredExactPaths,
+            ignoredDirectoryPrefixes: ignore.ignoredDirectoryPrefixes
+        )
+        let (fullResult, sortedFiles) = await Task.detached(priority: .userInitiated) {
+            let result = Self.scanProject(projectURL: capturedURL, gitContext: gitContext)
+            let files = result.index.values
+                .filter { !$0.isDirectory }
+                .sorted { $0.url.path.localizedStandardCompare($1.url.path) == .orderedAscending }
+            return (result, files)
+        }.value
+        guard self.projectURL == capturedURL else { return }
+        NSLog("FileExplorer: background refresh %.0fms (%d nodes)", (CFAbsoluteTimeGetCurrent() - t1) * 1000, fullResult.index.count)
+
+        rootNodes = fullResult.nodes
+        nodeIndex = fullResult.index
+        searchableFileNodes = sortedFiles
+
+        if let selectedNodeID, nodeIndex[selectedNodeID] == nil {
+            self.selectedNodeID = nil
+        }
+        syncQuickOpenSelection()
+        loadPreviewForSelection()
+        projectScanCache[capturedURL.path] = ProjectCache(nodes: rootNodes, index: nodeIndex)
+    }
+
     private func configureWatcher() {
         watcher?.stop()
         watcher = nil
@@ -592,7 +656,7 @@ final class FileExplorerStore: ObservableObject {
     }
 }
 
-private extension FileExplorerStore {
+extension FileExplorerStore {
     struct ScanResult {
         let nodes: [FileExplorerNode]
         let index: [String: FileExplorerNode]
@@ -788,6 +852,15 @@ private extension FileExplorerStore {
             if let children {
                 for child in children {
                     state = mergeGitState(state, child.gitState)
+                }
+            } else {
+                // Lazy directory (not yet expanded): infer git state from
+                // any status entries whose path starts with this directory.
+                let prefix = path + "/"
+                for (statusPath, fileState) in gitContext.statusByAbsolutePath {
+                    if statusPath.hasPrefix(prefix) {
+                        state = mergeGitState(state, fileState)
+                    }
                 }
             }
 

@@ -139,6 +139,42 @@ class TerminalNSView: NSView {
         }
     }
 
+    // MARK: - Edit Menu Actions
+
+    @objc func copy(_ sender: Any?) {
+        guard let surface else { return }
+        let action = "copy_to_clipboard"
+        if !ghostty_surface_binding_action(surface, action, UInt(action.utf8.count)) {
+            NSLog("openOwl: binding action failed action=%@", action)
+        }
+    }
+
+    @objc func paste(_ sender: Any?) {
+        pasteFromClipboard()
+    }
+
+    @objc func pasteAsPlainText(_ sender: Any?) {
+        pasteFromClipboard()
+    }
+
+    @objc override func selectAll(_ sender: Any?) {
+        guard let surface else { return }
+        let action = "select_all"
+        if !ghostty_surface_binding_action(surface, action, UInt(action.utf8.count)) {
+            NSLog("openOwl: binding action failed action=%@", action)
+        }
+    }
+
+    private func pasteFromClipboard() {
+        guard let surface else { return }
+        ghostty_surface_set_focus(surface, true)
+        let value = NSPasteboard.general.string(forType: .string) ?? ""
+        guard !value.isEmpty else { return }
+        value.withCString { ptr in
+            ghostty_surface_text(surface, ptr, UInt(value.utf8.count))
+        }
+    }
+
     // MARK: - First Responder
 
     override var acceptsFirstResponder: Bool { true }
@@ -264,21 +300,32 @@ class TerminalNSView: NSView {
         guard event.type == .keyDown, let surface else { return false }
         let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
 
-        // Intercept Cmd+V (paste) to avoid reentrancy crash:
-        // ghostty_surface_key → paste binding → read_clipboard_cb →
-        // ghostty_surface_complete_clipboard_request would re-enter the surface.
+        // Only handle if this view is the actual first responder.
+        // performKeyEquivalent traverses ALL NSViews in the window —
+        // without this guard, Cmd+V/C get stolen from TextFields
+        // (QuickOpen, commit message, etc.) even when the terminal
+        // doesn't have focus.
+        guard window?.firstResponder === self else { return false }
+
+        // Intercept Cmd+V (paste)
         if flags == .command, event.charactersIgnoringModifiers == "v" {
-            let value = NSPasteboard.general.string(forType: .string) ?? ""
-            guard !value.isEmpty else { return true }
-            value.withCString { ptr in
-                ghostty_surface_text(surface, ptr, UInt(value.utf8.count))
-            }
+            pasteFromClipboard()
             return true
         }
 
         // Intercept Cmd+C (copy)
         if flags == .command, event.charactersIgnoringModifiers == "c" {
-            ghostty_surface_binding_action(surface, "copy_to_clipboard", 0)
+            let action = "copy_to_clipboard"
+            if !ghostty_surface_binding_action(surface, action, UInt(action.utf8.count)) {
+                NSLog("openOwl: Cmd+C copy action failed on surface")
+            }
+            return true
+        }
+
+        // Let app-level shortcuts bypass the terminal so keyDown doesn't consume them.
+        // Cmd+P: Quick Open
+        if flags == .command, event.charactersIgnoringModifiers == "p" {
+            NotificationCenter.default.post(name: .quickOpen, object: nil)
             return true
         }
 
@@ -385,6 +432,17 @@ class TerminalNSView: NSView {
     }
 
     // MARK: - Private Helpers
+
+    /// Checks if this view is actually visible by walking the superview chain.
+    /// SwiftUI's .opacity(0) sets alphaValue on an ancestor wrapper view.
+    private var isEffectivelyVisible: Bool {
+        var view: NSView? = self
+        while let v = view {
+            if v.isHidden || v.alphaValue < 0.01 { return false }
+            view = v.superview
+        }
+        return true
+    }
 
     private func setupTrackingArea() {
         if let trackingArea { removeTrackingArea(trackingArea) }

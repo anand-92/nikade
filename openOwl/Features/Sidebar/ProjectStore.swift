@@ -38,9 +38,15 @@ final class ProjectStore: ObservableObject {
     @Published var activeProjectID: String?
     @Published var collapsedProjectIDs: Set<String> = []
 
-    private let defaults = UserDefaults.standard
-    private let storeKey = "openowl.projects.store"
-    private let activeProjectKey = "openowl.projects.active"
+    private static let storeURL: URL = {
+        let home = FileManager.default.homeDirectoryForCurrentUser
+        return home.appendingPathComponent(".openowl/openowl.json")
+    }()
+
+    private struct StoreFile: Codable {
+        var projects: [ProjectItem]
+        var activeProjectId: String?
+    }
 
     /// Branch prefix for the active root project (reads from ProjectItem.branchPrefix)
     var branchPrefix: String {
@@ -192,11 +198,10 @@ final class ProjectStore: ObservableObject {
     }
 
     func removeWorktreeProject(id: String) {
+        let parentID = projects.first(where: { $0.id == id })?.worktreeOf
         projects.removeAll { $0.id == id }
         if activeProjectID == id {
-            // Switch to parent or first project
-            if let wt = projects.first(where: { $0.id == id }),
-               let parent = projects.first(where: { $0.id == wt.worktreeOf }) {
+            if let parentID, let parent = projects.first(where: { $0.id == parentID }) {
                 activeProjectID = parent.id
             } else {
                 activeProjectID = projects.first?.id
@@ -215,14 +220,35 @@ final class ProjectStore: ObservableObject {
     // MARK: - Persistence
 
     private func load() {
-        // Try new JSON format first
-        if let data = defaults.data(forKey: storeKey),
+        // 1) Try ~/.openowl/openowl.json
+        if FileManager.default.fileExists(atPath: Self.storeURL.path) {
+            do {
+                let data = try Data(contentsOf: Self.storeURL)
+                let store = try JSONDecoder().decode(StoreFile.self, from: data)
+                projects = store.projects
+                    .filter { Self.isReasonableProjectPath(URL(fileURLWithPath: $0.path)) }
+                    .uniqued()
+                if let activeID = store.activeProjectId,
+                   projects.contains(where: { $0.id == activeID }) {
+                    activeProjectID = activeID
+                } else {
+                    activeProjectID = projects.first?.id
+                }
+                return
+            } catch {
+                NSLog("openOwl: [ProjectStore] Failed to read %@: %@. Falling back to migration.",
+                      Self.storeURL.path, error.localizedDescription)
+            }
+        }
+
+        // 2) Migrate from UserDefaults (one-time)
+        let defaults = UserDefaults.standard
+        if let data = defaults.data(forKey: "openowl.projects.store"),
            let decoded = try? JSONDecoder().decode([ProjectItem].self, from: data) {
             projects = decoded
                 .filter { Self.isReasonableProjectPath(URL(fileURLWithPath: $0.path)) }
                 .uniqued()
         } else {
-            // Migrate from old string array format
             let paths = defaults.stringArray(forKey: "openowl.projects.paths") ?? []
             projects = paths
                 .map { URL(fileURLWithPath: $0, isDirectory: true) }
@@ -231,12 +257,19 @@ final class ProjectStore: ObservableObject {
                 .uniqued()
         }
 
-        let storedActiveProject = defaults.string(forKey: activeProjectKey)
-        if let storedActiveProject,
-           projects.contains(where: { $0.id == storedActiveProject }) {
-            activeProjectID = storedActiveProject
+        let storedActive = defaults.string(forKey: "openowl.projects.active")
+        if let storedActive, projects.contains(where: { $0.id == storedActive }) {
+            activeProjectID = storedActive
         } else {
             activeProjectID = projects.first?.id
+        }
+
+        // Write to new file and clean up UserDefaults
+        if !projects.isEmpty {
+            persist()
+            defaults.removeObject(forKey: "openowl.projects.store")
+            defaults.removeObject(forKey: "openowl.projects.active")
+            defaults.removeObject(forKey: "openowl.projects.paths")
         }
     }
 
@@ -254,10 +287,17 @@ final class ProjectStore: ObservableObject {
     }
 
     private func persist() {
-        if let data = try? JSONEncoder().encode(projects) {
-            defaults.set(data, forKey: storeKey)
+        let store = StoreFile(projects: projects, activeProjectId: activeProjectID)
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        do {
+            let data = try encoder.encode(store)
+            let dir = Self.storeURL.deletingLastPathComponent()
+            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            try data.write(to: Self.storeURL, options: .atomic)
+        } catch {
+            NSLog("openOwl: [ProjectStore] Failed to persist: %@", error.localizedDescription)
         }
-        defaults.set(activeProjectID, forKey: activeProjectKey)
     }
 }
 

@@ -81,12 +81,7 @@ struct DeploymentRow: View {
             }
             return .secondary
         }
-        switch deployment.status {
-        case .running: return AppColors.success
-        case .error: return AppColors.error
-        case .building: return AppColors.warning
-        case .stopped: return .secondary
-        }
+        return deployment.status.color
     }
 
     private func toggleDeployment() {

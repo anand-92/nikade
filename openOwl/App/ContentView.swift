@@ -47,19 +47,28 @@ struct ContentView: View {
         }
         .navigationTitle("")
         .background {
-            Button("") { fileExplorerStore.presentQuickOpen() }
+            Button("") { fileExplorerStore.presentQuickOpen(projectURL: projectStore.activeProjectURL) }
                 .keyboardShortcut("p", modifiers: [.command])
                 .hidden()
         }
-        .overlay(alignment: .top) {
+        .overlay {
             if fileExplorerStore.isQuickOpenPresented {
-                QuickOpenPanel()
-                    .padding(.top, 8)
-                    .transition(.move(edge: .top).combined(with: .opacity))
-                    .zIndex(100)
+                ZStack(alignment: .top) {
+                    // Click outside to dismiss
+                    Color.black.opacity(0.001)
+                        .onTapGesture { fileExplorerStore.dismissQuickOpen() }
+
+                    QuickOpenPanel()
+                        .padding(.top, 8)
+                        .transition(.move(edge: .top).combined(with: .opacity))
+                }
+                .zIndex(100)
             }
         }
         .animation(.easeOut(duration: 0.15), value: fileExplorerStore.isQuickOpenPresented)
+        .onReceive(NotificationCenter.default.publisher(for: .quickOpen)) { _ in
+            fileExplorerStore.presentQuickOpen(projectURL: projectStore.activeProjectURL)
+        }
         .onReceive(NotificationCenter.default.publisher(for: .openDeployment)) { notification in
             guard let id = notification.userInfo?["id"] as? String else { return }
             // Switch to the deployment's project

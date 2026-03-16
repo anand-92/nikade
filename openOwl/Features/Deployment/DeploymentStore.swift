@@ -1,5 +1,5 @@
-import Combine
 import Foundation
+import SwiftUI
 
 // MARK: - Model
 
@@ -8,6 +8,24 @@ enum DeploymentStatus: String, Codable {
     case building
     case running
     case error
+
+    var color: Color {
+        switch self {
+        case .running: return AppColors.success
+        case .error: return AppColors.error
+        case .building: return AppColors.warning
+        case .stopped: return .gray
+        }
+    }
+
+    var displayLabel: String {
+        switch self {
+        case .running: return "Running"
+        case .building: return "Building\u{2026}"
+        case .error: return "Error"
+        case .stopped: return "Stopped"
+        }
+    }
 }
 
 struct Deployment: Identifiable, Codable, Hashable {
@@ -39,12 +57,24 @@ struct Deployment: Identifiable, Codable, Hashable {
         clonePath: String = "", remoteURL: String = "", lastCommit: String? = nil,
         createdAt: Date = Date(), lastStartedAt: Date? = nil
     ) {
-        self.id = id; self.projectID = projectID; self.name = name; self.isRemote = isRemote
-        self.branch = branch; self.installCommand = installCommand; self.buildCommand = buildCommand
-        self.startCommand = startCommand; self.envVars = envVars; self.port = port
-        self.healthCheckURL = healthCheckURL; self.status = status; self.pid = pid
-        self.clonePath = clonePath; self.remoteURL = remoteURL; self.lastCommit = lastCommit
-        self.createdAt = createdAt; self.lastStartedAt = lastStartedAt
+        self.id = id
+        self.projectID = projectID
+        self.name = name
+        self.isRemote = isRemote
+        self.branch = branch
+        self.installCommand = installCommand
+        self.buildCommand = buildCommand
+        self.startCommand = startCommand
+        self.envVars = envVars
+        self.port = port
+        self.healthCheckURL = healthCheckURL
+        self.status = status
+        self.pid = pid
+        self.clonePath = clonePath
+        self.remoteURL = remoteURL
+        self.lastCommit = lastCommit
+        self.createdAt = createdAt
+        self.lastStartedAt = lastStartedAt
     }
 
     var cloneURL: URL { URL(fileURLWithPath: clonePath, isDirectory: true) }
@@ -135,12 +165,12 @@ final class DeploymentStore: ObservableObject {
             projectID: projectID,
             name: name,
             branch: branch,
-            installCommand: installCommand?.isEmpty == true ? nil : installCommand,
-            buildCommand: buildCommand?.isEmpty == true ? nil : buildCommand,
-            startCommand: startCommand?.isEmpty == true ? nil : startCommand,
-            envVars: envVars,
+            installCommand: installCommand.nilIfEmpty,
+            buildCommand: buildCommand.nilIfEmpty,
+            startCommand: startCommand.nilIfEmpty,
+            envVars: envVars.nilIfEmpty,
             port: port,
-            healthCheckURL: healthCheckURL?.isEmpty == true ? nil : healthCheckURL,
+            healthCheckURL: healthCheckURL.nilIfEmpty,
             status: .building,
             clonePath: clonePath.path,
             remoteURL: remoteURL,
@@ -154,7 +184,7 @@ final class DeploymentStore: ObservableObject {
         do {
             // Clone
             try await cloneRepo(remoteURL: remoteURL, branch: branch, to: clonePath)
-            updateStatus(id: deployment.id, status: .building)
+            updateDeployment(id: deployment.id) { $0.status = .building }
 
             // Install (if command provided)
             if let installCmd = deployment.installCommand, !installCmd.isEmpty {
@@ -170,13 +200,13 @@ final class DeploymentStore: ObservableObject {
             if let startCmd = deployment.startCommand, !startCmd.isEmpty {
                 try startProcess(id: deployment.id)
             } else {
-                updateStatus(id: deployment.id, status: .stopped)
+                updateDeployment(id: deployment.id) { $0.status = .stopped }
             }
 
             // Start branch poll
             startBranchPoll(id: deployment.id)
         } catch {
-            updateStatus(id: deployment.id, status: .error)
+            updateDeployment(id: deployment.id) { $0.status = .error }
             throw error
         }
     }
@@ -228,12 +258,12 @@ final class DeploymentStore: ObservableObject {
         guard let index = deployments.firstIndex(where: { $0.id == id }) else { return }
         deployments[index].name = name
         deployments[index].branch = branch
-        deployments[index].installCommand = installCommand?.isEmpty == true ? nil : installCommand
-        deployments[index].buildCommand = buildCommand?.isEmpty == true ? nil : buildCommand
-        deployments[index].startCommand = startCommand?.isEmpty == true ? nil : startCommand
-        deployments[index].envVars = envVars?.isEmpty == true ? nil : envVars
+        deployments[index].installCommand = installCommand.nilIfEmpty
+        deployments[index].buildCommand = buildCommand.nilIfEmpty
+        deployments[index].startCommand = startCommand.nilIfEmpty
+        deployments[index].envVars = envVars.nilIfEmpty
         deployments[index].port = port
-        deployments[index].healthCheckURL = healthCheckURL?.isEmpty == true ? nil : healthCheckURL
+        deployments[index].healthCheckURL = healthCheckURL.nilIfEmpty
         persist()
     }
 
@@ -243,7 +273,7 @@ final class DeploymentStore: ObservableObject {
         guard let index = deployments.firstIndex(where: { $0.id == id }) else { return }
         let dep = deployments[index]
 
-        updateStatus(id: id, status: .building)
+        updateDeployment(id: id) { $0.status = .building }
 
         // Install if needed
         if let installCmd = dep.installCommand, !installCmd.isEmpty {
@@ -259,16 +289,18 @@ final class DeploymentStore: ObservableObject {
         if let startCmd = dep.startCommand, !startCmd.isEmpty {
             try startProcess(id: id)
         } else {
-            updateStatus(id: id, status: .stopped)
+            updateDeployment(id: id) { $0.status = .stopped }
         }
         startBranchPoll(id: id)
     }
 
     func stop(id: String) async {
         processManager.terminate(id: id)
-        updateStatus(id: id, status: .stopped)
+        updateDeployment(id: id) {
+            $0.status = .stopped
+            $0.pid = nil
+        }
         stopBranchPoll(id: id)
-        updatePID(id: id, pid: nil)
     }
 
     func restart(id: String) async throws {
@@ -370,20 +402,20 @@ final class DeploymentStore: ObservableObject {
         ) { [weak self] exitCode in
             Task { @MainActor [weak self] in
                 guard let self else { return }
-                if exitCode == 0 {
-                    self.updateStatus(id: id, status: .stopped)
-                } else {
-                    self.updateStatus(id: id, status: .error)
+                let newStatus: DeploymentStatus = exitCode == 0 ? .stopped : .error
+                self.updateDeployment(id: id) {
+                    $0.status = newStatus
+                    $0.pid = nil
                 }
-                self.updatePID(id: id, pid: nil)
                 self.stopBranchPoll(id: id)
             }
         }
 
-        updatePID(id: id, pid: pid)
-        updateStatus(id: id, status: .running)
-        deployments[index].lastStartedAt = Date()
-        persist()
+        updateDeployment(id: id) {
+            $0.pid = pid
+            $0.status = .running
+            $0.lastStartedAt = Date()
+        }
     }
 
     // MARK: - Private: Git Operations
@@ -468,7 +500,7 @@ final class DeploymentStore: ObservableObject {
                 let logHandle = logFile.flatMap { try? FileHandle(forWritingTo: $0) }
                 logHandle?.seekToEndOfFile()
 
-                let marker = "[\(Self.timestamp())] Running: \(command)\n"
+                let marker = "[\(DeploymentProcessManager.timestamp())] Running: \(command)\n"
                 if let data = marker.data(using: .utf8) { logHandle?.write(data) }
                 streamToUI(marker)
 
@@ -510,12 +542,6 @@ final class DeploymentStore: ObservableObject {
                 }
             }
         }
-    }
-
-    private nonisolated static func timestamp() -> String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
-        return formatter.string(from: Date())
     }
 
     // MARK: - Private: Branch Polling
@@ -575,12 +601,9 @@ final class DeploymentStore: ObservableObject {
                 }
             }
 
+            updateDeployment(id: id) { $0.lastCommit = headOutput }
             if headOutput != oldCommit, oldCommit != nil {
-                // New commit detected, rebuild + restart
-                updateCommit(id: id, commit: headOutput)
                 try await restart(id: id)
-            } else {
-                updateCommit(id: id, commit: headOutput)
             }
         } catch {
             NSLog("Deployment poll failed for %@: %@", dep.name, error.localizedDescription)
@@ -697,36 +720,32 @@ final class DeploymentStore: ObservableObject {
 
     // MARK: - Private: State Helpers
 
-    private func updateStatus(id: String, status: DeploymentStatus) {
-        guard let index = deployments.firstIndex(where: { $0.id == id }) else { return }
-        deployments[index].status = status
-        persist()
-    }
-
-    private func updatePID(id: String, pid: Int32?) {
-        guard let index = deployments.firstIndex(where: { $0.id == id }) else { return }
-        deployments[index].pid = pid
-        persist()
-    }
-
-    private func updateCommit(id: String, commit: String) {
-        guard let index = deployments.firstIndex(where: { $0.id == id }) else { return }
-        deployments[index].lastCommit = commit
+    private func updateDeployment(id: String, _ mutate: (inout Deployment) -> Void) {
+        guard let index = deployments.firstIndex(where: { $0.id == id }) else {
+            NSLog("openOwl: [DeploymentStore] updateDeployment called with unknown id=%@", id)
+            return
+        }
+        mutate(&deployments[index])
         persist()
     }
 
     // MARK: - Persistence
 
     private func load() {
-        guard let data = defaults.data(forKey: storeKey),
-              let decoded = try? JSONDecoder().decode([Deployment].self, from: data)
-        else { return }
-        deployments = decoded
+        guard let data = defaults.data(forKey: storeKey) else { return }
+        do {
+            deployments = try JSONDecoder().decode([Deployment].self, from: data)
+        } catch {
+            NSLog("openOwl: [DeploymentStore] Failed to decode deployments: %@", error.localizedDescription)
+        }
     }
 
     private func persist() {
-        if let data = try? JSONEncoder().encode(deployments) {
+        do {
+            let data = try JSONEncoder().encode(deployments)
             defaults.set(data, forKey: storeKey)
+        } catch {
+            NSLog("openOwl: [DeploymentStore] Failed to encode deployments: %@", error.localizedDescription)
         }
     }
 }
@@ -744,5 +763,15 @@ enum DeploymentError: LocalizedError {
         case .buildFailed(let cmd): return "Build failed: \(cmd)"
         case .startFailed(let detail): return "Start failed: \(detail)"
         }
+    }
+}
+
+// MARK: - Helpers
+
+extension Optional where Wrapped == String {
+    /// Returns nil if the string is nil or empty; otherwise returns the string.
+    var nilIfEmpty: String? {
+        guard let self, !self.isEmpty else { return nil }
+        return self
     }
 }

@@ -9,13 +9,17 @@ struct QuickOpenPanel: View {
     @State private var selectedIndex: Int = 0
     @FocusState private var isSearchFocused: Bool
 
+    private static let maxResults = 50
+
     private var matches: [FileQuickOpenMatch] { store.quickOpenMatches }
+    private var visibleMatches: ArraySlice<FileQuickOpenMatch> {
+        matches.prefix(Self.maxResults)
+    }
 
     /// Clamp selectedIndex to valid range (async results may arrive with fewer items)
     private var safeSelectedIndex: Int {
-        let count = min(matches.count, 50)
-        guard count > 0 else { return 0 }
-        return min(selectedIndex, count - 1)
+        guard !visibleMatches.isEmpty else { return 0 }
+        return min(selectedIndex, visibleMatches.count - 1)
     }
 
     var body: some View {
@@ -32,7 +36,7 @@ struct QuickOpenPanel: View {
                     .onSubmit { openSelected() }
                     .onKeyPress(.upArrow) { moveSelection(-1); return .handled }
                     .onKeyPress(.downArrow) { moveSelection(1); return .handled }
-                    .onKeyPress(.escape) { store.dismissQuickOpen(); return .handled }
+                    .onExitCommand { store.dismissQuickOpen() }
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 10)
@@ -49,7 +53,7 @@ struct QuickOpenPanel: View {
                 ScrollViewReader { proxy in
                     ScrollView {
                         LazyVStack(spacing: 0) {
-                            ForEach(Array(matches.prefix(50).enumerated()), id: \.element.id) { index, match in
+                            ForEach(Array(visibleMatches.enumerated()), id: \.element.id) { index, match in
                                 QuickOpenRow(
                                     node: match.node,
                                     relativePath: store.relativePath(for: match.node),
@@ -64,7 +68,7 @@ struct QuickOpenPanel: View {
                     }
                     .frame(maxHeight: 340)
                     .onChange(of: safeSelectedIndex) { _, newIndex in
-                        let items = Array(matches.prefix(50))
+                        let items = Array(visibleMatches)
                         if newIndex < items.count {
                             withAnimation(.none) { proxy.scrollTo(items[newIndex].id, anchor: .center) }
                         }
@@ -80,6 +84,11 @@ struct QuickOpenPanel: View {
                 .stroke(Color.secondary.opacity(0.2), lineWidth: 1)
         )
         .shadow(color: .black.opacity(0.3), radius: 20, y: 8)
+        .background {
+            Button("") { store.dismissQuickOpen() }
+                .keyboardShortcut(.escape, modifiers: [])
+                .hidden()
+        }
         .onAppear {
             store.setupQueryAutoSearch()
             store.quickOpenQuery = ""
@@ -93,13 +102,13 @@ struct QuickOpenPanel: View {
     }
 
     private func moveSelection(_ delta: Int) {
-        let count = min(matches.count, 50)
+        let count = visibleMatches.count
         guard count > 0 else { return }
         selectedIndex = (selectedIndex + delta + count) % count
     }
 
     private func openSelected() {
-        let items = Array(matches.prefix(50))
+        let items = Array(visibleMatches)
         guard !items.isEmpty else { return }
         openMatch(items[safeSelectedIndex])
     }

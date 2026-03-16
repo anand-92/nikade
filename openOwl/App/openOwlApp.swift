@@ -48,6 +48,9 @@ struct openOwlApp: App {
                 .onChange(of: projectStore.activeProjectID) { _, _ in
                     syncActiveProjectContext()
                 }
+                .onChange(of: navigationStore.activeTab) { _, _ in
+                    syncActiveProjectContext()
+                }
                 .onReceive(gitChangesStore.$statusSnapshot) { snapshot in
                     // Keep sidebar branch display in sync with git status
                     guard let snapshot,
@@ -113,28 +116,22 @@ struct openOwlApp: App {
 
     @MainActor
     private func syncActiveProjectContext() {
-        let t0 = CFAbsoluteTimeGetCurrent()
-        guard let projectURL = projectStore.activeProjectURL else { return }
-        NSLog("syncProject: start %@", projectURL.lastPathComponent)
-        gitChangesStore.setPreferredDirectory(projectURL)
-        fileExplorerStore.setProject(projectURL)
-        NSLog("syncProject: setProject done %.0fms", (CFAbsoluteTimeGetCurrent() - t0) * 1000)
+        guard let projectURL = projectStore.activeProjectURL,
+              let activeID = projectStore.activeProjectID else { return }
 
-        // Switch terminal workspace to this project
-        if let activeID = projectStore.activeProjectID {
-            FileManager.default.changeCurrentDirectoryPath(projectURL.path)
+        // Always update cwd (needed for new terminal surfaces)
+        FileManager.default.changeCurrentDirectoryPath(projectURL.path)
+
+        // Only refresh the currently visible tab's store
+        switch navigationStore.activeTab {
+        case .terminal:
             workspaceStore.switchProject(activeID)
-            NSLog("syncProject: switchProject done %.0fms", (CFAbsoluteTimeGetCurrent() - t0) * 1000)
-        }
-
-        // Fetch current branch immediately for sidebar display
-        // (don't wait for Git tab to be opened)
-        Task {
-            let git = GitService(workingDirectory: projectURL)
-            if let branch = try? await git.getCurrentBranch(),
-               let activeID = projectStore.activeProjectID {
-                projectStore.updateProjectBranch(activeID, branch: branch)
-            }
+        case .fileExplorer:
+            fileExplorerStore.setProject(projectURL)
+        case .gitChanges:
+            gitChangesStore.setPreferredDirectory(projectURL)
+        case .deployments:
+            break
         }
     }
 }

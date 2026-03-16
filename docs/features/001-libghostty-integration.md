@@ -76,7 +76,68 @@ runtime.close_surface_cb = { userdata in ... }     // 关闭请求
 
 openOwl 当前实现已按以上流程修复（参考 `openOwl/Ghostty/GhosttyTerminal.swift` 与 `openOwl/Ghostty/GhosttyInput.swift`）。
 
-### 8. 配置
+### 8. 剪贴板 (Copy/Paste)
+
+终端的复制粘贴需要处理 macOS 事件路由和 ghostty 内部状态的交互：
+
+**事件路由**
+
+macOS 有两条路径将 Cmd+C/V 送到终端视图：
+
+1. **`performKeyEquivalent`** — NSView hierarchy 深度优先遍历，所有子视图都会被调到
+2. **Edit 菜单** — key equivalent 匹配后通过 responder chain 发送 `copy:` / `paste:` action
+
+关键注意点：
+- `performKeyEquivalent` 遍历所有 NSView，包括 `opacity(0)` 的隐藏视图。多个 TerminalNSView（分屏/多 tab）都会被调到，必须用 `activeSurface` + `isEffectivelyVisible` 过滤
+- 非终端 tab（如 Deployment 的 TextField）时，终端视图必须 return false 放行事件
+- 不能在 `performKeyEquivalent` 中调 `makeFirstResponder` — 会触发 `onFocus` → `@Published` 状态变更 → SwiftUI 重建视图
+
+**粘贴实现**
+
+使用 `ghostty_surface_text(surface, ptr, len)` 直接向 PTY 注入文本。不能使用 `ghostty_surface_binding_action("paste_from_clipboard")` 因为它触发 `read_clipboard_cb`，其 async 延迟会导致 `state` 指针 use-after-free。
+
+```swift
+// 粘贴：直接读剪贴板 → ghostty_surface_text
+ghostty_surface_set_focus(surface, true)
+let value = NSPasteboard.general.string(forType: .string) ?? ""
+value.withCString { ptr in
+    ghostty_surface_text(surface, ptr, UInt(value.utf8.count))
+}
+```
+
+**复制实现**
+
+使用 `ghostty_surface_binding_action(surface, "copy_to_clipboard", len)` 触发 ghostty 内部复制流程，ghostty 通过 `write_clipboard_cb` 回调将选中文本写入 NSPasteboard。
+
+```swift
+// 复制：ghostty binding → write_clipboard_cb → NSPasteboard
+let action = "copy_to_clipboard"
+ghostty_surface_binding_action(surface, action, UInt(action.utf8.count))
+```
+
+注意：第三个参数是 action 字符串的**字节长度**，不是 0。
+
+**Runtime Callbacks**
+
+```swift
+// 读剪贴板（ghostty 请求粘贴时调用）
+runtime.read_clipboard_cb = { userdata, clipboard, state in
+    // 异步完成以避免 ghostty_surface_key 重入
+    // 但必须在 async 块内重新验证 surface（可能已被释放）
+    DispatchQueue.main.async {
+        guard let surface = manager.activeSurface else { return }
+        // ... ghostty_surface_complete_clipboard_request(surface, ptr, state, false)
+    }
+    return true
+}
+
+// 写剪贴板（ghostty 执行复制时调用）
+runtime.write_clipboard_cb = { _, clipboard, content, count, _ in
+    // 查找 text/plain MIME → NSPasteboard.general.setString
+}
+```
+
+### 9. 配置
 
 读取 `~/.config/ghostty/config`（用户已有的 Ghostty 配置），支持：
 - font-family, font-size

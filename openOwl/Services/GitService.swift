@@ -200,6 +200,76 @@ final class GitService {
         _ = try await runGit(["push"])
     }
 
+    // MARK: - File Content at Commit
+
+    /// Raw bytes of a file at a specific commit (for images, binary files).
+    func fileData(at ref: String, path: String) async throws -> Data {
+        let workingDirectory = self.workingDirectory
+        return try await withCheckedThrowingContinuation { continuation in
+            DispatchQueue.global(qos: .userInitiated).async {
+                let process = Process()
+                process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+                process.arguments = ["git", "show", "\(ref):\(path)"]
+                process.currentDirectoryURL = workingDirectory
+
+                let stdout = Pipe()
+                let stderr = Pipe()
+                process.standardOutput = stdout
+                process.standardError = stderr
+
+                do {
+                    try process.run()
+                    // Read both pipes BEFORE waitUntilExit to avoid deadlock
+                    // if pipe buffer (~64KB) fills.
+                    let data = stdout.fileHandleForReading.readDataToEndOfFile()
+                    let stderrData = stderr.fileHandleForReading.readDataToEndOfFile()
+                    process.waitUntilExit()
+
+                    if process.terminationStatus == 0 {
+                        continuation.resume(returning: data)
+                    } else {
+                        continuation.resume(throwing: GitServiceError.commandFailed(
+                            command: "git show \(ref):\(path)",
+                            exitCode: process.terminationStatus,
+                            stderr: String(data: stderrData, encoding: .utf8) ?? ""
+                        ))
+                    }
+                } catch {
+                    continuation.resume(throwing: error)
+                }
+            }
+        }
+    }
+
+    // MARK: - Commit Detail
+
+    /// Files changed in a specific commit.
+    func commitFiles(hash: String) async throws -> [GitFileChange] {
+        let output = try await runGit(["diff-tree", "--no-commit-id", "-r", "--name-status", hash])
+        return parseCommitFiles(output)
+    }
+
+    func parseCommitFiles(_ output: String) -> [GitFileChange] {
+        output.split(whereSeparator: \.isNewline).compactMap { line in
+            let parts = line.split(separator: "\t")
+            guard parts.count >= 2 else { return nil }
+            let status = parts[0].first ?? "M"
+            // For renames (R100) and copies (C100), use the destination path (last field)
+            let path = decodePath(String(parts.last!))
+            return GitFileChange(path: path, indexStatus: status, workTreeStatus: " ", section: .staged)
+        }
+    }
+
+    /// Full diff for a single commit.
+    func showCommit(hash: String) async throws -> String {
+        try await runGit(["show", "--format=", "--patch", hash])
+    }
+
+    /// Diff for a single file within a commit.
+    func showCommitFile(hash: String, path: String) async throws -> String {
+        try await runGit(["show", "--format=", "--patch", hash, "--", path])
+    }
+
     // MARK: - Log
 
     func log(limit: Int = 50, skip: Int = 0) async throws -> [GitLogEntry] {
@@ -391,7 +461,7 @@ final class GitService {
     }
 }
 
-private extension GitService {
+extension GitService {
     func parseStatus(_ output: String) throws -> GitStatusSnapshot {
         let lines = output.split(whereSeparator: \.isNewline).map(String.init)
         var branch = "HEAD"
@@ -523,31 +593,71 @@ private extension GitService {
         }
 
         let body = rawPath.dropFirst().dropLast()
-        var output = ""
+        var bytes: [UInt8] = []  // accumulate raw bytes for UTF-8 decode
         var iterator = body.makeIterator()
+
+        // Flush accumulated octal bytes as UTF-8 string
+        func flushBytes(_ output: inout String) {
+            if !bytes.isEmpty {
+                output += String(bytes: bytes, encoding: .utf8) ?? String(bytes.map { Character(Unicode.Scalar($0)) })
+                bytes.removeAll()
+            }
+        }
+
+        var output = ""
 
         while let char = iterator.next() {
             if char != "\\" {
+                flushBytes(&output)
                 output.append(char)
                 continue
             }
 
             guard let escaped = iterator.next() else {
+                flushBytes(&output)
                 output.append("\\")
                 break
             }
 
             switch escaped {
-            case "\\": output.append("\\")
-            case "\"": output.append("\"")
-            case "n": output.append("\n")
-            case "t": output.append("\t")
-            case "r": output.append("\r")
+            case "\\": flushBytes(&output); output.append("\\")
+            case "\"": flushBytes(&output); output.append("\"")
+            case "n": flushBytes(&output); output.append("\n")
+            case "t": flushBytes(&output); output.append("\t")
+            case "r": flushBytes(&output); output.append("\r")
+            case "0"..."7":
+                // Octal escape: git encodes non-ASCII as \NNN byte sequences.
+                // Accumulate bytes so consecutive octals decode as one UTF-8 string.
+                var octal = String(escaped)
+                var spillover: Character?
+                for _ in 0..<2 {
+                    guard let next = iterator.next() else { break }
+                    if next >= "0" && next <= "7" {
+                        octal.append(next)
+                    } else {
+                        spillover = next
+                        break
+                    }
+                }
+                if let byte = UInt8(octal, radix: 8) {
+                    bytes.append(byte)
+                } else {
+                    // Invalid octal (>255): preserve original escape
+                    flushBytes(&output)
+                    output.append("\\")
+                    output.append(contentsOf: octal)
+                }
+                if let s = spillover {
+                    flushBytes(&output)
+                    output.append(s)
+                }
             default:
+                flushBytes(&output)
                 output.append(escaped)
             }
         }
 
+        flushBytes(&output)
         return output
     }
 

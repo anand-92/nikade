@@ -438,6 +438,9 @@ extension OutlineTreeViewController: NSOutlineViewDelegate {
             self?.renamingNodeID = nil
             self?.onRename?(node, newName)
         }
+        cell.onCancelRename = { [weak self] in
+            self?.renamingNodeID = nil
+        }
 
         return cell
     }
@@ -452,15 +455,6 @@ extension OutlineTreeViewController: NSOutlineViewDelegate {
         guard row >= 0,
               let item = outlineView.item(atRow: row) as? NSString,
               let node = nodeIndex[item as String] else { return }
-
-        // Single-click on directory toggles expand/collapse (matches old behavior)
-        if node.isDirectory {
-            if outlineView.isItemExpanded(item) {
-                outlineView.collapseItem(item)
-            } else {
-                outlineView.expandItem(item)
-            }
-        }
 
         onSelectFile?(node)
     }

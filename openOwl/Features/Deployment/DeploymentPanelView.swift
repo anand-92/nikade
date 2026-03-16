@@ -125,12 +125,7 @@ private struct DeploymentListItem: View {
             }
             return .gray
         }
-        switch deployment.status {
-        case .running: return AppColors.success
-        case .error: return AppColors.error
-        case .building: return AppColors.warning
-        case .stopped: return .gray
-        }
+        return deployment.status.color
     }
 }
 
@@ -241,12 +236,15 @@ private struct DeploymentDetailView: View {
                 Spacer()
             }
 
-            // Action buttons (local deployments only)
-            if !deployment.isRemote {
-                HStack(spacing: 8) {
+            // Action buttons
+            HStack(spacing: 8) {
+                if !deployment.isRemote {
                     if deployment.status == .running {
                         ActionButton(title: "Stop", color: AppColors.success, isLoading: isPerformingAction) {
                             performAction { await deploymentStore.stop(id: deployment.id) }
+                        }
+                        ActionButton(title: "Restart", color: .blue, isLoading: false) {
+                            performAction { try await deploymentStore.restart(id: deployment.id) }
                         }
                     } else if deployment.status == .building {
                         ActionButton(title: "Building", color: AppColors.warning, isLoading: true) {}
@@ -255,39 +253,19 @@ private struct DeploymentDetailView: View {
                             performAction { try await deploymentStore.start(id: deployment.id) }
                         }
                     }
-
-                    if deployment.status == .running {
-                        ActionButton(title: "Restart", color: .blue, isLoading: false) {
-                            performAction { try await deploymentStore.restart(id: deployment.id) }
-                        }
-                    }
-
-                    Spacer()
-
-                    Button(role: .destructive) {
-                        performAction { await deploymentStore.removeDeployment(id: deployment.id) }
-                    } label: {
-                        Image(systemName: "trash")
-                            .font(.system(size: 12))
-                    }
-                    .buttonStyle(.plain)
-                    .foregroundStyle(.secondary)
-                    .help("Delete deployment")
                 }
-            } else {
-                // Remote: only delete
-                HStack {
-                    Spacer()
-                    Button(role: .destructive) {
-                        performAction { await deploymentStore.removeDeployment(id: deployment.id) }
-                    } label: {
-                        Image(systemName: "trash")
-                            .font(.system(size: 12))
-                    }
-                    .buttonStyle(.plain)
-                    .foregroundStyle(.secondary)
-                    .help("Delete deployment")
+
+                Spacer()
+
+                Button(role: .destructive) {
+                    performAction { await deploymentStore.removeDeployment(id: deployment.id) }
+                } label: {
+                    Image(systemName: "trash")
+                        .font(.system(size: 12))
                 }
+                .buttonStyle(.plain)
+                .foregroundStyle(.secondary)
+                .help("Delete deployment")
             }
 
             Divider()
@@ -439,7 +417,11 @@ private struct DeploymentDetailView: View {
         isPerformingAction = true
         Task {
             defer { isPerformingAction = false }
-            try? await action()
+            do {
+                try await action()
+            } catch {
+                NSLog("openOwl: [Deployment] Action failed: %@", error.localizedDescription)
+            }
         }
     }
 }
@@ -454,18 +436,9 @@ private struct StatusBadge: View {
             .font(AppFonts.badge)
             .padding(.horizontal, 6)
             .padding(.vertical, 2)
-            .background(color.opacity(0.15))
-            .foregroundStyle(color)
+            .background(status.color.opacity(0.15))
+            .foregroundStyle(status.color)
             .clipShape(RoundedRectangle(cornerRadius: 4))
-    }
-
-    private var color: Color {
-        switch status {
-        case .running: return AppColors.success
-        case .error: return AppColors.error
-        case .building: return AppColors.warning
-        case .stopped: return .gray
-        }
     }
 }
 

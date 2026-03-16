@@ -24,6 +24,8 @@ final class GitChangesStore: ObservableObject {
     @Published private(set) var logEntries: [GitLogEntry] = []
     @Published var selectedCommitHash: String?
     @Published private(set) var hasMoreLog = true
+    @Published private(set) var commitFiles: [GitFileChange] = []
+    @Published private(set) var commitDiffText: String = ""
     private let logPageSize = 50
 
     var hasDiscardableChanges: Bool {
@@ -38,6 +40,7 @@ final class GitChangesStore: ObservableObject {
     private var hasStarted = false
     private let commitMessageGenerator = CommitMessageGenerator()
     private var generateTask: Task<Void, Never>?
+    private var commitDetailTask: Task<Void, Never>?
 
     private var preferredDirectory: URL
 
@@ -91,6 +94,10 @@ final class GitChangesStore: ObservableObject {
             repositoryURL = root
             selectedChange = nil
             selectedDiffText = ""
+            selectedCommitHash = nil
+            commitFiles = []
+            commitDiffText = ""
+            commitDetailTask?.cancel()
             newBranchName = ""
             errorMessage = nil
             infoMessage = nil
@@ -104,6 +111,9 @@ final class GitChangesStore: ObservableObject {
             selectedBranch = ""
             selectedChange = nil
             selectedDiffText = ""
+            selectedCommitHash = nil
+            commitFiles = []
+            commitDiffText = ""
             watcher?.stop()
             watcher = nil
             errorMessage = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
@@ -147,7 +157,37 @@ final class GitChangesStore: ObservableObject {
     }
 
     func selectCommit(_ hash: String) {
-        selectedCommitHash = selectedCommitHash == hash ? nil : hash
+        commitDetailTask?.cancel()
+        commitDetailTask = nil
+
+        if selectedCommitHash == hash {
+            selectedCommitHash = nil
+            commitFiles = []
+            commitDiffText = ""
+            return
+        }
+        selectedCommitHash = hash
+        commitFiles = []
+        commitDiffText = ""
+
+        guard let gitService else { return }
+        let capturedHash = hash
+        commitDetailTask = Task {
+            do {
+                async let files = gitService.commitFiles(hash: capturedHash)
+                async let diff = gitService.showCommit(hash: capturedHash)
+                let f = try await files
+                let d = try await diff
+                guard !Task.isCancelled, selectedCommitHash == capturedHash else { return }
+                commitFiles = f
+                commitDiffText = d
+            } catch {
+                guard !Task.isCancelled else { return }
+                commitFiles = []
+                commitDiffText = ""
+                errorMessage = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+            }
+        }
     }
 
     private func loadLog(using gitService: GitService, reset: Bool) async {
@@ -163,6 +203,7 @@ final class GitChangesStore: ObservableObject {
         } catch {
             if reset { logEntries = [] }
             hasMoreLog = false
+            errorMessage = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
         }
     }
 

@@ -68,3 +68,30 @@ targets:
         com.apple.security.cs.allow-jit: true
         com.apple.security.cs.allow-unsigned-executable-memory: true
         com.apple.security.cs.disable-library-validation: true
+
+  openOwlTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - path: openOwlTests
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.openowl.tests
+        GENERATE_INFOPLIST_FILE: YES
+        SWIFT_VERSION: "5.10"
+        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/openOwl.app/Contents/MacOS/openOwl"
+        BUNDLE_LOADER: "$(TEST_HOST)"
+        HEADER_SEARCH_PATHS:
+          - "$(PROJECT_DIR)/GhosttyKit.xcframework/macos-arm64_x86_64/Headers"
+    dependencies:
+      - target: openOwl
+
+schemes:
+  openOwl:
+    build:
+      targets:
+        openOwl: all
+        openOwlTests: [test]
+    test:
+      targets:
+        - openOwlTests

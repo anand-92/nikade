@@ -22,11 +22,7 @@ struct DeploymentTrayMenu: View {
         Divider()
 
         Button("Open openOwl") {
-            NSApp.activate(ignoringOtherApps: true)
-            for window in NSApp.windows where window.canBecomeMain {
-                window.makeKeyAndOrderFront(nil)
-                break
-            }
+            Self.activateMainWindow()
         }
 
         Button("Quit openOwl") {
@@ -60,15 +56,19 @@ struct DeploymentTrayMenu: View {
                 openDeployment(dep.id)
             }
         } label: {
-            Text("\(dep.name)  \(statusLabel(dep.status))")
+            Text("\(dep.name)  \(dep.status.displayLabel)")
         }
     }
 
     // MARK: - Remote: read-only health status
 
     private func remoteMenuItem(_ dep: Deployment) -> some View {
-        let healthy = deploymentStore.healthStatus[dep.id]
-        let label = healthy == true ? "Healthy" : (healthy == false ? "Down" : "Checking")
+        let label: String
+        switch deploymentStore.healthStatus[dep.id] {
+        case true: label = "Healthy"
+        case false: label = "Down"
+        case nil: label = "Checking"
+        }
 
         return Button("\(dep.name)  \(label)") {
             openDeployment(dep.id)
@@ -76,12 +76,8 @@ struct DeploymentTrayMenu: View {
     }
 
     private func openDeployment(_ id: String) {
-        NSApp.activate(ignoringOtherApps: true)
-        for window in NSApp.windows where window.canBecomeMain {
-            window.makeKeyAndOrderFront(nil)
-            break
-        }
-        // Notify main window via NotificationCenter — MenuBarExtra .menu style
+        Self.activateMainWindow()
+        // Notify main window via NotificationCenter -- MenuBarExtra .menu style
         // doesn't reliably share SwiftUI environment writes.
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
             NotificationCenter.default.post(
@@ -94,16 +90,16 @@ struct DeploymentTrayMenu: View {
 
     // MARK: - Helpers
 
-    private func statusLabel(_ status: DeploymentStatus) -> String {
-        switch status {
-        case .running: return "Running"
-        case .building: return "Building…"
-        case .error: return "Error"
-        case .stopped: return "Stopped"
+    private static func activateMainWindow() {
+        NSApp.activate(ignoringOtherApps: true)
+        for window in NSApp.windows where window.canBecomeMain {
+            window.makeKeyAndOrderFront(nil)
+            break
         }
     }
 }
 
 extension Notification.Name {
     static let openDeployment = Notification.Name("openowl.openDeployment")
+    static let quickOpen = Notification.Name("openowl.quickOpen")
 }

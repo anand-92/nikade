@@ -86,12 +86,15 @@ final class GhosttyAppManager: ObservableObject {
         runtime.read_clipboard_cb = { userdata, clipboard, state in
             guard let userdata else { return false }
             let manager = Unmanaged<GhosttyAppManager>.fromOpaque(userdata).takeUnretainedValue()
-            guard let surface = manager.activeSurface else { return false }
+            guard manager.activeSurface != nil else { return false }
 
             // Must defer completion to avoid reentrancy crash:
             // ghostty_surface_key → paste binding → read_clipboard_cb →
             // ghostty_surface_complete_clipboard_request would crash if synchronous.
             DispatchQueue.main.async {
+                // Re-read activeSurface: the surface captured at callback entry may
+                // have been freed (pane closed) before this async block runs.
+                guard let surface = manager.activeSurface else { return }
                 let value = NSPasteboard.general.string(forType: .string) ?? ""
                 value.withCString { ptr in
                     ghostty_surface_complete_clipboard_request(surface, ptr, state, false)
@@ -103,9 +106,15 @@ final class GhosttyAppManager: ObservableObject {
         runtime.confirm_read_clipboard_cb = { userdata, content, state, _ in
             guard let content else { return }
             guard let userdata else { return }
-            let manager = Unmanaged<GhosttyAppManager>.fromOpaque(userdata).takeUnretainedValue()
-            guard let surface = manager.activeSurface else { return }
-            ghostty_surface_complete_clipboard_request(surface, content, state, true)
+            // Copy content before async dispatch — libghostty may free the buffer after callback returns.
+            let contentStr = String(cString: content)
+            DispatchQueue.main.async {
+                let manager = Unmanaged<GhosttyAppManager>.fromOpaque(userdata).takeUnretainedValue()
+                guard let surface = manager.activeSurface else { return }
+                contentStr.withCString { ptr in
+                    ghostty_surface_complete_clipboard_request(surface, ptr, state, true)
+                }
+            }
         }
 
         runtime.write_clipboard_cb = { _, clipboard, content, count, _ in

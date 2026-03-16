@@ -43,7 +43,18 @@ private struct EditorTab: Identifiable, Equatable {
 private class EditTracker: TextViewCoordinator {
     var onTextChanged: (() -> Void)?
 
-    func prepareCoordinator(controller: TextViewController) {}
+    func prepareCoordinator(controller: TextViewController) {
+        // Remove minimap and floating views that intercept clicks on the right side.
+        // Iterate a snapshot to avoid mutating subviews during enumeration.
+        if let scrollView = controller.view.subviews.first as? NSScrollView {
+            for subview in Array(scrollView.subviews) {
+                let name = type(of: subview).description()
+                if name.contains("Minimap") || name.contains("Reformat") {
+                    subview.removeFromSuperview()
+                }
+            }
+        }
+    }
 
     func textViewDidChangeText(controller: TextViewController) {
         onTextChanged?()
@@ -87,12 +98,14 @@ struct FileExplorerView: View {
         return Self.imageExtensions.contains(ext)
     }
 
+    @State private var treePanelWidth: CGFloat = 240
+
     var body: some View {
         HStack(spacing: 0) {
             treePanel
-                .frame(width: 240)
+                .frame(width: treePanelWidth)
 
-            PanelDivider()
+            treePanelDivider
 
             editorPanel
         }
@@ -215,7 +228,8 @@ struct FileExplorerView: View {
                             try? fm.copyItem(at: url, to: dest)
                         }
                         store.refreshNow()
-                    }
+                    },
+                    onExpandDirectory: { path in store.expandDirectory(path) }
                 )
             }
         }
@@ -244,6 +258,7 @@ struct FileExplorerView: View {
                             .padding()
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .clipped()
                     .background(Color(nsColor: .windowBackgroundColor))
                 } else if !isActiveTabImage, let storage = tabStorages[url] {
                     SourceEditor(
@@ -254,6 +269,7 @@ struct FileExplorerView: View {
                         coordinators: [editTracker]
                     )
                     .id(url)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
             } else {
                 Spacer()
@@ -266,21 +282,52 @@ struct FileExplorerView: View {
         }
     }
 
+    // MARK: - Resizable Divider
+
+    @State private var dragStartWidth: CGFloat?
+
+    private var treePanelDivider: some View {
+        Rectangle()
+            .fill(Color.secondary.opacity(0.2))
+            .frame(width: 1)
+            .overlay {
+                Rectangle()
+                    .fill(Color.clear)
+                    .frame(width: 8)
+                    .contentShape(Rectangle())
+                    .onHover { hovering in
+                        if hovering {
+                            NSCursor.resizeLeftRight.push()
+                        } else {
+                            NSCursor.pop()
+                        }
+                    }
+                    .gesture(
+                        DragGesture(minimumDistance: 1)
+                            .onChanged { value in
+                                if dragStartWidth == nil { dragStartWidth = treePanelWidth }
+                                let newWidth = (dragStartWidth ?? 240) + value.translation.width
+                                treePanelWidth = min(max(newWidth, 150), 500)
+                            }
+                            .onEnded { _ in dragStartWidth = nil }
+                    )
+            }
+    }
+
     // MARK: - Tab Bar
 
     private var editorTabBar: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 0) {
-                ForEach(openTabs) { tab in
-                    EditorTabButton(
-                        tab: tab,
-                        isActive: tab.url == activeTabURL,
-                        isDirty: dirtyTabs.contains(tab.url),
-                        onSelect: { switchToTab(tab.url) },
-                        onClose: { closeTab(tab.url) }
-                    )
-                }
+        HStack(spacing: 0) {
+            ForEach(openTabs) { tab in
+                EditorTabButton(
+                    tab: tab,
+                    isActive: tab.url == activeTabURL,
+                    isDirty: dirtyTabs.contains(tab.url),
+                    onSelect: { switchToTab(tab.url) },
+                    onClose: { closeTab(tab.url) }
+                )
             }
+            Spacer(minLength: 0)
         }
         .frame(height: AppSpacing.editorTabBarHeight)
         .background(Color(nsColor: .windowBackgroundColor))
@@ -383,7 +430,11 @@ struct FileExplorerView: View {
         // Auto-save dirty tab
         if dirtyTabs.contains(url) {
             if let storage = tabStorages[url] {
-                try? storage.string.write(to: url, atomically: true, encoding: .utf8)
+                do {
+                    try storage.string.write(to: url, atomically: true, encoding: .utf8)
+                } catch {
+                    store.errorMessage = "Failed to save \(url.lastPathComponent): \(error.localizedDescription)"
+                }
             }
         }
 
@@ -445,7 +496,11 @@ struct FileExplorerView: View {
     private func saveAllDirtyTabs() {
         for url in dirtyTabs {
             guard let storage = tabStorages[url] else { continue }
-            try? storage.string.write(to: url, atomically: true, encoding: .utf8)
+            do {
+                try storage.string.write(to: url, atomically: true, encoding: .utf8)
+            } catch {
+                NSLog("openOwl: Failed to save %@: %@", url.lastPathComponent, error.localizedDescription)
+            }
         }
         dirtyTabs.removeAll()
     }
@@ -516,19 +571,28 @@ private struct EditorTabButton: View {
     @State private var isHovering = false
 
     var body: some View {
-        HStack(spacing: 4) {
-            Image(systemName: FileExplorerView.fileIconName(for: tab.url))
-                .font(.system(size: 10))
-                .foregroundStyle(FileExplorerView.fileIconColor(for: tab.url))
+        HStack(spacing: 0) {
+            // Label area — Button for proper AppKit hit testing inside ScrollView
+            Button(action: onSelect) {
+                HStack(spacing: 4) {
+                    Image(systemName: FileExplorerView.fileIconName(for: tab.url))
+                        .font(.system(size: 10))
+                        .foregroundStyle(FileExplorerView.fileIconColor(for: tab.url))
 
-            Text(tab.name)
-                .font(.system(size: 11))
-                .lineLimit(1)
+                    Text(tab.name)
+                        .font(.system(size: 11))
+                        .lineLimit(1)
+                }
+                .padding(.leading, 8)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
 
-            // Dirty indicator / close button
+            // Close button — separate from select
             closeOrDirtyIndicator
+                .padding(.trailing, 4)
         }
-        .padding(.horizontal, 8)
+        .padding(.trailing, 4)
         .frame(height: AppSpacing.editorTabBarHeight)
         .background(isActive ? AppColors.activeBackground : (isHovering ? AppColors.hoverBackground : Color.clear))
         .overlay(alignment: .trailing) {
@@ -536,8 +600,6 @@ private struct EditorTabButton: View {
                 .fill(Color.secondary.opacity(0.15))
                 .frame(width: 1)
         }
-        .contentShape(Rectangle())
-        .onTapGesture { onSelect() }
         .onHover { isHovering = $0 }
         .contextMenu {
             Button("Close") { onClose() }

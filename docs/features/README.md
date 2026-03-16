@@ -1,0 +1,62 @@
+# 功能文档索引
+
+## 状态说明
+
+| 状态 | 标识 | 说明 |
+|------|------|------|
+| 待评审 | 🔵 Draft | 初稿，待讨论确认 |
+| 已确认 | 🟢 Ready | 已确认，可进入开发 |
+| 进行中 | 🟡 In Progress | 正在开发中 |
+| 已完成 | ✅ Done | 已上线（需添加完成日期） |
+| 已搁置 | ⏸️ On Hold | 暂时搁置 |
+
+## 文档列表
+
+| 编号 | 名称 | 状态 | 链接 |
+|------|------|------|------|
+| 001 | libghostty 集成指南 | ✅ Done | [001-libghostty-integration.md](001-libghostty-integration.md) |
+| 002 | 终端分屏系统 | ✅ Done | [002-terminal-split.md](002-terminal-split.md) |
+| 003 | Git 变更面板 | ✅ Done | [003-git-changes.md](003-git-changes.md) |
+| 004 | 文件浏览器 | ✅ Done | [004-file-explorer.md](004-file-explorer.md) |
+| 005 | 本地部署服务 | ✅ Done | [005-local-deployment.md](005-local-deployment.md) |
+| 006 | 项目管理侧边栏 | ✅ Done | [006-project-sidebar.md](006-project-sidebar.md) |
+
+## 分类
+
+### 终端 (Terminal)
+
+- [001-libghostty-integration.md](001-libghostty-integration.md) — libghostty 集成方式、C API 桥接、Metal 渲染
+- [002-terminal-split.md](002-terminal-split.md) — 多标签 + 二叉树分屏、焦点导航、窗格拖拽
+
+### Git
+
+- [003-git-changes.md](003-git-changes.md) — 暂存/提交/Diff/分支管理/远程操作/Git Graph
+
+### 文件系统 (File System)
+
+- [004-file-explorer.md](004-file-explorer.md) — NSOutlineView 文件树、模糊搜索、Git 状态标注
+
+### 部署 (Deployment)
+
+- [005-local-deployment.md](005-local-deployment.md) — Clone+Build+Start、健康检查、自动更新、系统托盘
+
+### 基础设施 (Infrastructure)
+
+- [006-project-sidebar.md](006-project-sidebar.md) — 项目列表、Worktree 管理、持久化
+
+## 依赖关系
+
+```
+006-project-sidebar ──→ 002-terminal-split
+                    ──→ 003-git-changes
+                    ──→ 004-file-explorer
+                    ──→ 005-local-deployment
+
+002-terminal-split ──→ 001-libghostty-integration
+```
+
+## 更新记录
+
+| 日期 | 说明 |
+|------|------|
+| 2026-03-16 | 创建索引，补全 001–006 功能文档 |

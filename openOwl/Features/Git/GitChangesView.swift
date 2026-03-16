@@ -4,6 +4,7 @@ import SwiftUI
 
 struct GitChangesView: View {
     @EnvironmentObject private var store: GitChangesStore
+    @EnvironmentObject private var projectStore: ProjectStore
     @State private var confirmationAction: GitConfirmationAction?
     @State private var selectedIDs: Set<String> = []
     @State private var lastClickedID: String?
@@ -28,6 +29,11 @@ struct GitChangesView: View {
         }
         .onAppear {
             store.startIfNeeded()
+        }
+        .onChange(of: projectStore.activeProjectID) { _, _ in
+            if let url = projectStore.activeProjectURL {
+                store.setPreferredDirectory(url)
+            }
         }
         .onChange(of: store.selectedChange?.id) { _, _ in
             expandedHunks.removeAll()
@@ -356,8 +362,17 @@ struct GitChangesView: View {
 
     private var diffPanel: some View {
         VStack(spacing: 0) {
+            // Header
             HStack(spacing: 6) {
-                if let change = store.selectedChange {
+                if let hash = store.selectedCommitHash, !store.commitDiffText.isEmpty {
+                    let short = String(hash.prefix(7))
+                    let count = store.commitFiles.count
+                    Text("\(count) file\(count == 1 ? "" : "s") changed")
+                        .font(.system(size: 11, weight: .medium, design: .monospaced))
+                    Text("(\(short))")
+                        .font(AppFonts.caption)
+                        .foregroundStyle(.tertiary)
+                } else if let change = store.selectedChange {
                     Text(change.path)
                         .font(.system(size: 11, weight: .medium, design: .monospaced))
                         .lineLimit(1)
@@ -370,75 +385,287 @@ struct GitChangesView: View {
                         .foregroundStyle(.secondary)
                 }
                 Spacer()
+
+                if store.selectedCommitHash != nil, !store.commitDiffText.isEmpty {
+                    Button {
+                        withAnimation(.easeInOut(duration: 0.15)) {
+                            showCommitFileList.toggle()
+                        }
+                    } label: {
+                        Image(systemName: "sidebar.left")
+                            .font(.system(size: 11))
+                            .foregroundStyle(showCommitFileList ? .primary : .secondary)
+                    }
+                    .buttonStyle(.plain)
+                    .help("Toggle file list")
+                }
             }
             .padding(.horizontal, 10)
             .frame(height: AppConstants.headerHeight)
 
             PanelDivider()
 
-            if store.selectedChange == nil {
-                Spacer()
-                Text("Select a file to view diff")
-                    .foregroundStyle(.secondary).font(.system(size: 12))
-                Spacer()
-            } else if store.selectedDiffText.isEmpty {
+            // Content
+            if store.selectedCommitHash != nil, !store.commitDiffText.isEmpty {
+                let sections = splitDiffByFile(store.commitDiffText)
+                HStack(spacing: 0) {
+                    if showCommitFileList {
+                        commitFileSidebar(sections: sections)
+                        PanelDivider()
+                    }
+                    commitDiffByFile(sections: sections)
+                }
+            } else if store.selectedChange != nil, !store.selectedDiffText.isEmpty {
+                singleFileDiff(store.selectedDiffText)
+            } else if store.selectedChange != nil {
                 Spacer()
                 Text("No diff output")
                     .foregroundStyle(.secondary).font(.system(size: 12))
                 Spacer()
             } else {
-                let rows = parseSideBySide(store.selectedDiffText)
-                GeometryReader { geo in
-                    let halfWidth = (geo.size.width - 1) / 2
-                    ScrollView(.vertical) {
-                        LazyVStack(alignment: .leading, spacing: 0) {
-                            ForEach(rows.indices, id: \.self) { i in
+                Spacer()
+                Text("Select a file to view diff")
+                    .foregroundStyle(.secondary).font(.system(size: 12))
+                Spacer()
+            }
+        }
+        .background(diffBgColor)
+    }
 
-                                let row = rows[i]
-                                if row.kind == .hunkHeader {
-                                    if expandedHunks.contains(row.hunkIndex), let lines = cachedFileLines {
-                                        // Show expanded unmodified lines
-                                        let fromLine = row.prevNewEnd  // 1-based
-                                        let toLine = row.newStartLine  // 1-based exclusive
-                                        ForEach(fromLine..<toLine, id: \.self) { lineNo in
-                                            let idx = lineNo - 1
-                                            let content = idx >= 0 && idx < lines.count ? lines[idx] : ""
-                                            HStack(spacing: 0) {
-                                                diffSideCell(lineNo: lineNo, content: content, kind: .context, side: .left)
-                                                    .frame(width: halfWidth)
-                                                Color.clear.frame(width: 1)
-                                                diffSideCell(lineNo: lineNo, content: content, kind: .context, side: .right)
-                                                    .frame(width: halfWidth)
-                                            }
-                                            .frame(height: 18)
-                                        }
-                                    } else if row.skippedLines > 0 {
-                                        hunkHeaderBar(skippedLines: row.skippedLines, hunkIndex: row.hunkIndex)
-                                    }
-                                } else {
-                                    HStack(spacing: 0) {
-                                        diffSideCell(lineNo: row.oldLineNo, content: row.oldContent, kind: row.kind, side: .left)
-                                            .frame(width: halfWidth)
-                                        Rectangle().fill(Color.secondary.opacity(0.2)).frame(width: 1)
-                                        diffSideCell(lineNo: row.newLineNo, content: row.newContent, kind: row.kind, side: .right)
-                                            .frame(width: halfWidth)
-                                    }
-                                    .frame(height: 18)
-                                }
-                            }
+    // MARK: - Commit Diff (file-by-file sections)
+
+    @State private var collapsedCommitFiles: Set<String> = []
+    @State private var showCommitFileList = true
+    @State private var scrollTarget: String?
+    @State private var selectedCommitFilePath: String?
+
+    private static let imageExtensions: Set<String> = [
+        "png", "jpg", "jpeg", "gif", "bmp", "tiff", "webp", "heic", "ico", "svg", "icns"
+    ]
+
+    private func commitFileSidebar(sections: [FileDiffSection]) -> some View {
+        ScrollView(.vertical) {
+            VStack(alignment: .leading, spacing: 0) {
+                ForEach(sections, id: \.path) { section in
+                    let isSelected = selectedCommitFilePath == section.path
+                    let isImage = Self.imageExtensions.contains(
+                        URL(fileURLWithPath: section.path).pathExtension.lowercased()
+                    )
+                    HStack(spacing: 4) {
+                        if isImage {
+                            Image(systemName: "photo")
+                                .font(.system(size: 9))
+                                .foregroundStyle(.secondary)
+                                .frame(width: 12)
+                        } else {
+                            Text(String(section.status.rawValue))
+                                .font(.system(size: 9, weight: .bold, design: .monospaced))
+                                .foregroundStyle(commitStatusColor(section.status))
+                                .frame(width: 12)
                         }
-                        .frame(minHeight: geo.size.height, alignment: .top)
+
+                        Text(URL(fileURLWithPath: section.path).lastPathComponent)
+                            .font(.system(size: 11))
+                            .lineLimit(1)
+                            .truncationMode(.middle)
                     }
-                    .overlay {
-                        Rectangle()
-                            .fill(Color.secondary.opacity(0.2))
-                            .frame(width: 1)
-                            .frame(maxHeight: .infinity)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(isSelected ? Color.accentColor.opacity(0.2) : Color.clear)
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        selectedCommitFilePath = section.path
+                        collapsedCommitFiles.remove(section.path)
+                        scrollTarget = section.path
                     }
                 }
             }
         }
-        .background(diffBgColor)
+        .frame(width: 160)
+        .background(EffectView(material: .sidebar, blendingMode: .behindWindow))
+    }
+
+    private func commitDiffByFile(sections: [FileDiffSection]) -> some View {
+        GeometryReader { geo in
+            let halfWidth = (geo.size.width - 1) / 2
+            ScrollViewReader { proxy in
+                ScrollView(.vertical) {
+                    VStack(alignment: .leading, spacing: 0) {
+                        ForEach(sections, id: \.path) { section in
+                            commitFileSection(section, halfWidth: halfWidth)
+                                .id(section.path)
+                        }
+                    }
+                }
+                .onChange(of: scrollTarget) { _, target in
+                    guard let target else { return }
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            proxy.scrollTo(target, anchor: .top)
+                        }
+                        scrollTarget = nil
+                    }
+                }
+            }
+        }
+    }
+
+    private func commitFileSection(_ section: FileDiffSection, halfWidth: CGFloat) -> some View {
+        let isCollapsed = collapsedCommitFiles.contains(section.path)
+        let isImage = Self.imageExtensions.contains(
+            URL(fileURLWithPath: section.path).pathExtension.lowercased()
+        )
+        let isBinary = !isImage && section.diff.contains("Binary files")
+        let rows = (isCollapsed || isImage || isBinary) ? [] : parseSideBySide(section.diff)
+        return VStack(alignment: .leading, spacing: 0) {
+            // File header bar
+            HStack(spacing: 6) {
+                Image(systemName: isCollapsed ? "chevron.right" : "chevron.down")
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(.tertiary)
+                    .frame(width: 10)
+
+                Text(commitStatusString(section.status))
+                    .font(.system(size: 9, weight: .bold, design: .monospaced))
+                    .foregroundStyle(commitStatusColor(section.status))
+
+                Text(section.path)
+                    .font(.system(size: 11, weight: .medium, design: .monospaced))
+                    .lineLimit(1)
+                    .truncationMode(.head)
+
+                Spacer()
+
+                if isImage {
+                    Text("image")
+                        .font(.system(size: 9))
+                        .foregroundStyle(.tertiary)
+                } else if isBinary {
+                    Text("binary")
+                        .font(.system(size: 9))
+                        .foregroundStyle(.tertiary)
+                } else if !isCollapsed {
+                    Text("\(rows.count) lines")
+                        .font(.system(size: 9))
+                        .foregroundStyle(.tertiary)
+                }
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 5)
+            .background(selectedCommitFilePath == section.path
+                        ? Color.accentColor.opacity(0.1)
+                        : Color.secondary.opacity(0.08))
+            .contentShape(Rectangle())
+            .onTapGesture {
+                selectedCommitFilePath = section.path
+                if collapsedCommitFiles.contains(section.path) {
+                    collapsedCommitFiles.remove(section.path)
+                } else {
+                    collapsedCommitFiles.insert(section.path)
+                }
+            }
+
+            if !isCollapsed {
+                if isImage {
+                    commitImageView(section: section)
+                } else if isBinary {
+                    Text("Binary file changed")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 12)
+                } else {
+                    singleFileDiffRows(section.diff, halfWidth: halfWidth)
+                }
+            }
+
+            PanelDivider()
+        }
+    }
+
+    private func commitImageView(section: FileDiffSection) -> some View {
+        CommitImageDiffView(
+            hash: store.selectedCommitHash ?? "",
+            path: section.path,
+            status: section.status,
+            repositoryURL: store.repositoryURL
+        )
+    }
+
+    private func commitStatusString(_ status: DiffFileStatus) -> String {
+        switch status {
+        case .added: return "ADDED"
+        case .deleted: return "DELETED"
+        case .renamed: return "RENAMED"
+        case .modified: return "MODIFIED"
+        }
+    }
+
+    // MARK: - Single File Diff (side-by-side)
+
+    private func singleFileDiff(_ diffText: String) -> some View {
+        GeometryReader { geo in
+            let halfWidth = (geo.size.width - 1) / 2
+            ScrollView(.vertical) {
+                singleFileDiffRows(diffText, halfWidth: halfWidth)
+                    .frame(minHeight: geo.size.height, alignment: .top)
+            }
+            .overlay {
+                Rectangle()
+                    .fill(Color.secondary.opacity(0.2))
+                    .frame(width: 1)
+                    .frame(maxHeight: .infinity)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func singleFileDiffRows(_ diffText: String, halfWidth: CGFloat) -> some View {
+        let rows = parseSideBySide(diffText)
+        LazyVStack(alignment: .leading, spacing: 0) {
+            ForEach(rows.indices, id: \.self) { i in
+                let row = rows[i]
+                if row.kind == .hunkHeader {
+                    if expandedHunks.contains(row.hunkIndex), let lines = cachedFileLines {
+                        let fromLine = row.prevNewEnd
+                        let toLine = row.newStartLine
+                        ForEach(fromLine..<toLine, id: \.self) { lineNo in
+                            let idx = lineNo - 1
+                            let content = idx >= 0 && idx < lines.count ? lines[idx] : ""
+                            HStack(spacing: 0) {
+                                diffSideCell(lineNo: lineNo, content: content, kind: .context, side: .left)
+                                    .frame(width: halfWidth)
+                                Color.clear.frame(width: 1)
+                                diffSideCell(lineNo: lineNo, content: content, kind: .context, side: .right)
+                                    .frame(width: halfWidth)
+                            }
+                            .frame(height: 18)
+                        }
+                    } else if row.skippedLines > 0 {
+                        hunkHeaderBar(skippedLines: row.skippedLines, hunkIndex: row.hunkIndex)
+                    }
+                } else {
+                    HStack(spacing: 0) {
+                        diffSideCell(lineNo: row.oldLineNo, content: row.oldContent, kind: row.kind, side: .left)
+                            .frame(width: halfWidth)
+                        Rectangle().fill(Color.secondary.opacity(0.2)).frame(width: 1)
+                        diffSideCell(lineNo: row.newLineNo, content: row.newContent, kind: row.kind, side: .right)
+                            .frame(width: halfWidth)
+                    }
+                    .frame(height: 18)
+                }
+            }
+        }
+    }
+
+    private func commitStatusColor(_ status: DiffFileStatus) -> Color {
+        switch status {
+        case .added: return .green
+        case .deleted: return .red
+        case .modified: return .yellow
+        case .renamed: return .blue
+        }
     }
 
     private func hunkHeaderBar(skippedLines: Int, hunkIndex: Int) -> some View {
@@ -583,8 +810,14 @@ struct GitChangesView: View {
 
     private func diffRowBackground(kind: DiffRowKind, side: DiffSide) -> Color {
         switch kind {
-        case .added:  return side == .right ? Color(nsColor: .systemGreen).opacity(0.12) : diffBgColor
-        case .removed: return side == .left ? Color(nsColor: .systemRed).opacity(0.12) : diffBgColor
+        case .added:
+            return side == .right
+                ? Color(nsColor: .systemGreen).opacity(0.12)
+                : Color(nsColor: .systemGreen).opacity(0.04)  // empty side tint
+        case .removed:
+            return side == .left
+                ? Color(nsColor: .systemRed).opacity(0.12)
+                : Color(nsColor: .systemRed).opacity(0.04)    // empty side tint
         case .hunkHeader: return Color(nsColor: .systemBlue).opacity(0.06)
         case .context: return diffBgColor
         }
@@ -730,6 +963,163 @@ struct GitChangesView: View {
 
     private let diffBgColor = Color(nsColor: NSColor(calibratedRed: 0.15, green: 0.15, blue: 0.17, alpha: 1.0))
     private let diffTextColor = Color(nsColor: NSColor(calibratedWhite: 0.9, alpha: 1.0))
+}
+
+// MARK: - Commit Image Diff View
+
+private struct CommitImageDiffView: View {
+    let hash: String
+    let path: String
+    let status: DiffFileStatus
+    let repositoryURL: URL?
+
+    @State private var newImage: NSImage?
+    @State private var oldImage: NSImage?
+    @State private var loaded = false
+    @State private var loadError: String?
+
+    var body: some View {
+        HStack(spacing: 0) {
+            // Left side (old / before)
+            imageSide(
+                label: status == .added ? nil : "Before",
+                color: .red,
+                image: status == .added ? nil : oldImage,
+                placeholder: status == .added ? "(new file)" : nil
+            )
+
+            Rectangle().fill(Color.secondary.opacity(0.2)).frame(width: 1)
+
+            // Right side (new / after)
+            imageSide(
+                label: status == .deleted ? nil : "After",
+                color: .green,
+                image: status == .deleted ? nil : newImage,
+                placeholder: status == .deleted ? "(deleted)" : nil
+            )
+        }
+        .frame(height: 200)
+        .task(id: hash + path) {
+            await loadImages()
+        }
+    }
+
+    private func imageSide(label: String?, color: Color, image: NSImage?, placeholder: String?) -> some View {
+        ZStack {
+            if let image {
+                VStack(spacing: 4) {
+                    if let label {
+                        Text(label)
+                            .font(.system(size: 9, weight: .bold))
+                            .foregroundStyle(color)
+                    }
+                    Image(nsImage: image)
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                        .clipShape(RoundedRectangle(cornerRadius: 4))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 4)
+                                .stroke(color.opacity(0.3), lineWidth: 1)
+                        )
+                }
+                .padding(8)
+            } else if let placeholder {
+                Text(placeholder)
+                    .font(.system(size: 10))
+                    .foregroundStyle(.tertiary)
+            } else if !loaded {
+                ProgressView().controlSize(.small)
+            } else if loaded {
+                Text(loadError ?? "Image unavailable")
+                    .font(.system(size: 10))
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(color.opacity(image != nil ? 0.04 : 0.02))
+    }
+
+    private func loadImages() async {
+        guard let repositoryURL, !hash.isEmpty else { loaded = true; return }
+        let git = GitService(workingDirectory: repositoryURL)
+
+        if status != .deleted {
+            do {
+                let data = try await git.fileData(at: hash, path: path)
+                newImage = NSImage(data: data)
+            } catch {
+                loadError = "Failed to load image"
+            }
+        }
+
+        if status != .added {
+            do {
+                let data = try await git.fileData(at: "\(hash)^", path: path)
+                oldImage = NSImage(data: data)
+            } catch {
+                if loadError == nil { loadError = "Failed to load image" }
+            }
+        }
+
+        loaded = true
+    }
+}
+
+// MARK: - Split Diff by File
+
+enum DiffFileStatus: Character {
+    case added = "A"
+    case modified = "M"
+    case deleted = "D"
+    case renamed = "R"
+}
+
+struct FileDiffSection: Identifiable {
+    let path: String
+    let status: DiffFileStatus
+    let diff: String
+    var id: String { path }
+}
+
+func splitDiffByFile(_ fullDiff: String) -> [FileDiffSection] {
+    let lines = fullDiff.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+    var sections: [FileDiffSection] = []
+    var currentPath = ""
+    var currentStatus: DiffFileStatus = .modified
+    var currentLines: [String] = []
+
+    for line in lines {
+        if line.hasPrefix("diff --git ") {
+            // Flush previous
+            if !currentPath.isEmpty {
+                sections.append(FileDiffSection(path: currentPath, status: currentStatus, diff: currentLines.joined(separator: "\n")))
+            }
+            // Parse path: "diff --git a/foo b/foo" → "foo"
+            // Use " b/" separator (not space split) to handle paths with spaces
+            if let bRange = line.range(of: " b/", options: .backwards) {
+                currentPath = String(line[line.index(bRange.lowerBound, offsetBy: 3)...])
+            } else {
+                currentPath = "unknown"
+            }
+            currentStatus = .modified
+            currentLines = []
+        } else if line.hasPrefix("new file") {
+            currentStatus = .added
+        } else if line.hasPrefix("deleted file") {
+            currentStatus = .deleted
+        } else if line.hasPrefix("rename ") || line.hasPrefix("similarity index") {
+            currentStatus = .renamed
+        } else {
+            currentLines.append(line)
+        }
+    }
+
+    // Flush last
+    if !currentPath.isEmpty {
+        sections.append(FileDiffSection(path: currentPath, status: currentStatus, diff: currentLines.joined(separator: "\n")))
+    }
+
+    return sections
 }
 
 // MARK: - Git Graph Content (swim lanes + commit list)

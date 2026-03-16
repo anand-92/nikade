@@ -16,6 +16,7 @@ final class OutlineTreeCellView: NSTableCellView {
     var onStage: (() -> Void)?
     var onDiscard: (() -> Void)?
     var onCommitRename: ((String) -> Void)?
+    var onCancelRename: (() -> Void)?
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -74,6 +75,9 @@ final class OutlineTreeCellView: NSTableCellView {
 
         imageView = iconView
 
+        // Name truncates instead of pushing badge off-screen
+        nameField.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+
         NSLayoutConstraint.activate([
             iconView.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 2),
             iconView.centerYAnchor.constraint(equalTo: centerYAnchor),
@@ -83,17 +87,19 @@ final class OutlineTreeCellView: NSTableCellView {
             nameField.leadingAnchor.constraint(equalTo: iconView.trailingAnchor, constant: 4),
             nameField.centerYAnchor.constraint(equalTo: centerYAnchor),
 
-            discardButton.leadingAnchor.constraint(greaterThanOrEqualTo: nameField.trailingAnchor, constant: 4),
-            discardButton.centerYAnchor.constraint(equalTo: centerYAnchor),
-            discardButton.widthAnchor.constraint(equalToConstant: 16),
+            gitBadge.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -6),
+            gitBadge.centerYAnchor.constraint(equalTo: centerYAnchor),
+            gitBadge.widthAnchor.constraint(greaterThanOrEqualToConstant: 12),
 
-            stageButton.leadingAnchor.constraint(equalTo: discardButton.trailingAnchor, constant: 2),
+            stageButton.trailingAnchor.constraint(equalTo: gitBadge.leadingAnchor, constant: -2),
             stageButton.centerYAnchor.constraint(equalTo: centerYAnchor),
             stageButton.widthAnchor.constraint(equalToConstant: 16),
 
-            gitBadge.leadingAnchor.constraint(equalTo: stageButton.trailingAnchor, constant: 2),
-            gitBadge.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -6),
-            gitBadge.centerYAnchor.constraint(equalTo: centerYAnchor),
+            discardButton.trailingAnchor.constraint(equalTo: stageButton.leadingAnchor, constant: -2),
+            discardButton.centerYAnchor.constraint(equalTo: centerYAnchor),
+            discardButton.widthAnchor.constraint(equalToConstant: 16),
+
+            nameField.trailingAnchor.constraint(lessThanOrEqualTo: discardButton.leadingAnchor, constant: -4),
         ])
     }
 
@@ -108,8 +114,10 @@ final class OutlineTreeCellView: NSTableCellView {
         // Name
         if isRenaming {
             nameField.isEditable = true
-            nameField.isBezeled = true
-            nameField.bezelStyle = .roundedBezel
+            nameField.isBezeled = false
+            nameField.drawsBackground = true
+            nameField.backgroundColor = NSColor.controlAccentColor.withAlphaComponent(0.15)
+            nameField.focusRingType = .exterior
             nameField.stringValue = node.name
             nameField.delegate = self
             nameField.target = self
@@ -119,14 +127,15 @@ final class OutlineTreeCellView: NSTableCellView {
         } else {
             nameField.isEditable = false
             nameField.isBezeled = false
+            nameField.drawsBackground = false
             nameField.stringValue = node.name
             nameField.textColor = Self.gitColor(for: node.gitState) ?? .labelColor
             nameField.delegate = nil
         }
 
-        // Git badge
-        if let state = node.gitState, !node.isDirectory {
-            gitBadge.stringValue = state.shortCode
+        // Git badge (files show letter code, directories show dot indicator)
+        if let state = node.gitState {
+            gitBadge.stringValue = node.isDirectory ? "●" : state.shortCode
             gitBadge.textColor = Self.gitColor(for: state) ?? .secondaryLabelColor
             gitBadge.isHidden = false
         } else {
@@ -205,12 +214,17 @@ final class OutlineTreeCellView: NSTableCellView {
 extension OutlineTreeCellView: NSTextFieldDelegate {
     func control(_ control: NSControl, textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
         if commandSelector == #selector(NSResponder.cancelOperation(_:)) {
-            // Escape — cancel rename
+            // Escape — cancel rename, reset all visual state
             nameField.isEditable = false
             nameField.isBezeled = false
+            nameField.drawsBackground = false
+            nameField.focusRingType = .default
             if let node = currentNode {
                 nameField.stringValue = node.name
+                nameField.textColor = Self.gitColor(for: node.gitState) ?? .labelColor
             }
+            onCancelRename?()
+            window?.makeFirstResponder(superview) // return focus to outline view
             return true
         }
         return false

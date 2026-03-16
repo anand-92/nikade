@@ -151,7 +151,7 @@ final class DeploymentProcessManager {
         return env
     }
 
-    private static func timestamp() -> String {
+    static func timestamp() -> String {
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
         return formatter.string(from: Date())
