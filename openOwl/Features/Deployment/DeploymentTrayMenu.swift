@@ -102,4 +102,5 @@ struct DeploymentTrayMenu: View {
 extension Notification.Name {
     static let openDeployment = Notification.Name("openowl.openDeployment")
     static let quickOpen = Notification.Name("openowl.quickOpen")
+    static let terminalSearch = Notification.Name("openowl.terminalSearch")
 }

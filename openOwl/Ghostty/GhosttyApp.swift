@@ -21,6 +21,9 @@ final class GhosttyAppManager {
     )
     var onPaneTitleChanged: ((UUID, String) -> Void)?
     var onPaneBell: ((UUID) -> Void)?
+    var onSearchEnd: ((UUID) -> Void)?
+    var onSearchTotal: ((UUID, UInt?) -> Void)?
+    var onSearchSelected: ((UUID, UInt?) -> Void)?
 
     /// Stores a reference to the active surface so clipboard callbacks can reach it.
     /// Updated when a TerminalNSView creates its surface.
@@ -240,6 +243,36 @@ final class GhosttyAppManager {
             guard let paneID = paneID(for: target) else { return false }
             DispatchQueue.main.async { [weak self] in
                 self?.onPaneBell?(paneID)
+            }
+            return true
+
+        case GHOSTTY_ACTION_START_SEARCH:
+            // Return false — we handle Cmd+F ourselves via performKeyEquivalent.
+            // Ghostty triggers this when its own keybinding fires; we don't need it.
+            return false
+
+        case GHOSTTY_ACTION_END_SEARCH:
+            guard let paneID = paneID(for: target) else { return false }
+            DispatchQueue.main.async { [weak self] in
+                self?.onSearchEnd?(paneID)
+            }
+            return true
+
+        case GHOSTTY_ACTION_SEARCH_TOTAL:
+            guard let paneID = paneID(for: target) else { return false }
+            let raw = action.action.search_total.total
+            let total: UInt? = raw >= 0 ? UInt(raw) : nil
+            DispatchQueue.main.async { [weak self] in
+                self?.onSearchTotal?(paneID, total)
+            }
+            return true
+
+        case GHOSTTY_ACTION_SEARCH_SELECTED:
+            guard let paneID = paneID(for: target) else { return false }
+            let raw = action.action.search_selected.selected
+            let selected: UInt? = raw >= 0 ? UInt(raw) : nil
+            DispatchQueue.main.async { [weak self] in
+                self?.onSearchSelected?(paneID, selected)
             }
             return true
 

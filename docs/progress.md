@@ -6,7 +6,11 @@
 - M2: Git 变更管理（主体完成，待运行时手测）
 - M3: 文件浏览器 + 侧边栏（已完成 T3.1-T3.7 主体实现，待运行时手测）
 - REQ-004: 本地部署服务（主体实现完成，待运行时手测）
-- UI review（计划中，尚未开始）
+- UI review 后续：DeploymentStore 拆分（P3，分离健康检查/日志/进程管理）
+
+## Release & Distribution
+
+- [x] v1.0.0 发布 — OpenOwl-1.0.0.dmg (40MB) 签名 + 公证，上传到 GitHub Releases
 
 ## Done
 
@@ -30,6 +34,14 @@
 - [x] M3-T3.5 预览与搜索增强 — Cmd+P 快速查找 + 轻量语法高亮
 - [x] M3-T3.6 文件拖拽 — 文件树拖拽到 Terminal 粘贴路径
 - [x] M3-T3.7 状态优化 — A/M/D/R/U 细粒度状态 + ignored 前缀压缩
+- [x] App branding — 猫头鹰 icon 全尺寸 (16-1024) + 菜单栏 template icon + display name "OpenOwl"
+- [x] 开源发布 — GitHub 仓库 sanvibyfish/openowl-app, GPL-3.0, README (EN + CN)
+- [x] 版本更新检查器 — UpdateChecker (GitHub Releases API) + CheckForUpdatesButton + UpdateAlertView
+- [x] 构建 & 发布流水线 — scripts/build-dmg.sh (xcodegen → archive → sign → DMG → notarize → staple)
+- [x] 自动签名配置 — CODE_SIGN_STYLE=Automatic, DEVELOPMENT_TEAM, HARDENED_RUNTIME
+- [x] 终端分屏分隔线稳定性 — SplitDividerInfo tree-path ID
+- [x] Git 变更视图改进 — Animation.identity → .default, git graph 增强
+- [x] .gitignore 加固 — *.cer, *.key, *.p12, *.pfx, *.dmg, build/
 - [x] 编译验证通过 (`xcodebuild -scheme openOwl -configuration Debug build`)
 - [x] docs/features/ 全套功能文档 — 001-006 编号文档 + README 索引
 - [x] Swift Testing 基础设施 — openOwlTests target，149 个测试全部通过（14 suites）
@@ -64,6 +76,19 @@
 - [x] REQ-004-T6 CreateDeploymentSheet — 创建部署表单 + 自动获取 remote URL + Deploy 按钮
 - [x] REQ-004-T7 MenuBarExtra 系统托盘 — 托盘图标 + 部署状态菜单 + Start/Stop 操作
 - [x] REQ-004-T8 AppDelegate — 有运行中部署时关闭窗口不退出 app
+- [x] UI 审计 — 3 并行 agent 审计（架构/性能/导航），发现 2C+7H+9M+5L 问题
+- [x] 性能修复 Phase 1 — ISO8601DateFormatter static 缓存、VStack→LazyVStack、Tab 状态 UserDefaults 持久化
+- [x] 性能修复 Phase 2 — loadFileIfNeeded 异步化、computeGraphLayout @State+onChange 缓存
+- [x] @Observable 全量迁移 — 7 个 Store 从 ObservableObject 迁移到 @Observable，去 Combine 化，16/16 测试通过
+- [x] 拖入文件单引号修复 — shellEscapedPath 对齐 Ghostty 反斜杠转义，替代单引号包裹
+- [x] Cmd+V 粘贴文件路径修复 — pasteFromClipboard() 优先读 fileURL（对齐 Ghostty getOpinionatedStringContents）
+- [x] 导航 API 统一 — AppNavigationStore 新增 navigate(to:)/openDeployment(id:...)，8 处调用替换，Git/Files/Deploy tab 包裹 NavigationStack
+- [x] FileIcons 提取 + 语义色 — Shared/FileIcons.swift 消除 3 处重复 icon 映射，AppPalette 改用系统语义色，支持亮色/暗色模式
+- [x] 测试补充 — FileIconsTests (15)、AppNavigationStoreTests (8)、GraphLayoutTests (8)
+- [x] Liquid Glass 扩展 — EditorTabBar glassEffect + 选中 tab glassEffectWithTint、Deploy ActionButton glassEffectWithTint
+- [x] Graph Layout 测试 — computeGraphLayout/GraphNode/GraphLayout 从 private 提升为 internal 以支持测试
+- [x] Sidebar bellCount 缓存 — TerminalWorkspaceStore.bellCount(for:) 轻量方法，减少 sidebar 观察依赖
+- [x] Terminal Search (Cmd+F) — TerminalSearchState (@Observable) + TerminalSearchOverlay (SwiftUI 浮层) + per-pane 独立搜索状态 + GhosttyApp 搜索回调 + debounce 策略 (>=3字符立即, <3字符 300ms)
 
 ## Pending Issues
 

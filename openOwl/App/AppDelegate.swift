@@ -71,6 +71,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         maximize.keyEquivalentModifierMask = [.command, .shift]
         menu.addItem(maximize)
 
+        let findItem = NSMenuItem(title: "Find...", action: #selector(menuTerminalSearch), keyEquivalent: "f")
+        menu.addItem(findItem)
+
         menu.addItem(.separator())
 
         let focusLeft = NSMenuItem(title: "Focus Left", action: #selector(menuFocusLeft), keyEquivalent: "")
@@ -190,6 +193,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         NotificationCenter.default.post(name: .quickOpen, object: nil)
     }
 
+    @objc private func menuTerminalSearch() {
+        guard let workspaceStore else { return }
+        if let tab = workspaceStore.tabs.first(where: { $0.id == workspaceStore.activeTabID }),
+           let paneID = tab.focusedPaneID ?? tab.splitTree.firstPaneID {
+            workspaceStore.startSearch(paneID: paneID)
+        }
+    }
+
     // MARK: - Menu Validation
     // NSMenuItemValidation is implicitly conformed via NSObject
 
@@ -200,7 +211,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         case #selector(menuNewTab), #selector(menuCloseTab),
              #selector(menuSplitHorizontal), #selector(menuSplitVertical),
              #selector(menuFocusLeft), #selector(menuFocusRight),
-             #selector(menuFocusUp), #selector(menuFocusDown):
+             #selector(menuFocusUp), #selector(menuFocusDown),
+             #selector(menuTerminalSearch):
             return terminalOnly
 
         case #selector(menuToggleMaximize):
@@ -261,6 +273,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // All other terminal shortcuts only work when terminal is active
         guard navigationStore?.activeTab == .terminal else { return false }
 
+        // If focus is on a text input (search field, commit message, etc.),
+        // let standard shortcuts (Cmd+A/C/V/X) pass through to the text field.
+        // Only intercept when the terminal NSView itself is the first responder.
+        if let firstResponder = NSApp.keyWindow?.firstResponder,
+           !(firstResponder is TerminalNSView) {
+            return false
+        }
+
         switch event.keyCode {
         case 123: // Left arrow
             if flags.contains(.shift) {
@@ -310,6 +330,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 workspaceStore.splitCurrent(axis: .vertical)
             } else {
                 workspaceStore.splitCurrent(axis: .horizontal)
+            }
+            return true
+        case "f":
+            guard !flags.contains(.shift) else { return false }
+            if let tab = workspaceStore.tabs.first(where: { $0.id == workspaceStore.activeTabID }),
+               let paneID = tab.focusedPaneID ?? tab.splitTree.firstPaneID {
+                workspaceStore.startSearch(paneID: paneID)
             }
             return true
         default:

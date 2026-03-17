@@ -32,6 +32,7 @@ struct TerminalWorkspaceView: View {
                     _ = ghosttyManager?.focusPane(paneID)
                 }
             }
+            connectSearchCallbacks()
             workspace.ensureInitialTab()
             activateVisibleTabs()
             focusCurrentPaneIfPossible()
@@ -43,11 +44,27 @@ struct TerminalWorkspaceView: View {
         .onChange(of: workspace.activeProjectID) { _, _ in
             activateVisibleTabs()
         }
+        .onReceive(NotificationCenter.default.publisher(for: .terminalSearch)) { notification in
+            guard let paneID = notification.userInfo?["paneID"] as? UUID else { return }
+            workspace.startSearch(paneID: paneID)
+        }
     }
 
     private func activateVisibleTabs() {
         for tab in workspace.visibleTabs {
             activatedTabIDs.insert(tab.id)
+        }
+    }
+
+    private func connectSearchCallbacks() {
+        ghosttyManager.onSearchEnd = { [weak workspace] paneID in
+            workspace?.endSearch(paneID: paneID)
+        }
+        ghosttyManager.onSearchTotal = { [weak workspace] paneID, total in
+            workspace?.paneSearchStates[paneID]?.total = total
+        }
+        ghosttyManager.onSearchSelected = { [weak workspace] paneID, selected in
+            workspace?.paneSearchStates[paneID]?.selected = selected
         }
     }
 
@@ -288,6 +305,9 @@ private struct TerminalTabContentView: View {
                                     viewSize: frame.size
                                 ))
                         }
+                    }
+                    .overlay(alignment: .topTrailing) {
+                        TerminalSearchOverlay(paneID: paneID)
                     }
                     .position(x: frame.midX, y: frame.midY)
                     .zIndex(isMaximizedPane ? 2 : 0)

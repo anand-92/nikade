@@ -14,6 +14,8 @@
 		1FF997CAB8DED665808F38C7 /* DeploymentRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF072A1BE1A1B61109C9CBEB /* DeploymentRow.swift */; };
 		2477D7FE75BD5CC5BBF1B758 /* SidebarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 66514ED81AF24BE4D7AF7529 /* SidebarView.swift */; };
 		253B536A97052112FD46B3FF /* GitChangesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F6C7B0DBA130E23B413EA3A8 /* GitChangesView.swift */; };
+		2CAF14200B0961F6B577BA5B /* TerminalSearchState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5B122245FE1DC1B610224F5B /* TerminalSearchState.swift */; };
+		2DAF14200B0961F6B577BA5C /* TerminalSearchOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5C122245FE1DC1B610224F5C /* TerminalSearchOverlay.swift */; };
 		2F7B5276A453883804B6D37C /* GitCommitParsingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0940CC16A5382882D30EBAFD /* GitCommitParsingTests.swift */; };
 		3140A88752300CC5AE03A433 /* FileExplorerGitPropagationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC7E472A3BF6DAE6E5623511 /* FileExplorerGitPropagationTests.swift */; };
 		353D99F512065C7E8FD7EDFB /* GhosttyInput.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8DE94F3F69D57F740DD9C966 /* GhosttyInput.swift */; };
@@ -108,6 +110,8 @@
 		552C03468C64C29EEA14DE99 /* IconButtonStyle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IconButtonStyle.swift; sourceTree = "<group>"; };
 		56D3EFADA4D64C3ABBF4887E /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		59A610067D9D2B18B1055069 /* DeploymentPanelView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeploymentPanelView.swift; sourceTree = "<group>"; };
+		5B122245FE1DC1B610224F5B /* TerminalSearchState.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = TerminalSearchState.swift; sourceTree = "<group>"; };
+		5C122245FE1DC1B610224F5C /* TerminalSearchOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalSearchOverlay.swift; sourceTree = "<group>"; };
 		5BAFE9E75DAA3DB62ECD73CB /* FileWatcher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileWatcher.swift; sourceTree = "<group>"; };
 		61BBA8C4BCDD5442FF64552D /* UpdateChecker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UpdateChecker.swift; sourceTree = "<group>"; };
 		61BBAD397E75BD6423E0EB63 /* SpinningIcon.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpinningIcon.swift; sourceTree = "<group>"; };
@@ -305,6 +309,8 @@
 				A1B2C3D4E5F60718BEEFDEAD /* TerminalScrollView.swift */,
 				C4E0BCEA1E40509CACA5F04D /* TerminalWorkspaceStore.swift */,
 				F733F678544F126652F6B93E /* TerminalWorkspaceView.swift */,
+				5B122245FE1DC1B610224F5B /* TerminalSearchState.swift */,
+				5C122245FE1DC1B610224F5C /* TerminalSearchOverlay.swift */,
 			);
 			path = Terminal;
 			sourceTree = "<group>";
@@ -528,6 +534,8 @@
 				788F25C370B576583C54F299 /* WindowAccessor.swift in Sources */,
 				5E3BD234948BA7E23B411AFC /* openOwlApp.swift in Sources */,
 				B8073CE252673BD71DD36B38 /* FileIcons.swift in Sources */,
+				2CAF14200B0961F6B577BA5B /* TerminalSearchState.swift in Sources */,
+				2DAF14200B0961F6B577BA5C /* TerminalSearchOverlay.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

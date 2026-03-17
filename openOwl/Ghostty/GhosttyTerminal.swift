@@ -139,6 +139,13 @@ class TerminalNSView: NSView {
         }
     }
 
+    /// Execute a ghostty keybinding action (e.g. "scroll_to_row:42")
+    @discardableResult
+    func performBindingAction(_ action: String) -> Bool {
+        guard let surface else { return false }
+        return ghostty_surface_binding_action(surface, action, UInt(action.utf8.count))
+    }
+
     // MARK: - Edit Menu Actions
 
     @objc func copy(_ sender: Any?) {
@@ -168,7 +175,19 @@ class TerminalNSView: NSView {
     private func pasteFromClipboard() {
         guard let surface else { return }
         ghostty_surface_set_focus(surface, true)
-        let value = NSPasteboard.general.string(forType: .string) ?? ""
+
+        let pb = NSPasteboard.general
+        let value: String
+        // Check for file URLs first (e.g. Cmd+C on a file in Finder),
+        // then fall back to plain string — matches Ghostty's getOpinionatedStringContents.
+        if let urls = pb.readObjects(forClasses: [NSURL.self]) as? [URL], !urls.isEmpty {
+            value = urls
+                .map { $0.isFileURL ? Self.shellEscapedPath($0.path) : $0.absoluteString }
+                .joined(separator: " ")
+        } else {
+            value = pb.string(forType: .string) ?? ""
+        }
+
         guard !value.isEmpty else { return }
         value.withCString { ptr in
             ghostty_surface_text(surface, ptr, UInt(value.utf8.count))
@@ -322,6 +341,16 @@ class TerminalNSView: NSView {
             return true
         }
 
+        // Cmd+F: Terminal search
+        if flags == .command, event.charactersIgnoringModifiers == "f" {
+            NotificationCenter.default.post(
+                name: .terminalSearch,
+                object: nil,
+                userInfo: ["paneID": paneID]
+            )
+            return true
+        }
+
         // Let app-level shortcuts bypass the terminal so keyDown doesn't consume them.
         // Cmd+P: Quick Open
         if flags == .command, event.charactersIgnoringModifiers == "p" {
@@ -405,26 +434,53 @@ class TerminalNSView: NSView {
 
     // MARK: - Drag & Drop
 
+    private static let acceptedDropTypes: Set<NSPasteboard.PasteboardType> = [.fileURL, .URL, .string]
+
     override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
-        hasFileURLs(in: sender.draggingPasteboard) ? .copy : []
+        NSLog("openOwl: [TerminalNSView] draggingEntered types=%@", sender.draggingPasteboard.types?.map(\.rawValue) ?? [])
+        guard let types = sender.draggingPasteboard.types,
+              !Set(types).isDisjoint(with: Self.acceptedDropTypes) else { return [] }
+        return .copy
     }
 
     override func draggingUpdated(_ sender: NSDraggingInfo) -> NSDragOperation {
-        hasFileURLs(in: sender.draggingPasteboard) ? .copy : []
+        guard let types = sender.draggingPasteboard.types,
+              !Set(types).isDisjoint(with: Self.acceptedDropTypes) else { return [] }
+        return .copy
     }
 
     override func prepareForDragOperation(_ sender: NSDraggingInfo) -> Bool {
-        hasFileURLs(in: sender.draggingPasteboard)
+        guard let types = sender.draggingPasteboard.types else { return false }
+        return !Set(types).isDisjoint(with: Self.acceptedDropTypes)
     }
 
     override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
         guard let surface else { return false }
-        let options: [NSPasteboard.ReadingOptionKey: Any] = [.urlReadingFileURLsOnly: true]
-        let droppedURLs = (sender.draggingPasteboard.readObjects(forClasses: [NSURL.self], options: options) as? [URL]) ?? []
-        let paths = droppedURLs.map { $0.standardizedFileURL.path }.uniquedPreservingOrder()
-        guard !paths.isEmpty else { return false }
+        let pb = sender.draggingPasteboard
+
+        let content: String?
+        if let url = pb.string(forType: .URL) {
+            // Plain URL — escape as-is
+            content = Self.shellEscapedPath(url)
+        } else if let urls = pb.readObjects(forClasses: [NSURL.self], options: [
+            .urlReadingFileURLsOnly: true
+        ]) as? [URL], !urls.isEmpty {
+            // File URLs — full absolute path, shell-escaped
+            content = urls
+                .map { $0.standardizedFileURL.path }
+                .uniquedPreservingOrder()
+                .map(Self.shellEscapedPath)
+                .joined(separator: " ")
+        } else if let str = pb.string(forType: .string) {
+            // Plain text — not escaped (user may be pasting a command)
+            content = str
+        } else {
+            content = nil
+        }
+
+        guard let content, !content.isEmpty else { return false }
         window?.makeFirstResponder(self)
-        let payload = paths.map(Self.shellEscapedPath).joined(separator: " ") + " "
+        let payload = content + " "
         payload.withCString { cstr in
             ghostty_surface_text(surface, cstr, UInt(payload.utf8.count))
         }
@@ -455,17 +511,18 @@ class TerminalNSView: NSView {
         addTrackingArea(trackingArea!)
     }
 
-    private func hasFileURLs(in pasteboard: NSPasteboard) -> Bool {
-        let options: [NSPasteboard.ReadingOptionKey: Any] = [.urlReadingFileURLsOnly: true]
-        guard let urls = pasteboard.readObjects(forClasses: [NSURL.self], options: options) as? [URL] else {
-            return false
-        }
-        return !urls.isEmpty
-    }
+    /// Escape shell-sensitive characters with backslashes (matches Ghostty's Shell.escape).
+    static let shellEscapeCharacters = "\\ ()[]{}<>\"'`!#$&;|*?\t"
 
-    private static func shellEscapedPath(_ path: String) -> String {
-        let escaped = path.replacingOccurrences(of: "'", with: "'\"'\"'")
-        return "'\(escaped)'"
+    static func shellEscapedPath(_ path: String) -> String {
+        var result = path
+        for char in shellEscapeCharacters {
+            result = result.replacingOccurrences(
+                of: String(char),
+                with: "\\\(char)"
+            )
+        }
+        return result
     }
 
     private func keyAction(
