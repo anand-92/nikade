@@ -33,6 +33,7 @@
 		5E3BD234948BA7E23B411AFC /* openOwlApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2CB54138411E7B198A089C5F /* openOwlApp.swift */; };
 		62C2E9297DE3DE2DA8FE87D3 /* FileExplorerStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 12AC90A655D11BC8410328FD /* FileExplorerStore.swift */; };
 		68E8E1B4A11A9861636A80B3 /* BranchNameGenerator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C32FF68B777207179BFEFB0 /* BranchNameGenerator.swift */; };
+		6BBD6B72F4001B15A9D35F94 /* SpinningIcon.swift in Sources */ = {isa = PBXBuildFile; fileRef = 61BBAD397E75BD6423E0EB63 /* SpinningIcon.swift */; };
 		6BD87F1582F09A111CA1DAEE /* GitServiceParsingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00AF40C4BACE1CDD1ECD6157 /* GitServiceParsingTests.swift */; };
 		6FF30150D03FB6446E61B860 /* DeploymentCodableTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7CDAEC5FEAD4C9A90634C404 /* DeploymentCodableTests.swift */; };
 		788F25C370B576583C54F299 /* WindowAccessor.swift in Sources */ = {isa = PBXBuildFile; fileRef = E8DDBDFCC91E18EF5D1F8EA3 /* WindowAccessor.swift */; };
@@ -48,6 +49,7 @@
 		B8DE40E11E5A369E8157352E /* AppNavigationStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A68B35357DBC128218E3495 /* AppNavigationStore.swift */; };
 		BB4326B33EFF4BC522E870AA /* DeploymentTrayMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7F7EDEF1C67164912B322294 /* DeploymentTrayMenu.swift */; };
 		BBD5731ED2E2CA722DF77BA0 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = FEDADFD1990F2C7EC7EDDC78 /* AppDelegate.swift */; };
+		BE0A87CA4D3EE71346E578CF /* UpdateChecker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 61BBA8C4BCDD5442FF64552D /* UpdateChecker.swift */; };
 		BF6B6B2E42E2713F6F298006 /* QuickOpenSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 98E3B22B024A5CF89AEF09F0 /* QuickOpenSheet.swift */; };
 		C13ABD76B6F35955DF2CF6C9 /* DeploymentPanelView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 59A610067D9D2B18B1055069 /* DeploymentPanelView.swift */; };
 		C4B639B1AE25DAA0571AE99F /* EffectView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 175F149F9E6D1A6C45F00FC8 /* EffectView.swift */; };
@@ -60,6 +62,9 @@
 		E3A2575D11E17CF509A2CA38 /* FileExplorerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C85221AB69D1FBEA8FB4B809 /* FileExplorerView.swift */; };
 		E41F0715FF1A9ACFD20554F2 /* ProjectStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6D5539E778AB8B17DC618C39 /* ProjectStore.swift */; };
 		EC8DF83DFD73AE2330E7E2E5 /* FileWatcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5BAFE9E75DAA3DB62ECD73CB /* FileWatcher.swift */; };
+		EF85B8825B0F808FE105D731 /* EmptyStateView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB19182518A4ECF2CB2EFE7D /* EmptyStateView.swift */; };
+		F00CD343673CE3309A16B710 /* UpdateAlertView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E6BFB8B2686ECAE673F0ACA6 /* UpdateAlertView.swift */; };
+		F043F631A3AD286B260541AB /* SectionTitle.swift in Sources */ = {isa = PBXBuildFile; fileRef = D3F88A4C649AE808F422E1D1 /* SectionTitle.swift */; };
 		F79004DAFFCFE7A81C3C8061 /* OutlineTreeViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 217AE27F0A3DE1C89E12F04E /* OutlineTreeViewController.swift */; };
 		F9DFB41D15D5628E3305431E /* CommitMessageGenerator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6607398740E9040BA756684C /* CommitMessageGenerator.swift */; };
 /* End PBXBuildFile section */
@@ -98,6 +103,8 @@
 		56D3EFADA4D64C3ABBF4887E /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		59A610067D9D2B18B1055069 /* DeploymentPanelView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeploymentPanelView.swift; sourceTree = "<group>"; };
 		5BAFE9E75DAA3DB62ECD73CB /* FileWatcher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileWatcher.swift; sourceTree = "<group>"; };
+		61BBA8C4BCDD5442FF64552D /* UpdateChecker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UpdateChecker.swift; sourceTree = "<group>"; };
+		61BBAD397E75BD6423E0EB63 /* SpinningIcon.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpinningIcon.swift; sourceTree = "<group>"; };
 		61C1A374304AF8134D201B42 /* GitService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GitService.swift; sourceTree = "<group>"; };
 		6480B1CA3B59F9639172E4B9 /* OutlineTreeCellView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OutlineTreeCellView.swift; sourceTree = "<group>"; };
 		6607398740E9040BA756684C /* CommitMessageGenerator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommitMessageGenerator.swift; sourceTree = "<group>"; };
@@ -114,6 +121,7 @@
 		938F89967F54EF40EA4AE7FE /* AppIcon.icns */ = {isa = PBXFileReference; lastKnownFileType = image.icns; path = AppIcon.icns; sourceTree = "<group>"; };
 		98E3B22B024A5CF89AEF09F0 /* QuickOpenSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuickOpenSheet.swift; sourceTree = "<group>"; };
 		AAF45F9E4541BB9F66DC113E /* PanelDivider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PanelDivider.swift; sourceTree = "<group>"; };
+		AB19182518A4ECF2CB2EFE7D /* EmptyStateView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmptyStateView.swift; sourceTree = "<group>"; };
 		AC6E1BF43BA95A17177F2788 /* FileExplorerParsingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileExplorerParsingTests.swift; sourceTree = "<group>"; };
 		AC7E472A3BF6DAE6E5623511 /* FileExplorerGitPropagationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileExplorerGitPropagationTests.swift; sourceTree = "<group>"; };
 		AD76AB4DCC030B2D4E99057E /* openOwlTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = openOwlTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -126,6 +134,8 @@
 		C4E0BCEA1E40509CACA5F04D /* TerminalWorkspaceStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalWorkspaceStore.swift; sourceTree = "<group>"; };
 		C85221AB69D1FBEA8FB4B809 /* FileExplorerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileExplorerView.swift; sourceTree = "<group>"; };
 		D0A3DEDA992E14DF88D81FA8 /* SidebarExpandCollapseTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SidebarExpandCollapseTests.swift; sourceTree = "<group>"; };
+		D3F88A4C649AE808F422E1D1 /* SectionTitle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SectionTitle.swift; sourceTree = "<group>"; };
+		E6BFB8B2686ECAE673F0ACA6 /* UpdateAlertView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UpdateAlertView.swift; sourceTree = "<group>"; };
 		E712E0676CA92A36194A3A3E /* OutlineTreeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OutlineTreeView.swift; sourceTree = "<group>"; };
 		E8DDBDFCC91E18EF5D1F8EA3 /* WindowAccessor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowAccessor.swift; sourceTree = "<group>"; };
 		F55B1F7B1BFEBE824E839A54 /* ProjectStorePersistenceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProjectStorePersistenceTests.swift; sourceTree = "<group>"; };
@@ -173,8 +183,11 @@
 				3C32FF68B777207179BFEFB0 /* BranchNameGenerator.swift */,
 				38E541F2A395A5EB308D9C38 /* Constants.swift */,
 				175F149F9E6D1A6C45F00FC8 /* EffectView.swift */,
+				AB19182518A4ECF2CB2EFE7D /* EmptyStateView.swift */,
 				552C03468C64C29EEA14DE99 /* IconButtonStyle.swift */,
 				AAF45F9E4541BB9F66DC113E /* PanelDivider.swift */,
+				D3F88A4C649AE808F422E1D1 /* SectionTitle.swift */,
+				61BBAD397E75BD6423E0EB63 /* SpinningIcon.swift */,
 				E8DDBDFCC91E18EF5D1F8EA3 /* WindowAccessor.swift */,
 			);
 			path = Shared;
@@ -199,6 +212,7 @@
 				6607398740E9040BA756684C /* CommitMessageGenerator.swift */,
 				5BAFE9E75DAA3DB62ECD73CB /* FileWatcher.swift */,
 				61C1A374304AF8134D201B42 /* GitService.swift */,
+				61BBA8C4BCDD5442FF64552D /* UpdateChecker.swift */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -296,6 +310,7 @@
 				1A68B35357DBC128218E3495 /* AppNavigationStore.swift */,
 				490E3122E814DA28B0734EF6 /* ContentView.swift */,
 				2CB54138411E7B198A089C5F /* openOwlApp.swift */,
+				E6BFB8B2686ECAE673F0ACA6 /* UpdateAlertView.swift */,
 			);
 			path = App;
 			sourceTree = "<group>";
@@ -456,6 +471,7 @@
 				844E903C02CBCD3540C8A3A9 /* DeploymentStore.swift in Sources */,
 				BB4326B33EFF4BC522E870AA /* DeploymentTrayMenu.swift in Sources */,
 				C4B639B1AE25DAA0571AE99F /* EffectView.swift in Sources */,
+				EF85B8825B0F808FE105D731 /* EmptyStateView.swift in Sources */,
 				62C2E9297DE3DE2DA8FE87D3 /* FileExplorerStore.swift in Sources */,
 				E3A2575D11E17CF509A2CA38 /* FileExplorerView.swift in Sources */,
 				EC8DF83DFD73AE2330E7E2E5 /* FileWatcher.swift in Sources */,
@@ -473,11 +489,15 @@
 				5E396A11E8647300BD34C2FB /* PanelDivider.swift in Sources */,
 				E41F0715FF1A9ACFD20554F2 /* ProjectStore.swift in Sources */,
 				BF6B6B2E42E2713F6F298006 /* QuickOpenSheet.swift in Sources */,
+				F043F631A3AD286B260541AB /* SectionTitle.swift in Sources */,
 				2477D7FE75BD5CC5BBF1B758 /* SidebarView.swift in Sources */,
+				6BBD6B72F4001B15A9D35F94 /* SpinningIcon.swift in Sources */,
 				465C4C06EEE907C3154E2329 /* StatusBarView.swift in Sources */,
 				E26D6EB03ADF4440FEECCD35 /* TerminalPanel.swift in Sources */,
 				56806FF59B6993BEC6BC294E /* TerminalWorkspaceStore.swift in Sources */,
 				502E0FCB5AEF997F4C45E298 /* TerminalWorkspaceView.swift in Sources */,
+				F00CD343673CE3309A16B710 /* UpdateAlertView.swift in Sources */,
+				BE0A87CA4D3EE71346E578CF /* UpdateChecker.swift in Sources */,
 				788F25C370B576583C54F299 /* WindowAccessor.swift in Sources */,
 				5E3BD234948BA7E23B411AFC /* openOwlApp.swift in Sources */,
 			);
@@ -587,6 +607,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = openOwl/Resources/openOwl.entitlements;
 				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
 				FRAMEWORK_SEARCH_PATHS = (
 					"$(PROJECT_DIR)",
 				);
@@ -595,7 +616,7 @@
 					"$(PROJECT_DIR)/GhosttyKit.xcframework/macos-arm64_x86_64/Headers",
 				);
 				INFOPLIST_FILE = openOwl/Resources/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = openOwl;
+				INFOPLIST_KEY_CFBundleDisplayName = OpenOwl;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.developer-tools";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -604,6 +625,7 @@
 				LIBRARY_SEARCH_PATHS = (
 					"$(PROJECT_DIR)/GhosttyKit.xcframework/macos-arm64_x86_64",
 				);
+				MARKETING_VERSION = 1.0.0;
 				OTHER_LDFLAGS = (
 					"-lghostty",
 					"-framework Metal",
@@ -632,6 +654,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = openOwl/Resources/openOwl.entitlements;
 				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
 				FRAMEWORK_SEARCH_PATHS = (
 					"$(PROJECT_DIR)",
 				);
@@ -640,7 +663,7 @@
 					"$(PROJECT_DIR)/GhosttyKit.xcframework/macos-arm64_x86_64/Headers",
 				);
 				INFOPLIST_FILE = openOwl/Resources/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = openOwl;
+				INFOPLIST_KEY_CFBundleDisplayName = OpenOwl;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.developer-tools";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -649,6 +672,7 @@
 				LIBRARY_SEARCH_PATHS = (
 					"$(PROJECT_DIR)/GhosttyKit.xcframework/macos-arm64_x86_64",
 				);
+				MARKETING_VERSION = 1.0.0;
 				OTHER_LDFLAGS = (
 					"-lghostty",
 					"-framework Metal",

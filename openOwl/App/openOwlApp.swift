@@ -68,6 +68,11 @@ struct openOwlApp: App {
         }
         .defaultSize(width: 1200, height: 800)
         .windowToolbarStyle(.unifiedCompact(showsTitle: false))
+        .commands {
+            CommandGroup(after: .appInfo) {
+                CheckForUpdatesButton()
+            }
+        }
 
         MenuBarExtra("openOwl", image: "MenuBarIcon") {
             DeploymentTrayMenu()
@@ -82,19 +87,6 @@ struct openOwlApp: App {
         }
         .windowResizability(.contentSize)
         .defaultSize(width: 400, height: 250)
-    }
-
-    // MARK: - Commands
-
-    var commands: some Commands {
-        CommandGroup(after: .appInfo) {
-            Button("Check for Updates...") {
-                Task { await UpdateChecker.shared.check() }
-                if UpdateChecker.shared.updateAvailable {
-                    NSApp.sendAction(Selector(("showUpdateWindow:")), to: nil, from: nil)
-                }
-            }
-        }
     }
 
     private static func setupEnvironment() {

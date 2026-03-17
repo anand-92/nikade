@@ -1,13 +1,32 @@
 import SwiftUI
 
+/// Menu bar button that triggers update check and opens the update window.
+struct CheckForUpdatesButton: View {
+    @Environment(\.openWindow) private var openWindow
+
+    var body: some View {
+        Button("Check for Updates...") {
+            Task {
+                await UpdateChecker.shared.check()
+                openWindow(id: "update")
+            }
+        }
+    }
+}
+
 struct UpdateAlertView: View {
     @ObservedObject private var checker = UpdateChecker.shared
 
     var body: some View {
         VStack(spacing: 16) {
-            Image(nsImage: NSApp.applicationIconImage)
-                .resizable()
-                .frame(width: 64, height: 64)
+            Group {
+                if let icon = NSApp?.applicationIconImage {
+                    Image(nsImage: icon).resizable()
+                } else {
+                    Image(systemName: "app.fill").resizable()
+                }
+            }
+            .frame(width: 64, height: 64)
 
             if checker.updateAvailable, let version = checker.latestVersion {
                 Text("OpenOwl \(version) Available")
