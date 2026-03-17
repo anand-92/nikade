@@ -132,7 +132,7 @@ private struct TerminalTabBarView: View {
             } label: {
                 Image(systemName: "plus")
                     .font(.system(size: 10, weight: .semibold))
-                    .frame(width: 20, height: AppConstants.terminalToolbarHeight)
+                    .frame(width: 20, height: AppSpacing.headerHeight)
             }
             .buttonStyle(.plain)
             .opacity(0.7)
@@ -171,7 +171,7 @@ private struct TerminalTabBarView: View {
             .padding(.trailing, 8)
         }
         .padding(.horizontal, 4)
-        .frame(height: AppConstants.terminalToolbarHeight)
+        .frame(height: AppSpacing.headerHeight)
         .background(Color(nsColor: .underPageBackgroundColor))
         .animation(.easeInOut(duration: 0.15), value: workspace.activeTabID)
     }

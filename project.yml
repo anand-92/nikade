@@ -36,7 +36,7 @@ targets:
         PRODUCT_NAME: openOwl
         GENERATE_INFOPLIST_FILE: YES
         INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.developer-tools
-        INFOPLIST_KEY_CFBundleDisplayName: openOwl
+        INFOPLIST_KEY_CFBundleDisplayName: OpenOwl
         CODE_SIGN_ENTITLEMENTS: openOwl/Resources/openOwl.entitlements
         FRAMEWORK_SEARCH_PATHS:
           - "$(PROJECT_DIR)"

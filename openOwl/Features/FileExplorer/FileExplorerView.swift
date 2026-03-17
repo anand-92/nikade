@@ -6,11 +6,11 @@ import CodeEditLanguages
 let editorConfiguration = SourceEditorConfiguration(
     appearance: .init(
         theme: EditorTheme(
-            text: .init(color: NSColor(calibratedWhite: 0.9, alpha: 1.0)),
-            insertionPoint: NSColor(calibratedRed: 0.3, green: 0.6, blue: 1.0, alpha: 1.0),
-            invisibles: .init(color: NSColor(calibratedWhite: 0.5, alpha: 0.3)),
-            background: NSColor(calibratedRed: 0.15, green: 0.15, blue: 0.17, alpha: 1.0),
-            lineHighlight: NSColor(calibratedRed: 0.2, green: 0.2, blue: 0.22, alpha: 1.0),
+            text: .init(color: AppPalette.ns.textPrimary),
+            insertionPoint: AppPalette.ns.accent,
+            invisibles: .init(color: NSColor(white: 0.5, alpha: 0.3)),
+            background: AppPalette.ns.surface,
+            lineHighlight: AppPalette.ns.elevated,
             selection: NSColor(calibratedRed: 0.25, green: 0.35, blue: 0.5, alpha: 0.4),
             keywords: .init(color: NSColor(calibratedRed: 0.8, green: 0.4, blue: 0.8, alpha: 1.0)),
             commands: .init(color: NSColor(calibratedRed: 0.4, green: 0.7, blue: 0.9, alpha: 1.0)),
@@ -163,9 +163,7 @@ struct FileExplorerView: View {
         VStack(spacing: 0) {
             // Header
             HStack {
-                Text("EXPLORER")
-                    .font(AppFonts.sectionHeader)
-                    .foregroundStyle(.secondary)
+                SectionTitle("EXPLORER")
 
                 Spacer()
 
@@ -182,8 +180,8 @@ struct FileExplorerView: View {
                 .buttonStyle(.plain).help("Refresh")
                 .disabled(store.isRefreshing)
             }
-            .padding(.horizontal, 12)
-            .frame(height: AppConstants.headerHeight)
+            .padding(.horizontal, AppSpacing.panelPadding)
+            .frame(height: AppSpacing.headerHeight)
 
             PanelDivider()
 
@@ -204,7 +202,7 @@ struct FileExplorerView: View {
 
             if store.rootNodes.isEmpty {
                 Spacer()
-                Text("No files").foregroundStyle(.secondary).font(.system(size: 12))
+                EmptyStateView("No files", subtitle: "Open a project to browse files")
                 Spacer()
             } else {
                 OutlineTreeView(
@@ -273,9 +271,7 @@ struct FileExplorerView: View {
                 }
             } else {
                 Spacer()
-                Text("Select a file to edit")
-                    .foregroundStyle(.secondary)
-                    .font(.system(size: 12))
+                EmptyStateView("Select a file to edit", subtitle: "Click a file in the explorer or use ⌘P")
                     .frame(maxWidth: .infinity)
                 Spacer()
             }
@@ -330,7 +326,7 @@ struct FileExplorerView: View {
             Spacer(minLength: 0)
         }
         .frame(height: AppSpacing.editorTabBarHeight)
-        .background(Color(nsColor: .windowBackgroundColor))
+        .background(AppPalette.surface)
     }
 
     // MARK: - Tab Management

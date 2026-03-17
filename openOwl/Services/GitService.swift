@@ -31,6 +31,7 @@ struct GitStatusSnapshot {
     let staged: [GitFileChange]
     let modified: [GitFileChange]
     let untracked: [GitFileChange]
+    let untrackedTruncated: Bool
 
     var hasStagedChanges: Bool { !staged.isEmpty }
     var hasAnyChanges: Bool { hasStagedChanges || !modified.isEmpty || !untracked.isEmpty }
@@ -82,7 +83,7 @@ final class GitService {
     }
 
     func status() async throws -> GitStatusSnapshot {
-        let output = try await runGit(["status", "--porcelain=v1", "--branch"])
+        let output = try await runGit(["status", "--porcelain=v1", "--branch", "--untracked-files=all"])
         return try parseStatus(output)
     }
 
@@ -473,6 +474,7 @@ extension GitService {
         var staged: [GitFileChange] = []
         var modified: [GitFileChange] = []
         var untracked: [GitFileChange] = []
+        var didTruncateUntracked = false
 
         for line in lines {
             if line.hasPrefix("## ") {
@@ -489,6 +491,10 @@ extension GitService {
             if line.hasPrefix("?? ") {
                 let rawPath = String(line.dropFirst(3))
                 let path = decodePath(rawPath)
+                if untracked.count >= 500 {
+                    didTruncateUntracked = true
+                    continue
+                }
                 untracked.append(
                     GitFileChange(path: path, indexStatus: "?", workTreeStatus: "?", section: .untracked)
                 )
@@ -525,7 +531,8 @@ extension GitService {
             behindCount: behindCount,
             staged: staged.sorted { $0.path.localizedStandardCompare($1.path) == .orderedAscending },
             modified: modified.sorted { $0.path.localizedStandardCompare($1.path) == .orderedAscending },
-            untracked: untracked.sorted { $0.path.localizedStandardCompare($1.path) == .orderedAscending }
+            untracked: untracked.sorted { $0.path.localizedStandardCompare($1.path) == .orderedAscending },
+            untrackedTruncated: didTruncateUntracked
         )
     }
 

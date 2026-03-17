@@ -7,5 +7,11 @@
 		<key>NSAllowsArbitraryLoads</key>
 		<true/>
 	</dict>
+	<key>NSDocumentsFolderUsageDescription</key>
+	<string>openOwl needs access to open and manage your project files.</string>
+	<key>NSDesktopFolderUsageDescription</key>
+	<string>openOwl needs access to open and manage your project files.</string>
+	<key>NSDownloadsFolderUsageDescription</key>
+	<string>openOwl needs access to open and manage your project files.</string>
 </dict>
 </plist>

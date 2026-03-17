@@ -77,13 +77,13 @@ struct QuickOpenPanel: View {
             }
         }
         .frame(width: 500)
-        .background(.ultraThinMaterial)
+        .background(AppPalette.elevated)
         .clipShape(RoundedRectangle(cornerRadius: 10))
         .overlay(
             RoundedRectangle(cornerRadius: 10)
-                .stroke(Color.secondary.opacity(0.2), lineWidth: 1)
+                .stroke(AppPalette.border, lineWidth: 1)
         )
-        .shadow(color: .black.opacity(0.3), radius: 20, y: 8)
+        .shadow(color: .black.opacity(0.4), radius: 20, y: 8)
         .background {
             Button("") { store.dismissQuickOpen() }
                 .keyboardShortcut(.escape, modifiers: [])
@@ -158,7 +158,7 @@ private struct QuickOpenRow: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 5)
-        .background(isSelected ? Color.accentColor.opacity(0.2) : Color.clear)
+        .background(isSelected ? AppColors.activeBackground : Color.clear)
     }
 
     private var highlightedName: Text {

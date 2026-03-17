@@ -62,7 +62,7 @@ final class OutlineTreeViewController: NSViewController {
         outlineView.allowsMultipleSelection = true
         outlineView.allowsEmptySelection = true
         outlineView.indentationPerLevel = 16
-        outlineView.rowHeight = 22
+        outlineView.rowHeight = AppSpacing.listRowHeight
         outlineView.intercellSpacing = NSSize(width: 0, height: 0)
         outlineView.usesAlternatingRowBackgroundColors = false
         outlineView.selectionHighlightStyle = .sourceList
@@ -446,7 +446,7 @@ extension OutlineTreeViewController: NSOutlineViewDelegate {
     }
 
     func outlineView(_ outlineView: NSOutlineView, heightOfRowByItem item: Any) -> CGFloat {
-        22
+        AppSpacing.listRowHeight
     }
 
     func outlineViewSelectionDidChange(_ notification: Notification) {

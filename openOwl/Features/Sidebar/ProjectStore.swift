@@ -10,7 +10,6 @@ struct ProjectItem: Identifiable, Hashable, Codable {
     var worktreeBranch: String?   // worktree branch name
     var lastBranch: String?       // last known branch (persisted for non-active projects)
     var branchPrefix: String?     // GitHub username or custom prefix for worktree branches
-
     var url: URL { URL(fileURLWithPath: path, isDirectory: true) }
     var displayName: String { name }
     var isWorktree: Bool { worktreeOf != nil }
@@ -157,7 +156,6 @@ final class ProjectStore: ObservableObject {
     }
 
     func removeProject(id: String) {
-        // Also remove child worktrees
         let childIDs = worktrees(for: id).map(\.id)
         projects.removeAll { $0.id == id || childIDs.contains($0.id) }
 
@@ -299,6 +297,7 @@ final class ProjectStore: ObservableObject {
             NSLog("openOwl: [ProjectStore] Failed to persist: %@", error.localizedDescription)
         }
     }
+
 }
 
 private extension Array where Element == ProjectItem {

@@ -50,6 +50,10 @@ struct GitChangesView: View {
 
     private var changesPanel: some View {
         VStack(spacing: 0) {
+            changesPanelToolbar
+
+            PanelDivider()
+
             commitArea
 
             PanelDivider()
@@ -76,34 +80,55 @@ struct GitChangesView: View {
         }
     }
 
+    // MARK: - Changes Panel Toolbar
+
+    private var changesPanelToolbar: some View {
+        HStack(spacing: 6) {
+            SectionTitle("CHANGES")
+
+            Spacer(minLength: 4)
+
+            Button { store.refreshNow() } label: {
+                SpinningIcon(systemName: "arrow.clockwise", isSpinning: store.isRefreshing)
+                    .font(.system(size: 10))
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(.secondary)
+            .help("Refresh")
+            .disabled(store.isRefreshing || store.isRunningCommand)
+        }
+        .padding(.horizontal, AppSpacing.panelPadding)
+        .frame(height: AppSpacing.headerHeight)
+    }
+
     // MARK: - Commit Area (compact, web-style)
 
     private var commitArea: some View {
-        VStack(spacing: 4) {
-            // Commit message with AI generate button inside
+        VStack(spacing: 6) {
+            // Commit message with inline AI generate button
             ZStack(alignment: .topTrailing) {
                 TextEditor(text: $store.commitMessage)
                     .font(.system(size: 11))
                     .scrollContentBackground(.hidden)
                     .scrollDisabled(true)
                     .frame(height: store.commitMessage.contains("\n") ? 52 : 28)
-                    .padding(.horizontal, 4)
-                    .padding(.vertical, 2)
-                    .padding(.trailing, 18)
-                    .background(Color(nsColor: .textBackgroundColor).opacity(0.5))
-                    .clipShape(RoundedRectangle(cornerRadius: 4))
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 4)
+                    .padding(.trailing, 20)
+                    .background(AppPalette.elevated)
+                    .clipShape(RoundedRectangle(cornerRadius: AppSpacing.cornerRadiusSmall))
                     .overlay(
-                        RoundedRectangle(cornerRadius: 4)
-                            .stroke(commitFieldFocused ? Color.accentColor.opacity(0.6) : Color.secondary.opacity(0.4), lineWidth: 1)
+                        RoundedRectangle(cornerRadius: AppSpacing.cornerRadiusSmall)
+                            .stroke(commitFieldFocused ? AppPalette.accent.opacity(0.5) : AppPalette.border, lineWidth: 1)
                     )
                     .focused($commitFieldFocused)
                     .overlay(alignment: .topLeading) {
                         if store.commitMessage.isEmpty {
                             Text("Commit message")
                                 .font(.system(size: 11))
-                                .foregroundStyle(.tertiary)
-                                .padding(.horizontal, 8)
-                                .padding(.vertical, 5)
+                                .foregroundStyle(AppPalette.textTertiary)
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 6)
                                 .allowsHitTesting(false)
                         }
                     }
@@ -117,9 +142,9 @@ struct GitChangesView: View {
                             .foregroundStyle(.secondary)
                     }
                     .buttonStyle(.plain)
-                    .frame(width: 20, height: 20)
+                    .frame(width: 24, height: 24)
+                    .padding(2)
                     .help("Stop generating")
-                    .padding(4)
                 } else if store.commitMessage.isEmpty {
                     Button {
                         store.generateCommitMessage()
@@ -129,10 +154,10 @@ struct GitChangesView: View {
                             .foregroundStyle(.secondary)
                     }
                     .buttonStyle(.plain)
-                    .frame(width: 20, height: 20)
+                    .frame(width: 24, height: 24)
+                    .padding(2)
                     .disabled(store.isRunningCommand || !hasAnyChanges)
-                    .help("Generate commit message")
-                    .padding(4)
+                    .help("Generate commit message (AI)")
                 }
             }
 
@@ -146,18 +171,22 @@ struct GitChangesView: View {
                         .font(.system(size: 11, weight: .medium))
                 }
                 .frame(maxWidth: .infinity)
-                .padding(.vertical, 3)
+                .padding(.vertical, 4)
+                .background(
+                    RoundedRectangle(cornerRadius: AppSpacing.cornerRadiusSmall)
+                        .fill(commitEnabled ? AppPalette.accent.opacity(0.15) : Color.clear)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: AppSpacing.cornerRadiusSmall)
+                        .stroke(commitEnabled ? AppPalette.accent.opacity(0.3) : AppPalette.border, lineWidth: 1)
+                )
+                .foregroundStyle(commitEnabled ? AppPalette.accent : AppPalette.textTertiary)
             }
-            .buttonStyle(.borderedProminent)
-            .controlSize(.small)
-            .disabled(
-                store.commitMessage.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                || store.isRunningCommand
-                || !hasAnyChanges
-            )
+            .buttonStyle(.plain)
+            .disabled(!commitEnabled)
             .keyboardShortcut(.return, modifiers: [.command])
         }
-        .padding(.horizontal, 8)
+        .padding(.horizontal, AppSpacing.panelPadding)
         .padding(.vertical, 6)
     }
 
@@ -259,12 +288,28 @@ struct GitChangesView: View {
             }
         }
 
+        if store.statusSnapshot?.untrackedTruncated == true {
+            HStack(spacing: 4) {
+                Image(systemName: "exclamationmark.triangle")
+                    .font(.system(size: 9))
+                Text("Showing first 500 untracked files. Consider updating .gitignore.")
+                    .font(AppFonts.caption)
+            }
+            .foregroundStyle(.orange)
+            .padding(.horizontal, 8).padding(.vertical, 4)
+        }
+
         if !hasAnyChanges {
-            Text("No changes detected")
-                .font(.system(size: 11))
-                .foregroundStyle(.secondary)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 20)
+            VStack(spacing: 8) {
+                Image(systemName: "checkmark.circle")
+                    .font(.system(size: 16))
+                    .foregroundStyle(AppPalette.textTertiary)
+                Text("No changes detected")
+                    .font(AppFonts.secondaryLabel)
+                    .foregroundStyle(AppPalette.textSecondary)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 20)
         }
     }
 
@@ -320,30 +365,21 @@ struct GitChangesView: View {
                 .buttonStyle(.plain).help("Push").disabled(store.isRunningCommand)
 
                 Button { store.refreshNow() } label: {
-                    Image(systemName: "arrow.clockwise")
+                    SpinningIcon(systemName: "arrow.clockwise", isSpinning: store.isRefreshing)
                         .font(.system(size: 10))
-                        .rotationEffect(.degrees(store.isRefreshing ? 360 : 0))
-                        .animation(store.isRefreshing ? .linear(duration: 1).repeatForever(autoreverses: false) : .default, value: store.isRefreshing)
                 }
                 .buttonStyle(.plain).help("Refresh").disabled(store.isRefreshing || store.isRunningCommand)
             }
-            .padding(.horizontal, 8)
-            .frame(height: AppConstants.terminalToolbarHeight)
+            .padding(.horizontal, AppSpacing.panelPadding)
+            .frame(height: AppSpacing.headerHeight)
 
             PanelDivider()
 
             // Commit graph
             if store.logEntries.isEmpty {
-                VStack(spacing: 8) {
-                    Spacer()
-                    Image(systemName: "arrow.triangle.branch")
-                        .font(.system(size: 20))
-                        .foregroundStyle(.tertiary)
-                    Text("No commits yet")
-                        .font(AppFonts.secondaryLabel)
-                        .foregroundStyle(.secondary)
-                    Spacer()
-                }
+                Spacer()
+                EmptyStateView("No commits yet", subtitle: "Make your first commit to see the graph")
+                Spacer()
             } else {
                 ScrollView {
                     GitGraphContentView(
@@ -400,8 +436,8 @@ struct GitChangesView: View {
                     .help("Toggle file list")
                 }
             }
-            .padding(.horizontal, 10)
-            .frame(height: AppConstants.headerHeight)
+            .padding(.horizontal, AppSpacing.panelPadding)
+            .frame(height: AppSpacing.headerHeight)
 
             PanelDivider()
 
@@ -419,13 +455,11 @@ struct GitChangesView: View {
                 singleFileDiff(store.selectedDiffText)
             } else if store.selectedChange != nil {
                 Spacer()
-                Text("No diff output")
-                    .foregroundStyle(.secondary).font(.system(size: 12))
+                EmptyStateView("No diff output")
                 Spacer()
             } else {
                 Spacer()
-                Text("Select a file to view diff")
-                    .foregroundStyle(.secondary).font(.system(size: 12))
+                EmptyStateView("Select a file to view diff", subtitle: "Click a changed file to see its diff")
                 Spacer()
             }
         }
@@ -488,7 +522,7 @@ struct GitChangesView: View {
 
     private func commitDiffByFile(sections: [FileDiffSection]) -> some View {
         GeometryReader { geo in
-            let halfWidth = (geo.size.width - 1) / 2
+            let halfWidth = max((geo.size.width - 1) / 2, 0)
             ScrollViewReader { proxy in
                 ScrollView(.vertical) {
                     VStack(alignment: .leading, spacing: 0) {
@@ -604,19 +638,29 @@ struct GitChangesView: View {
 
     // MARK: - Single File Diff (side-by-side)
 
+    @State private var diffScrollWidth: CGFloat = 0
+
     private func singleFileDiff(_ diffText: String) -> some View {
-        GeometryReader { geo in
-            let halfWidth = (geo.size.width - 1) / 2
+        GeometryReader { outerGeo in
+            let effectiveWidth = diffScrollWidth > 0 ? diffScrollWidth : outerGeo.size.width
+            let halfWidth = max((effectiveWidth - 1) / 2, 0)
             ScrollView(.vertical) {
                 singleFileDiffRows(diffText, halfWidth: halfWidth)
-                    .frame(minHeight: geo.size.height, alignment: .top)
+                    .background(
+                        GeometryReader { innerGeo in
+                            Color.clear.preference(key: DiffWidthKey.self, value: innerGeo.size.width)
+                        }
+                    )
             }
-            .overlay {
-                Rectangle()
-                    .fill(Color.secondary.opacity(0.2))
-                    .frame(width: 1)
-                    .frame(maxHeight: .infinity)
+            .onPreferenceChange(DiffWidthKey.self) { w in
+                if w > 0 { diffScrollWidth = w }
             }
+        }
+        .overlay {
+            Rectangle()
+                .fill(Color.secondary.opacity(0.2))
+                .frame(width: 1)
+                .frame(maxHeight: .infinity)
         }
     }
 
@@ -633,27 +677,25 @@ struct GitChangesView: View {
                         ForEach(fromLine..<toLine, id: \.self) { lineNo in
                             let idx = lineNo - 1
                             let content = idx >= 0 && idx < lines.count ? lines[idx] : ""
-                            HStack(spacing: 0) {
-                                diffSideCell(lineNo: lineNo, content: content, kind: .context, side: .left)
+                            HStack(alignment: .top, spacing: 0) {
+                                diffSideCell(lineNo: lineNo, content: content, kind: .context, side: .left, cellWidth: halfWidth)
                                     .frame(width: halfWidth)
                                 Color.clear.frame(width: 1)
-                                diffSideCell(lineNo: lineNo, content: content, kind: .context, side: .right)
+                                diffSideCell(lineNo: lineNo, content: content, kind: .context, side: .right, cellWidth: halfWidth)
                                     .frame(width: halfWidth)
                             }
-                            .frame(height: 18)
                         }
                     } else if row.skippedLines > 0 {
                         hunkHeaderBar(skippedLines: row.skippedLines, hunkIndex: row.hunkIndex)
                     }
                 } else {
-                    HStack(spacing: 0) {
-                        diffSideCell(lineNo: row.oldLineNo, content: row.oldContent, kind: row.kind, side: .left)
+                    HStack(alignment: .top, spacing: 0) {
+                        diffSideCell(lineNo: row.oldLineNo, content: row.oldContent, kind: row.kind, side: .left, cellWidth: halfWidth)
                             .frame(width: halfWidth)
                         Rectangle().fill(Color.secondary.opacity(0.2)).frame(width: 1)
-                        diffSideCell(lineNo: row.newLineNo, content: row.newContent, kind: row.kind, side: .right)
+                        diffSideCell(lineNo: row.newLineNo, content: row.newContent, kind: row.kind, side: .right, cellWidth: halfWidth)
                             .frame(width: halfWidth)
                     }
-                    .frame(height: 18)
                 }
             }
         }
@@ -697,14 +739,19 @@ struct GitChangesView: View {
               let repoURL = store.repositoryURL,
               let path = store.selectedChange?.path else { return }
         let fileURL = repoURL.appendingPathComponent(path)
-        if let content = try? String(contentsOf: fileURL, encoding: .utf8) {
+        do {
+            let content = try String(contentsOf: fileURL, encoding: .utf8)
             cachedFileLines = content.components(separatedBy: "\n")
+        } catch {
+            cachedFileLines = [] // prevent repeated failed reads
+            store.errorMessage = "Could not read \(fileURL.lastPathComponent)"
         }
     }
 
-    private func diffSideCell(lineNo: Int?, content: String?, kind: DiffRowKind, side: DiffSide) -> some View {
-        HStack(spacing: 0) {
-            // Gutter 色条（added/removed 行标识）
+    private func diffSideCell(lineNo: Int?, content: String?, kind: DiffRowKind, side: DiffSide, cellWidth: CGFloat) -> some View {
+        // gutter(2) + lineNo(36) + lineNo trailing pad(6) + text leading pad(4) + right margin(6) = 54
+        let textWidth = max(cellWidth - 54, 0)
+        return HStack(alignment: .top, spacing: 0) {
             gutterBar(kind: kind, side: side)
 
             Text(lineNo.map { String($0) } ?? "")
@@ -712,17 +759,19 @@ struct GitChangesView: View {
                 .foregroundStyle(.secondary.opacity(0.5))
                 .frame(width: 36, alignment: .trailing)
                 .padding(.trailing, 6)
+                .padding(.top, 1)
 
             if let content {
                 Text(highlightCode(content))
                     .font(.system(size: 11, weight: .regular, design: .monospaced))
-                    .lineLimit(1)
-                    .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.leading, 4)
+                    .padding(.vertical, 1)
+                    .frame(width: textWidth, alignment: .leading)
             } else {
-                Color.clear.frame(maxWidth: .infinity)
+                Color.clear.frame(width: textWidth)
             }
         }
+        .frame(maxWidth: .infinity, minHeight: 18, alignment: .leading)
         .background(diffRowBackground(kind: kind, side: side))
     }
 
@@ -915,6 +964,12 @@ struct GitChangesView: View {
         store.statusSnapshot?.hasAnyChanges ?? false
     }
 
+    private var commitEnabled: Bool {
+        !store.commitMessage.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && !store.isRunningCommand
+            && hasAnyChanges
+    }
+
     private func statusBanner(text: String, color: Color, onDismiss: @escaping () -> Void) -> some View {
         HStack {
             Text(text).font(.system(size: 10)).lineLimit(2)
@@ -961,8 +1016,18 @@ struct GitChangesView: View {
 
     // MARK: - Diff Helpers
 
-    private let diffBgColor = Color(nsColor: NSColor(calibratedRed: 0.15, green: 0.15, blue: 0.17, alpha: 1.0))
-    private let diffTextColor = Color(nsColor: NSColor(calibratedWhite: 0.9, alpha: 1.0))
+    private let diffBgColor = AppPalette.surface
+    private let diffTextColor = AppPalette.textPrimary
+}
+
+// MARK: - Diff Width Preference Key
+
+private struct DiffWidthKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        let next = nextValue()
+        if next > 0 { value = next }
+    }
 }
 
 // MARK: - Commit Image Diff View
@@ -1029,7 +1094,7 @@ private struct CommitImageDiffView: View {
                     .foregroundStyle(.tertiary)
             } else if !loaded {
                 ProgressView().controlSize(.small)
-            } else if loaded {
+            } else {
                 Text(loadError ?? "Image unavailable")
                     .font(.system(size: 10))
                     .foregroundStyle(.secondary)
@@ -1394,9 +1459,8 @@ private struct CollapsibleSection<Content: View>: View {
                     HStack(spacing: 4) {
                         Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
                             .font(.system(size: 8, weight: .bold)).frame(width: 10)
-                        Text(title).font(AppFonts.sectionHeader)
+                        SectionTitle(title)
                     }
-                    .foregroundStyle(.secondary)
                 }
                 .buttonStyle(.plain)
 
@@ -1405,12 +1469,12 @@ private struct CollapsibleSection<Content: View>: View {
                 action().opacity(0.7)
 
                 Text("\(count)")
-                    .font(.system(size: 10)).foregroundStyle(.secondary)
+                    .font(AppFonts.badge).foregroundStyle(AppPalette.textSecondary)
                     .padding(.horizontal, 4).padding(.vertical, 1)
-                    .background(Color.secondary.opacity(0.15))
+                    .background(Color.white.opacity(0.08))
                     .clipShape(RoundedRectangle(cornerRadius: 3))
             }
-            .padding(.horizontal, 8).padding(.vertical, 4)
+            .padding(.horizontal, 8).padding(.vertical, 5)
 
             if isExpanded { content() }
         }
@@ -1469,10 +1533,10 @@ private struct FileStatusRow: View {
                 .foregroundStyle(statusColor)
                 .frame(width: 12, alignment: .trailing)
         }
-        .padding(.horizontal, 8).padding(.vertical, 2)
+        .padding(.horizontal, 8).padding(.vertical, 4)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
-            RoundedRectangle(cornerRadius: AppSpacing.cornerRadius)
+            RoundedRectangle(cornerRadius: AppSpacing.cornerRadiusSmall)
                 .fill(isSelected ? AppColors.activeBackground : (hovering ? AppColors.hoverBackground : Color.clear))
         )
         .padding(.horizontal, 2)

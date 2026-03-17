@@ -197,7 +197,7 @@ private struct DeploymentDetailView: View {
             // Title + status
             HStack {
                 Text(deployment.name)
-                    .font(.system(size: 16, weight: .semibold))
+                    .font(AppFonts.title)
 
                 if deployment.isRemote {
                     Text("Remote")
@@ -370,11 +370,7 @@ private struct DeploymentDetailView: View {
     private var logSection: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
-                Text("Logs")
-                    .font(AppFonts.sectionHeader)
-                    .foregroundStyle(.secondary)
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 6)
+                SectionTitle("LOGS")
 
                 Spacer()
 
@@ -386,9 +382,10 @@ private struct DeploymentDetailView: View {
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(.secondary)
-                .padding(.trailing, 16)
                 .help("Refresh logs")
             }
+            .padding(.horizontal, AppSpacing.panelPadding)
+            .frame(height: AppSpacing.headerHeight)
 
             Divider()
 

@@ -14,7 +14,7 @@ enum ViewTab: String, CaseIterable, Hashable, Identifiable {
         case .terminal:
             return "Terminal"
         case .gitChanges:
-            return "Git Changes"
+            return "Git"
         case .fileExplorer:
             return "Files"
         case .deployments:

@@ -208,6 +208,15 @@ final class GitChangesStore: ObservableObject {
     }
 
     func selectChange(_ change: GitFileChange) {
+        // Cancel any in-flight commit detail loading
+        commitDetailTask?.cancel()
+        commitDetailTask = nil
+
+        // Clear commit selection so diff panel shows working tree diff
+        selectedCommitHash = nil
+        commitFiles = []
+        commitDiffText = ""
+
         selectedChange = change
 
         Task {

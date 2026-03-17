@@ -318,7 +318,9 @@ private struct WorktreeRow: View {
                 }
                 guard proceed else { return }
             }
-        } catch {}
+        } catch {
+            NSLog("openOwl: [SidebarView] Failed to check uncommitted changes: %@", error.localizedDescription)
+        }
 
         if projectStore.activeProjectID == wt.id, let parentID = wt.worktreeOf {
             projectStore.activateProject(id: parentID)

@@ -38,6 +38,7 @@ struct ContentView: View {
 
                 StatusBarView()
             }
+            .background(AppPalette.base)
         }
         .navigationSplitViewStyle(.balanced)
         .toolbar {
@@ -107,49 +108,40 @@ struct ContentView: View {
 
 private struct ViewTabBar: View {
     @Binding var activeTab: ViewTab
-    @State private var hoveredTab: ViewTab?
+    @Namespace private var tabNamespace
 
     var body: some View {
         HStack(spacing: 2) {
             ForEach(ViewTab.allCases) { tab in
                 Button {
-                    activeTab = tab
-                } label: {
-                    HStack(spacing: 4) {
-                        Image(systemName: tab.systemImage)
-                            .font(.system(size: 10))
-                        Text(tab.title)
-                            .font(.system(size: 12, weight: .medium))
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        activeTab = tab
                     }
-                    .foregroundStyle(activeTab == tab ? .primary : .secondary)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 3)
-                    .background(
-                        RoundedRectangle(cornerRadius: 4)
-                            .fill(activeTab == tab ? Color.accentColor.opacity(0.15) : (hoveredTab == tab ? Color.secondary.opacity(0.1) : Color.clear))
-                    )
+                } label: {
+                    VStack(spacing: 4) {
+                        HStack(spacing: 4) {
+                            Image(systemName: tab.systemImage)
+                                .font(.system(size: 10))
+                            Text(tab.title)
+                                .font(.system(size: 12, weight: activeTab == tab ? .semibold : .regular))
+                        }
+                        .foregroundStyle(activeTab == tab ? .primary : .secondary)
+
+                        if activeTab == tab {
+                            Capsule()
+                                .fill(AppPalette.accent)
+                                .frame(height: 2)
+                                .matchedGeometryEffect(id: "indicator", in: tabNamespace)
+                        } else {
+                            Color.clear.frame(height: 2)
+                        }
+                    }
+                    .fixedSize()
+                    .padding(.horizontal, 10)
                 }
                 .buttonStyle(.plain)
-                .onHover { hoveredTab = $0 ? tab : nil }
             }
         }
-        .animation(.easeInOut(duration: 0.15), value: activeTab)
     }
 }
 
-// MARK: - Tab Divider
-
-private struct TabDivider: View {
-    @Environment(\.colorScheme) var colorScheme
-
-    var body: some View {
-        Rectangle()
-            .frame(width: 1)
-            .padding(.vertical, 8)
-            .foregroundColor(
-                colorScheme == .dark
-                    ? Color.white.opacity(0.12)
-                    : Color.black.opacity(0.12)
-            )
-    }
-}
