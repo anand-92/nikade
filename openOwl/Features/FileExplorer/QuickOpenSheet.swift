@@ -178,27 +178,11 @@ private struct QuickOpenRow: View {
 
     private var iconName: String {
         if node.isDirectory { return "folder.fill" }
-        let ext = node.url.pathExtension.lowercased()
-        switch ext {
-        case "swift": return "swift"
-        case "md", "txt", "log": return "doc.text"
-        case "json", "yml", "yaml", "toml", "plist": return "curlybraces"
-        case "png", "jpg", "jpeg", "gif", "webp", "svg": return "photo"
-        case "sh", "zsh", "bash": return "terminal"
-        case "js", "ts", "tsx", "jsx": return "chevron.left.forwardslash.chevron.right"
-        default: return "doc"
-        }
+        return FileIcons.iconName(for: node.url)
     }
 
     private var iconColor: Color {
         if node.isDirectory { return Color(nsColor: .systemBlue) }
-        let ext = node.url.pathExtension.lowercased()
-        switch ext {
-        case "swift": return Color(nsColor: .systemOrange)
-        case "js", "ts", "tsx", "jsx": return Color(nsColor: .systemYellow)
-        case "py": return Color(nsColor: .systemGreen)
-        case "json", "yml", "yaml": return Color(nsColor: .systemPurple)
-        default: return .secondary
-        }
+        return FileIcons.iconColor(for: node.url)
     }
 }
