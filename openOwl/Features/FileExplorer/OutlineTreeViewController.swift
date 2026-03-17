@@ -46,6 +46,9 @@ final class OutlineTreeViewController: NSViewController {
     private var outlineView: KeyableOutlineView!
     private var scrollView: NSScrollView!
     private var renamingNodeID: String?
+    /// Set to true during programmatic row selection (e.g. from updateNSViewController)
+    /// to suppress the outlineViewSelectionDidChange → onSelectFile callback.
+    private var isProgrammaticSelection = false
 
     // MARK: - Lifecycle
 
@@ -112,8 +115,12 @@ final class OutlineTreeViewController: NSViewController {
         let expandedPaths = saveExpandedState()
         let selectedPaths = saveSelectedState()
 
-        outlineView.reloadData()
+        // Suppress outlineViewSelectionDidChange during the entire reload+restore
+        // cycle to avoid modifying SwiftUI @State during a view update.
+        isProgrammaticSelection = true
+        defer { isProgrammaticSelection = false }
 
+        outlineView.reloadData()
         restoreExpandedState(expandedPaths)
         restoreSelectedState(selectedPaths)
     }
@@ -124,8 +131,18 @@ final class OutlineTreeViewController: NSViewController {
 
         let row = outlineView.row(forItem: nodeID as NSString)
         guard row >= 0 else { return }
+        isProgrammaticSelection = true
         outlineView.selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false)
+        isProgrammaticSelection = false
         outlineView.scrollRowToVisible(row)
+    }
+
+    /// Update local data snapshot without reloading the outline view.
+    /// Called synchronously from the onExpandDirectory callback so NSOutlineView
+    /// can query the updated nodeIndex during the same expand cycle.
+    func syncData(rootNodes: [FileExplorerNode], nodeIndex: [String: FileExplorerNode]) {
+        self.rootNodes = rootNodes
+        self.nodeIndex = nodeIndex
     }
 
     func expandTopLevel() {
@@ -171,6 +188,7 @@ final class OutlineTreeViewController: NSViewController {
             if row >= 0 { indices.insert(row) }
         }
         if !indices.isEmpty {
+            // isProgrammaticSelection is already set by the caller (updateData)
             outlineView.selectRowIndexes(indices, byExtendingSelection: false)
         }
     }
@@ -450,6 +468,9 @@ extension OutlineTreeViewController: NSOutlineViewDelegate {
     }
 
     func outlineViewSelectionDidChange(_ notification: Notification) {
+        // Ignore programmatic selections (e.g. from updateNSViewController / selectAndReveal)
+        // to avoid modifying SwiftUI @State during a view update cycle.
+        guard !isProgrammaticSelection else { return }
         guard let outlineView = notification.object as? NSOutlineView else { return }
         let row = outlineView.selectedRow
         guard row >= 0,
@@ -485,6 +506,10 @@ extension OutlineTreeViewController: NSOutlineViewDelegate {
 extension OutlineTreeViewController {
     override func viewDidAppear() {
         super.viewDidAppear()
+        // Resize the outline column to fill the scroll view now that the view has its final frame.
+        // On initial load, reloadData() may run before SwiftUI sets the view frame, causing
+        // Auto Layout to position the gitBadge at the wrong (zero-width) trailing edge.
+        outlineView.sizeLastColumnToFit()
         // Set up context menu
         outlineView.menu = NSMenu()
         outlineView.menu?.delegate = self
