@@ -1,55 +1,42 @@
 #!/bin/bash
 set -euo pipefail
 
-# Configuration
 APP_NAME="openOwl"
 DISPLAY_NAME="OpenOwl"
 SCHEME="openOwl"
-SIGNING_IDENTITY="Developer ID Application: LU CANWEI (C3NL524YS6)"
 TEAM_ID="C3NL524YS6"
+ASC_KEY="$HOME/.private_keys/AuthKey_7S9R2PS464.p8"
+ASC_KEY_ID="7S9R2PS464"
+ASC_ISSUER="d252893a-9fb8-47b9-8254-e62c7d8f76fd"
 
-# Paths
 PROJECT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 BUILD_DIR="$PROJECT_DIR/build"
 ARCHIVE_PATH="$BUILD_DIR/$APP_NAME.xcarchive"
 EXPORT_PATH="$BUILD_DIR/export"
 APP_PATH="$EXPORT_PATH/$APP_NAME.app"
-DMG_PATH="$BUILD_DIR/$DISPLAY_NAME.dmg"
-
-# Read version from project.yml
 VERSION=$(grep 'MARKETING_VERSION' "$PROJECT_DIR/project.yml" | head -1 | sed 's/.*: *"\(.*\)"/\1/')
-BUILD_NUM=$(grep 'CURRENT_PROJECT_VERSION' "$PROJECT_DIR/project.yml" | head -1 | sed 's/.*: *"\(.*\)"/\1/')
 DMG_FINAL="$BUILD_DIR/${DISPLAY_NAME}-${VERSION}.dmg"
 
-echo "=== Building $DISPLAY_NAME v$VERSION (build $BUILD_NUM) ==="
-echo ""
+echo "=== Building $DISPLAY_NAME v$VERSION ==="
 
-# Clean
 rm -rf "$BUILD_DIR"
 mkdir -p "$BUILD_DIR"
-
-# Step 1: Generate Xcode project
-echo ">>> Generating Xcode project..."
 cd "$PROJECT_DIR"
+
+echo ">>> xcodegen..."
 xcodegen generate
 
-# Step 2: Archive
-echo ">>> Archiving..."
+echo ">>> Archive..."
 xcodebuild archive \
     -scheme "$SCHEME" \
     -configuration Release \
     -archivePath "$ARCHIVE_PATH" \
-    CODE_SIGN_IDENTITY="$SIGNING_IDENTITY" \
+    CODE_SIGN_STYLE=Automatic \
     DEVELOPMENT_TEAM="$TEAM_ID" \
-    CODE_SIGN_STYLE=Manual \
-    OTHER_CODE_SIGN_FLAGS="--options=runtime" \
     | tail -5
 
-# Step 3: Export archive
-echo ">>> Exporting archive..."
+echo ">>> Export (Developer ID + automatic notarization)..."
 mkdir -p "$EXPORT_PATH"
-
-# Create export options plist
 cat > "$BUILD_DIR/export-options.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -60,9 +47,7 @@ cat > "$BUILD_DIR/export-options.plist" <<PLIST
     <key>teamID</key>
     <string>$TEAM_ID</string>
     <key>signingStyle</key>
-    <string>manual</string>
-    <key>signingCertificate</key>
-    <string>Developer ID Application</string>
+    <string>automatic</string>
 </dict>
 </plist>
 PLIST
@@ -71,57 +56,39 @@ xcodebuild -exportArchive \
     -archivePath "$ARCHIVE_PATH" \
     -exportOptionsPlist "$BUILD_DIR/export-options.plist" \
     -exportPath "$EXPORT_PATH" \
-    | tail -5
+    | tail -10
 
-# Verify the exported app exists
 if [ ! -d "$APP_PATH" ]; then
-    echo "ERROR: Exported app not found at $APP_PATH"
-    echo "Looking for app in export path:"
-    ls -la "$EXPORT_PATH/"
-    exit 1
+    echo "ERROR: App not found"; ls -la "$EXPORT_PATH/"; exit 1
 fi
 
-# Step 4: Verify code signature
-echo ""
-echo ">>> Verifying code signature..."
-codesign --verify --deep --strict --verbose=2 "$APP_PATH" 2>&1 | tail -3
-echo "Signing identity:"
+echo ">>> Verify signature..."
+codesign --verify --deep --strict "$APP_PATH"
 codesign -dvv "$APP_PATH" 2>&1 | grep "Authority"
 
-# Step 5: Create DMG
-echo ""
-echo ">>> Creating DMG..."
-rm -f "$DMG_PATH" "$DMG_FINAL"
-
-# Create a temporary DMG folder with app and Applications symlink
+echo ">>> Create DMG..."
 DMG_STAGING="$BUILD_DIR/dmg-staging"
-rm -rf "$DMG_STAGING"
 mkdir -p "$DMG_STAGING"
 cp -R "$APP_PATH" "$DMG_STAGING/"
 ln -s /Applications "$DMG_STAGING/Applications"
-
-hdiutil create \
-    -volname "$DISPLAY_NAME" \
-    -srcfolder "$DMG_STAGING" \
-    -ov \
-    -format UDZO \
-    "$DMG_FINAL"
-
+hdiutil create -volname "$DISPLAY_NAME" -srcfolder "$DMG_STAGING" -ov -format UDZO "$DMG_FINAL"
 rm -rf "$DMG_STAGING"
 
-# Step 6: Sign the DMG
-echo ""
-echo ">>> Signing DMG..."
-codesign --sign "$SIGNING_IDENTITY" "$DMG_FINAL"
+echo ">>> Sign DMG..."
+codesign --sign "Developer ID Application: LU CANWEI ($TEAM_ID)" "$DMG_FINAL"
 
-# Step 7: Notarize (optional — requires App Store Connect API key)
+echo ">>> Notarize..."
+xcrun notarytool submit "$DMG_FINAL" \
+    --key "$ASC_KEY" \
+    --key-id "$ASC_KEY_ID" \
+    --issuer "$ASC_ISSUER" \
+    --wait
+
+echo ">>> Staple..."
+xcrun stapler staple "$DMG_FINAL"
+
 echo ""
-echo ">>> DMG ready at: $DMG_FINAL"
-echo ""
+echo "=== Done: $DMG_FINAL ==="
 ls -lh "$DMG_FINAL"
-echo ""
-echo "To notarize (optional):"
-echo "  xcrun notarytool submit \"$DMG_FINAL\" --apple-id YOUR_APPLE_ID --password YOUR_APP_PASSWORD --team-id $TEAM_ID --wait"
-echo "  xcrun stapler staple \"$DMG_FINAL\""
-echo ""
-echo "=== Done ==="
+echo "Gatekeeper:"
+spctl --assess --type open --context context:primary-signature --verbose "$DMG_FINAL" 2>&1
