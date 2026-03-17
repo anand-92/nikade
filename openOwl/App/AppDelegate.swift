@@ -47,7 +47,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
-        !(deploymentStore?.hasRunningDeployments() ?? false)
+        false
     }
 
     private func installLocalKeyMonitor() {
