@@ -1,5 +1,6 @@
-# Xcode
+# Xcode & build output
 build/
+*.dmg
 DerivedData/
 *.xcuserstate
 *.xcworkspace/xcuserdata/

@@ -44,6 +44,7 @@ struct openOwlApp: App {
                         workspaceStore.updateTitle(for: paneID, title: title)
                     }
                     syncActiveProjectContext()
+                    UpdateChecker.shared.checkOnLaunchIfNeeded()
                 }
                 .onChange(of: projectStore.activeProjectID) { _, _ in
                     syncActiveProjectContext()
@@ -75,6 +76,25 @@ struct openOwlApp: App {
                 .environmentObject(projectStore)
         }
         .menuBarExtraStyle(.menu)
+
+        Window("Update Available", id: "update") {
+            UpdateAlertView()
+        }
+        .windowResizability(.contentSize)
+        .defaultSize(width: 400, height: 250)
+    }
+
+    // MARK: - Commands
+
+    var commands: some Commands {
+        CommandGroup(after: .appInfo) {
+            Button("Check for Updates...") {
+                Task { await UpdateChecker.shared.check() }
+                if UpdateChecker.shared.updateAvailable {
+                    NSApp.sendAction(Selector(("showUpdateWindow:")), to: nil, from: nil)
+                }
+            }
+        }
     }
 
     private static func setupEnvironment() {
