@@ -33,7 +33,25 @@ OpenOwl is a macOS-native desktop app that combines a **GPU-accelerated terminal
 
 ## Screenshots
 
-> Coming soon
+### File Explorer & Code Editor
+Multi-tab editor with tree-sitter syntax highlighting, file tree with git status badges, and Quick Open (⌘P).
+
+![File Explorer](docs/screenshots/file-explorer.png)
+
+### Terminal
+GPU-accelerated terminal powered by libghostty. Tabs, split panes, drag-to-reorder.
+
+![Terminal](docs/screenshots/terminal.png)
+
+### Git Changes
+Stage, unstage, discard files. Side-by-side diff view with commit history graph.
+
+![Git Changes](docs/screenshots/git-changes.png)
+
+### Local Deployment
+Clone, build, and start services locally with health check monitoring.
+
+![Deployment](docs/screenshots/deployment.png)
 
 ## Installation
 
@@ -44,7 +62,7 @@ OpenOwl is a macOS-native desktop app that combines a **GPU-accelerated terminal
 
 ### Download
 
-> Pre-built binaries coming soon. For now, build from source.
+Download the latest `.dmg` from [GitHub Releases](https://github.com/sanvibyfish/openowl-app/releases).
 
 ## Building
 

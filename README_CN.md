@@ -33,7 +33,25 @@ OpenOwl 是一款 macOS 原生桌面应用，将 **GPU 加速终端**、**Git GU
 
 ## 截图
 
-> 即将添加
+### 文件浏览器 & 代码编辑器
+多标签编辑器，tree-sitter 语法高亮，文件树带 git 状态标记，快速打开（⌘P）。
+
+![文件浏览器](docs/screenshots/file-explorer.png)
+
+### 终端
+基于 libghostty 的 GPU 加速终端。标签页、分屏、拖拽重排。
+
+![终端](docs/screenshots/terminal.png)
+
+### Git 变更
+暂存、取消暂存、丢弃文件。并排 diff 视图，提交历史图。
+
+![Git 变更](docs/screenshots/git-changes.png)
+
+### 本地部署
+克隆、构建、启动本地服务，健康检查监控。
+
+![本地部署](docs/screenshots/deployment.png)
 
 ## 安装
 
@@ -44,7 +62,7 @@ OpenOwl 是一款 macOS 原生桌面应用，将 **GPU 加速终端**、**Git GU
 
 ### 下载
 
-> 预编译版本即将推出。目前请从源码构建。
+从 [GitHub Releases](https://github.com/sanvibyfish/openowl-app/releases) 下载最新 `.dmg`。
 
 ## 构建
 
