@@ -24,8 +24,8 @@ enum TerminalFocusDirection {
 }
 
 struct SplitDividerInfo: Identifiable {
-    /// Stable ID derived from the two pane IDs this divider separates
-    var id: String { "\(firstPaneID)-\(secondPaneID)" }
+    /// Stable tree-path ID (e.g. "0", "1.0", "1.1") — doesn't change when panes are added
+    let id: String
     let axis: TerminalSplitAxis
     let ratio: Double
     let frame: CGRect
@@ -255,6 +255,10 @@ indirect enum TerminalSplitNode: Equatable {
 
     /// Info about each divider in the tree for flat rendering.
     func dividerInfos(in rect: CGRect) -> [SplitDividerInfo] {
+        dividerInfosRecursive(in: rect, path: "")
+    }
+
+    private func dividerInfosRecursive(in rect: CGRect, path: String) -> [SplitDividerInfo] {
         switch self {
         case .leaf:
             return []
@@ -272,7 +276,9 @@ indirect enum TerminalSplitNode: Equatable {
                 dividerFrame = CGRect(x: rect.minX, y: y - 0.5, width: rect.width, height: 1)
             }
 
+            let dividerID = path.isEmpty ? "d" : path
             let info = SplitDividerInfo(
+                id: dividerID,
                 axis: axis,
                 ratio: clampedRatio,
                 frame: dividerFrame,
@@ -280,7 +286,10 @@ indirect enum TerminalSplitNode: Equatable {
                 secondPaneID: second.firstPaneID ?? UUID()
             )
 
-            return [info] + first.dividerInfos(in: firstRect) + second.dividerInfos(in: secondRect)
+            let prefix = path.isEmpty ? "" : "\(path)."
+            return [info]
+                + first.dividerInfosRecursive(in: firstRect, path: "\(prefix)0")
+                + second.dividerInfosRecursive(in: secondRect, path: "\(prefix)1")
         }
     }
 

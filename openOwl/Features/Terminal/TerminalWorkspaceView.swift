@@ -209,6 +209,7 @@ private struct TerminalTabContentView: View {
         let isMultiPane = paneIDs.count > 1
 
         GeometryReader { geometry in
+            let _ = clearStaleDragState(dividers: tab.splitTree.dividerInfos(in: CGRect(origin: .zero, size: geometry.size)))
             let size = geometry.size
             let bounds = CGRect(origin: .zero, size: size)
             let frames = tab.splitTree.paneFrames(in: bounds)
@@ -297,6 +298,14 @@ private struct TerminalTabContentView: View {
                         }
                 }
             }
+        }
+    }
+
+    /// Remove drag-start entries for dividers that no longer exist (tree changed mid-drag)
+    private func clearStaleDragState(dividers: [SplitDividerInfo]) {
+        let validIDs = Set(dividers.map(\.id))
+        for key in dividerDragStart.keys where !validIDs.contains(key) {
+            dividerDragStart.removeValue(forKey: key)
         }
     }
 }
