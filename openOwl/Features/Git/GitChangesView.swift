@@ -1313,21 +1313,21 @@ private let laneColors: [Color] = [
     Color(red: 0.38, green: 0.55, blue: 0.31),  // dark green
 ]
 
-private struct GraphNode {
+struct GraphNode {
     let hash: String
     let column: Int
     let row: Int
     let color: Color
 }
 
-private struct GraphLayout {
+struct GraphLayout {
     let nodes: [GraphNode]
     let segments: [(col: Int, row: Int, color: Color)]
     let connectors: [(fromCol: Int, fromRow: Int, toCol: Int, toRow: Int, color: Color)]
     let maxColumns: Int
 }
 
-private func computeGraphLayout(entries: [GitLogEntry]) -> GraphLayout {
+func computeGraphLayout(entries: [GitLogEntry]) -> GraphLayout {
     guard !entries.isEmpty else {
         return GraphLayout(nodes: [], segments: [], connectors: [], maxColumns: 0)
     }
