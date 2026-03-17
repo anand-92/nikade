@@ -327,6 +327,7 @@ struct FileExplorerView: View {
         }
         .frame(height: AppSpacing.editorTabBarHeight)
         .background(AppPalette.surface)
+        .glassEffectIfAvailable(in: Rectangle())
     }
 
     // MARK: - Tab Management
@@ -574,7 +575,12 @@ private struct EditorTabButton: View {
         }
         .padding(.trailing, 4)
         .frame(height: AppSpacing.editorTabBarHeight)
-        .background(isActive ? AppColors.activeBackground : (isHovering ? AppColors.hoverBackground : Color.clear))
+        .glassEffectWithTint(
+            isActive,
+            in: Rectangle(),
+            fallback: Rectangle()
+                .fill(isActive ? AppColors.activeBackground : (isHovering ? AppColors.hoverBackground : Color.clear))
+        )
         .overlay(alignment: .trailing) {
             Rectangle()
                 .fill(Color.secondary.opacity(0.15))

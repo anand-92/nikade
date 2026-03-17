@@ -479,8 +479,10 @@ private struct ActionButton: View {
             }
             .padding(.horizontal, 14)
             .padding(.vertical, 6)
-            .background(
-                RoundedRectangle(cornerRadius: AppSpacing.cornerRadius)
+            .glassEffectWithTint(
+                hovering,
+                in: RoundedRectangle(cornerRadius: AppSpacing.cornerRadius),
+                fallback: RoundedRectangle(cornerRadius: AppSpacing.cornerRadius)
                     .fill(hovering ? AppColors.hoverBackground : Color(nsColor: .controlBackgroundColor))
             )
             .overlay(
