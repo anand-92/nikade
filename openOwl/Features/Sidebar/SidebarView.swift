@@ -209,7 +209,7 @@ private struct BranchRow: View {
     @State private var hovering = false
 
     private var paneInfos: [PaneInfo] { workspace.paneInfos(for: projectID) }
-    private var unreadCount: Int { paneInfos.filter(\.hasBell).count }
+    private var unreadCount: Int { workspace.bellCount(for: projectID) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -281,7 +281,7 @@ private struct WorktreeRow: View {
     @FocusState private var renameFieldFocused: Bool
 
     private var paneInfos: [PaneInfo] { workspace.paneInfos(for: projectID) }
-    private var unreadCount: Int { paneInfos.filter(\.hasBell).count }
+    private var unreadCount: Int { workspace.bellCount(for: projectID) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -416,32 +416,23 @@ private struct WorktreeRow: View {
 
 private struct PaneStatusRow: View {
     let info: PaneInfo
-    @Environment(TerminalWorkspaceStore.self) private var workspace
-    @Environment(AppNavigationStore.self) private var navigationStore
 
     var body: some View {
-        Button {
-            navigationStore.navigate(to: .terminal)
-            workspace.activeTabID = info.tabID
-            workspace.focusPane(info.paneID)
-        } label: {
-            HStack(spacing: 4) {
-                Circle()
-                    .fill(info.hasBell ? Color.accentColor : Color.secondary.opacity(0.4))
-                    .frame(width: 5, height: 5)
-                Text(info.title)
-                    .font(.system(size: 10))
-                    .foregroundStyle(info.hasBell ? .primary : .secondary)
-                    .lineLimit(1)
-                Spacer(minLength: 4)
-                if info.hasBell {
-                    Image(systemName: "bell.fill")
-                        .font(.system(size: 8))
-                        .foregroundStyle(Color.accentColor)
-                }
+        HStack(spacing: 4) {
+            Circle()
+                .fill(info.hasBell ? Color.accentColor : Color.secondary.opacity(0.4))
+                .frame(width: 5, height: 5)
+            Text(info.title)
+                .font(.system(size: 10))
+                .foregroundStyle(info.hasBell ? .primary : .secondary)
+                .lineLimit(1)
+            Spacer(minLength: 4)
+            if info.hasBell {
+                Image(systemName: "bell.fill")
+                    .font(.system(size: 8))
+                    .foregroundStyle(Color.accentColor)
             }
         }
-        .buttonStyle(.plain)
         .padding(.leading, 28)
         .padding(.vertical, 1)
     }

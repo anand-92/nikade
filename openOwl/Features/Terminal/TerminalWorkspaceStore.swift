@@ -341,6 +341,9 @@ final class TerminalWorkspaceStore {
     /// Maximize/restore: when set, this pane fills the tab area; others are hidden but kept alive
     var maximizedPaneID: UUID?
 
+    // Per-pane search state (paneID → search state, lazily created)
+    private(set) var paneSearchStates: [UUID: TerminalSearchState] = [:]
+
     // Per-pane title tracking (paneID → title)
     private(set) var paneTitles: [UUID: String] = [:]
 
@@ -451,6 +454,7 @@ final class TerminalWorkspaceStore {
             for pID in removedTab.splitTree.allPaneIDs {
                 paneTitles.removeValue(forKey: pID)
                 paneBellStates.removeValue(forKey: pID)
+                paneSearchStates.removeValue(forKey: pID)
             }
             tabProjectMap.removeValue(forKey: removedTab.id)
             tabs.remove(at: index)
@@ -615,6 +619,28 @@ final class TerminalWorkspaceStore {
         }
     }
 
+    // MARK: - Search
+
+    func searchState(for paneID: UUID) -> TerminalSearchState {
+        if let existing = paneSearchStates[paneID] { return existing }
+        let state = TerminalSearchState()
+        paneSearchStates[paneID] = state
+        return state
+    }
+
+    func startSearch(paneID: UUID) {
+        let state = searchState(for: paneID)
+        state.isSearching = true
+    }
+
+    func endSearch(paneID: UUID) {
+        guard let state = paneSearchStates[paneID] else { return }
+        state.isSearching = false
+        state.needle = ""
+        state.total = nil
+        state.selected = nil
+    }
+
     func handleBell(paneID: UUID, isTerminalVisible: Bool) {
         // Only suppress if user is actually looking at the terminal AND this pane is focused
         if isTerminalVisible,
@@ -645,6 +671,19 @@ final class TerminalWorkspaceStore {
         }
     }
 
+    /// Bell count for a project — lightweight alternative to paneInfos(for:).filter(\.hasBell).count.
+    /// Only reads tabs and paneBellStates (not paneTitles), reducing observation dependencies.
+    func bellCount(for projectID: String) -> Int {
+        let projectTabs = tabs.filter { tabProjectMap[$0.id] == projectID }
+        var count = 0
+        for tab in projectTabs {
+            for paneID in tab.splitTree.allPaneIDs where paneBellStates[paneID] != nil {
+                count += 1
+            }
+        }
+        return count
+    }
+
     func isPaneVisible(_ paneID: UUID, in tabID: UUID) -> Bool {
         guard activeTabID == tabID else { return false }
         guard let tab = tabs.first(where: { $0.id == tabID }) else { return false }
@@ -671,6 +710,7 @@ final class TerminalWorkspaceStore {
 
         paneTitles.removeValue(forKey: currentPane)
         paneBellStates.removeValue(forKey: currentPane)
+        paneSearchStates.removeValue(forKey: currentPane)
 
         tab.splitTree = newTree
 
