@@ -22,15 +22,21 @@ struct ContentView: View {
                         .allowsHitTesting(navigationStore.activeTab == .terminal)
 
                     if navigationStore.activeTab == .gitChanges {
-                        GitChangesView()
+                        NavigationStack {
+                            GitChangesView()
+                        }
                     }
 
                     if navigationStore.activeTab == .fileExplorer {
-                        FileExplorerView()
+                        NavigationStack {
+                            FileExplorerView()
+                        }
                     }
 
                     if navigationStore.activeTab == .deployments {
-                        DeploymentPanelView()
+                        NavigationStack {
+                            DeploymentPanelView()
+                        }
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -73,12 +79,7 @@ struct ContentView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: .openDeployment)) { notification in
             guard let id = notification.userInfo?["id"] as? String else { return }
-            // Switch to the deployment's project
-            if let dep = deploymentStore.deployments.first(where: { $0.id == id }) {
-                projectStore.activateProject(id: dep.projectID)
-            }
-            navigationStore.activeTab = .deployments
-            deploymentStore.selectedDeploymentID = id
+            navigationStore.openDeployment(id: id, deploymentStore: deploymentStore, projectStore: projectStore)
         }
     }
 

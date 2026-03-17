@@ -120,10 +120,10 @@ struct QuickOpenPanel: View {
         store.dismissQuickOpen()
         // Switch tab FIRST so the target view is in the hierarchy
         if store.isChangedFile(match.node) {
-            navigationStore.activeTab = .gitChanges
+            navigationStore.navigate(to: .gitChanges)
             gitStore.openDiff(forFileURL: match.node.url)
         } else {
-            navigationStore.activeTab = .fileExplorer
+            navigationStore.navigate(to: .fileExplorer)
         }
         // Then select node — FileExplorerView's onChange will fire
         DispatchQueue.main.async {

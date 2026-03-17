@@ -36,7 +36,7 @@ struct DeploymentRow: View {
         .onHover { hovering = $0 }
         .onTapGesture {
             deploymentStore.selectedDeploymentID = deployment.id
-            navigationStore.activeTab = .deployments
+            navigationStore.navigate(to: .deployments)
         }
         .contextMenu {
             if !deployment.isRemote {

@@ -515,7 +515,7 @@ struct FileExplorerView: View {
 
     private func openDiff(_ node: FileExplorerNode) {
         guard !node.isDirectory else { return }
-        navigationStore.activeTab = .gitChanges
+        navigationStore.navigate(to: .gitChanges)
         gitStore.openDiff(forFileURL: node.url)
     }
 

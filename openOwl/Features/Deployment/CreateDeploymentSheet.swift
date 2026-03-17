@@ -113,7 +113,7 @@ struct CreateDeploymentSheet: View {
         let finalName = name.trimmingCharacters(in: .whitespaces)
         let finalHealthURL = healthCheckURL.trimmingCharacters(in: .whitespaces)
 
-        navigationStore.activeTab = .deployments
+        navigationStore.navigate(to: .deployments)
         dismiss()
 
         if kind == .remote {

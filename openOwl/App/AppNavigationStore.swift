@@ -43,4 +43,18 @@ final class AppNavigationStore {
         let saved = UserDefaults.standard.string(forKey: "activeTab") ?? ""
         self.activeTab = ViewTab(rawValue: saved) ?? .terminal
     }
+
+    // MARK: - Unified Navigation API
+
+    func navigate(to tab: ViewTab) {
+        activeTab = tab
+    }
+
+    func openDeployment(id: String, deploymentStore: DeploymentStore, projectStore: ProjectStore) {
+        if let dep = deploymentStore.deployments.first(where: { $0.id == id }) {
+            projectStore.activateProject(id: dep.projectID)
+        }
+        deploymentStore.selectedDeploymentID = id
+        activeTab = .deployments
+    }
 }

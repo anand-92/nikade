@@ -7,6 +7,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     var workspaceStore: TerminalWorkspaceStore?
     weak var navigationStore: AppNavigationStore?
     weak var deploymentStore: DeploymentStore?
+    weak var projectStore: ProjectStore?
     private var localKeyMonitor: Any?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -59,11 +60,33 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func handleLocalKeyDown(_ event: NSEvent) -> Bool {
         guard let workspaceStore else { return false }
-        if navigationStore?.activeTab != .terminal { return false }
 
         let flags = event.modifierFlags.intersection([.command, .shift, .control, .option])
         guard flags.contains(.command) else { return false }
         guard !flags.contains(.control), !flags.contains(.option) else { return false }
+
+        // Cmd+number: global project/worktree switch.
+        // Switches terminal, sidebar, cwd, git, and files all at once.
+        if let chars = event.charactersIgnoringModifiers?.lowercased(),
+           let tabNumber = Int(chars), (1...9).contains(tabNumber),
+           !flags.contains(.shift) {
+            guard let projectStore else { return false }
+            let tabs = projectStore.orderedProjectTabs
+            let index = tabNumber - 1
+            guard index < tabs.count else { return true }
+            navigationStore?.navigate(to: .terminal)
+            projectStore.activateProject(id: tabs[index].id)
+            return true
+        }
+
+        // Cmd+Shift+Return: toggle maximize/restore current pane
+        if flags == [.command, .shift], event.keyCode == 36 {
+            workspaceStore.toggleMaximizeCurrentPane()
+            return true
+        }
+
+        // All other terminal shortcuts only work when terminal is active
+        guard navigationStore?.activeTab == .terminal else { return false }
 
         switch event.keyCode {
         case 123: // Left arrow
@@ -115,10 +138,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             } else {
                 workspaceStore.splitCurrent(axis: .horizontal)
             }
-            return true
-        case "1", "2", "3", "4", "5", "6", "7", "8", "9":
-            guard let tabNumber = Int(chars) else { return false }
-            workspaceStore.selectTab(index: tabNumber - 1)
             return true
         default:
             return false

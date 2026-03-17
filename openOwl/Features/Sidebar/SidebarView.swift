@@ -421,7 +421,7 @@ private struct PaneStatusRow: View {
 
     var body: some View {
         Button {
-            navigationStore.activeTab = .terminal
+            navigationStore.navigate(to: .terminal)
             workspace.activeTabID = info.tabID
             workspace.focusPane(info.paneID)
         } label: {
