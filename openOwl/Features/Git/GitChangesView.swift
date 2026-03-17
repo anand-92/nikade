@@ -451,6 +451,11 @@ struct GitChangesView: View {
                     }
                     commitDiffByFile(sections: sections)
                 }
+            } else if let change = store.selectedChange, isImagePath(change.path) {
+                WorkingTreeImageDiffView(
+                    change: change,
+                    repositoryURL: store.repositoryURL
+                )
             } else if store.selectedChange != nil, !store.selectedDiffText.isEmpty {
                 singleFileDiff(store.selectedDiffText)
             } else if store.selectedChange != nil {
@@ -960,6 +965,11 @@ struct GitChangesView: View {
 
     // MARK: - Helpers
 
+    private func isImagePath(_ path: String) -> Bool {
+        let ext = URL(fileURLWithPath: path).pathExtension.lowercased()
+        return Self.imageExtensions.contains(ext)
+    }
+
     private var hasAnyChanges: Bool {
         store.statusSnapshot?.hasAnyChanges ?? false
     }
@@ -1018,6 +1028,98 @@ struct GitChangesView: View {
 
     private let diffBgColor = AppPalette.surface
     private let diffTextColor = AppPalette.textPrimary
+}
+
+// MARK: - Working Tree Image Diff View
+
+private struct WorkingTreeImageDiffView: View {
+    let change: GitFileChange
+    let repositoryURL: URL?
+
+    @State private var newImage: NSImage?
+    @State private var oldImage: NSImage?
+    @State private var loaded = false
+
+    private var isNew: Bool { change.workTreeStatus == "?" || change.indexStatus == "A" }
+    private var isDeleted: Bool { change.workTreeStatus == "D" }
+
+    var body: some View {
+        HStack(spacing: 0) {
+            // Left: old version (from HEAD)
+            imageSide(
+                label: isNew ? nil : "Before",
+                color: .red,
+                image: isNew ? nil : oldImage,
+                placeholder: isNew ? "(new file)" : nil
+            )
+
+            Rectangle().fill(Color.secondary.opacity(0.2)).frame(width: 1)
+
+            // Right: current working tree version
+            imageSide(
+                label: isDeleted ? nil : "After",
+                color: .green,
+                image: isDeleted ? nil : newImage,
+                placeholder: isDeleted ? "(deleted)" : nil
+            )
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .task(id: change.id) {
+            await loadImages()
+        }
+    }
+
+    private func imageSide(label: String?, color: Color, image: NSImage?, placeholder: String?) -> some View {
+        ZStack {
+            if let image {
+                VStack(spacing: 4) {
+                    if let label {
+                        Text(label)
+                            .font(.system(size: 9, weight: .bold))
+                            .foregroundStyle(color)
+                    }
+                    Image(nsImage: image)
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                        .clipShape(RoundedRectangle(cornerRadius: 4))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 4)
+                                .stroke(color.opacity(0.3), lineWidth: 1)
+                        )
+                }
+                .padding(12)
+            } else if let placeholder {
+                Text(placeholder)
+                    .font(AppFonts.caption)
+                    .foregroundStyle(AppPalette.textTertiary)
+            } else if !loaded {
+                ProgressView().controlSize(.small)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(color.opacity(image != nil ? 0.04 : 0.02))
+    }
+
+    private func loadImages() async {
+        guard let repositoryURL else { loaded = true; return }
+
+        // Current file from disk
+        if !isDeleted {
+            let fileURL = repositoryURL.appendingPathComponent(change.path)
+            newImage = NSImage(contentsOf: fileURL)
+        }
+
+        // Old version from HEAD
+        if !isNew {
+            let git = GitService(workingDirectory: repositoryURL)
+            let ref = change.section == .staged ? "HEAD" : "HEAD"
+            if let data = try? await git.fileData(at: ref, path: change.path) {
+                oldImage = NSImage(data: data)
+            }
+        }
+
+        loaded = true
+    }
 }
 
 // MARK: - Diff Width Preference Key
