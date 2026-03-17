@@ -6,9 +6,9 @@ enum DeploymentKind: String, CaseIterable {
 }
 
 struct CreateDeploymentSheet: View {
-    @EnvironmentObject private var deploymentStore: DeploymentStore
-    @EnvironmentObject private var projectStore: ProjectStore
-    @EnvironmentObject private var navigationStore: AppNavigationStore
+    @Environment(DeploymentStore.self) private var deploymentStore
+    @Environment(ProjectStore.self) private var projectStore
+    @Environment(AppNavigationStore.self) private var navigationStore
     @Environment(\.dismiss) private var dismiss
 
     @State private var kind: DeploymentKind = .local

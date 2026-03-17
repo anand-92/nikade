@@ -1,6 +1,6 @@
 import CoreGraphics
 import Foundation
-import Combine
+import Observation
 
 struct TerminalTabState: Identifiable, Equatable {
     let id: UUID
@@ -31,6 +31,8 @@ struct SplitDividerInfo: Identifiable {
     let frame: CGRect
     let firstPaneID: UUID
     let secondPaneID: UUID
+    /// The pixel rect of the split node owning this divider (for drag ratio computation)
+    let splitRect: CGRect
 }
 
 enum PaneDropZone: Equatable {
@@ -40,6 +42,15 @@ enum PaneDropZone: Equatable {
 enum TerminalCloseAction {
     case none
     case closeWindow
+}
+
+struct PaneInfo: Identifiable {
+    let paneID: UUID
+    let tabID: UUID
+    let title: String
+    let bellTime: Date?   // nil = running, non-nil = bell received
+    var id: UUID { paneID }
+    var hasBell: Bool { bellTime != nil }
 }
 
 indirect enum TerminalSplitNode: Equatable {
@@ -283,7 +294,8 @@ indirect enum TerminalSplitNode: Equatable {
                 ratio: clampedRatio,
                 frame: dividerFrame,
                 firstPaneID: first.firstPaneID ?? UUID(),
-                secondPaneID: second.firstPaneID ?? UUID()
+                secondPaneID: second.firstPaneID ?? UUID(),
+                splitRect: rect
             )
 
             let prefix = path.isEmpty ? "" : "\(path)."
@@ -313,24 +325,35 @@ indirect enum TerminalSplitNode: Equatable {
 }
 
 @MainActor
-final class TerminalWorkspaceStore: ObservableObject {
-    @Published private(set) var tabs: [TerminalTabState] = []
-    @Published var activeTabID: UUID?
+@Observable
+final class TerminalWorkspaceStore {
+    private(set) var tabs: [TerminalTabState] = []
+    var activeTabID: UUID?
 
     /// Set by the host app to request first responder hand-off to a pane's NSView.
     var focusPaneHandler: ((UUID) -> Void)?
 
     /// Drag-to-reposition state
-    @Published var draggingPaneID: UUID?
-    @Published var dragOverPaneID: UUID?
-    @Published var dropZone: PaneDropZone?
+    var draggingPaneID: UUID?
+    var dragOverPaneID: UUID?
+    var dropZone: PaneDropZone?
+
+    /// Maximize/restore: when set, this pane fills the tab area; others are hidden but kept alive
+    var maximizedPaneID: UUID?
+
+    // Per-pane title tracking (paneID → title)
+    private(set) var paneTitles: [UUID: String] = [:]
+
+    // Pane bell notification state (paneID → last bell time)
+    private(set) var paneBellStates: [UUID: Date] = [:]
 
     // Per-project terminal tracking
-    @Published private(set) var activeProjectID: String?
+    private(set) var activeProjectID: String?
     private var tabProjectMap: [UUID: String] = [:]  // tabID → projectID
 
     func switchProject(_ projectID: String?) {
         activeProjectID = projectID
+        maximizedPaneID = nil  // Reset maximize when switching projects
 
         // Create initial tab if project has none
         let projectTabs = tabs.filter { tabProjectMap[$0.id] == projectID }
@@ -424,8 +447,12 @@ final class TerminalWorkspaceStore: ObservableObject {
         }
 
         if tabs.count > 1 {
-            let removedID = tabs[index].id
-            tabProjectMap.removeValue(forKey: removedID)
+            let removedTab = tabs[index]
+            for pID in removedTab.splitTree.allPaneIDs {
+                paneTitles.removeValue(forKey: pID)
+                paneBellStates.removeValue(forKey: pID)
+            }
+            tabProjectMap.removeValue(forKey: removedTab.id)
             tabs.remove(at: index)
 
             // Switch to next visible tab for this project
@@ -544,9 +571,24 @@ final class TerminalWorkspaceStore: ObservableObject {
         tabs[index] = tab
     }
 
+    /// Toggle maximize for the focused pane. If already maximized, restore.
+    func toggleMaximizeCurrentPane() {
+        guard let index = activeTabIndex else { return }
+        let tab = tabs[index]
+        guard tab.splitTree.leafCount > 1 else { return }
+
+        if let current = maximizedPaneID, tab.splitTree.containsPane(current) {
+            maximizedPaneID = nil
+        } else if let focusedPane = tab.focusedPaneID ?? tab.splitTree.firstPaneID {
+            maximizedPaneID = focusedPane
+        }
+    }
+
     func updateTitle(for paneID: UUID, title: String) {
         let normalized = normalizeTabTitle(title)
         guard !normalized.isEmpty else { return }
+
+        paneTitles[paneID] = normalized
 
         for index in tabs.indices {
             guard tabs[index].splitTree.containsPane(paneID) else { continue }
@@ -557,6 +599,8 @@ final class TerminalWorkspaceStore: ObservableObject {
 
     /// Called from TerminalNSView focus changes.
     func focusPane(_ paneID: UUID) {
+        clearBell(paneID: paneID)
+
         for index in tabs.indices {
             guard tabs[index].splitTree.containsPane(paneID) else { continue }
             let targetTabID = tabs[index].id
@@ -568,6 +612,36 @@ final class TerminalWorkspaceStore: ObservableObject {
             tabs[index].focusedPaneID = paneID
 
             return
+        }
+    }
+
+    func handleBell(paneID: UUID, isTerminalVisible: Bool) {
+        // Only suppress if user is actually looking at the terminal AND this pane is focused
+        if isTerminalVisible,
+           let activeTabID,
+           let tab = tabs.first(where: { $0.id == activeTabID }),
+           tab.focusedPaneID == paneID {
+            return
+        }
+        paneBellStates[paneID] = Date()
+    }
+
+    func clearBell(paneID: UUID) {
+        paneBellStates.removeValue(forKey: paneID)
+    }
+
+    /// Pane info for a specific project (used by Sidebar).
+    func paneInfos(for projectID: String) -> [PaneInfo] {
+        let projectTabs = tabs.filter { tabProjectMap[$0.id] == projectID }
+        return projectTabs.flatMap { tab in
+            tab.splitTree.allPaneIDs.map { paneID in
+                PaneInfo(
+                    paneID: paneID,
+                    tabID: tab.id,
+                    title: paneTitles[paneID] ?? tab.title,
+                    bellTime: paneBellStates[paneID]
+                )
+            }
         }
     }
 
@@ -594,6 +668,9 @@ final class TerminalWorkspaceStore: ObservableObject {
         let oldFrames = tab.splitTree.normalizedPaneFrames()
         guard let oldFrame = oldFrames[currentPane] else { return }
         guard let newTree = tab.splitTree.removingPane(currentPane) else { return }
+
+        paneTitles.removeValue(forKey: currentPane)
+        paneBellStates.removeValue(forKey: currentPane)
 
         tab.splitTree = newTree
 

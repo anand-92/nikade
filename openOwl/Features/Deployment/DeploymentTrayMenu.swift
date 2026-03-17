@@ -1,9 +1,9 @@
 import SwiftUI
 
 struct DeploymentTrayMenu: View {
-    @EnvironmentObject private var deploymentStore: DeploymentStore
-    @EnvironmentObject private var navigationStore: AppNavigationStore
-    @EnvironmentObject private var projectStore: ProjectStore
+    @Environment(DeploymentStore.self) private var deploymentStore
+    @Environment(AppNavigationStore.self) private var navigationStore
+    @Environment(ProjectStore.self) private var projectStore
 
     var body: some View {
         if deploymentStore.deployments.isEmpty {

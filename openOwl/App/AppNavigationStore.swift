@@ -1,5 +1,5 @@
-import Combine
 import Foundation
+import Observation
 
 enum ViewTab: String, CaseIterable, Hashable, Identifiable {
     case fileExplorer
@@ -33,6 +33,14 @@ enum ViewTab: String, CaseIterable, Hashable, Identifiable {
 }
 
 @MainActor
-final class AppNavigationStore: ObservableObject {
-    @Published var activeTab: ViewTab = .terminal
+@Observable
+final class AppNavigationStore {
+    var activeTab: ViewTab {
+        didSet { UserDefaults.standard.set(activeTab.rawValue, forKey: "activeTab") }
+    }
+
+    init() {
+        let saved = UserDefaults.standard.string(forKey: "activeTab") ?? ""
+        self.activeTab = ViewTab(rawValue: saved) ?? .terminal
+    }
 }

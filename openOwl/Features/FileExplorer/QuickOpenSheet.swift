@@ -3,9 +3,9 @@ import SwiftUI
 // MARK: - Quick Open Panel (Pure SwiftUI — no NSViewRepresentable)
 
 struct QuickOpenPanel: View {
-    @EnvironmentObject private var store: FileExplorerStore
-    @EnvironmentObject private var navigationStore: AppNavigationStore
-    @EnvironmentObject private var gitStore: GitChangesStore
+    @Environment(FileExplorerStore.self) private var store
+    @Environment(AppNavigationStore.self) private var navigationStore
+    @Environment(GitChangesStore.self) private var gitStore
     @State private var selectedIndex: Int = 0
     @FocusState private var isSearchFocused: Bool
 
@@ -23,6 +23,7 @@ struct QuickOpenPanel: View {
     }
 
     var body: some View {
+        @Bindable var store = store
         VStack(spacing: 0) {
             HStack(spacing: 8) {
                 Image(systemName: "magnifyingglass")
@@ -79,6 +80,7 @@ struct QuickOpenPanel: View {
         .frame(width: 500)
         .background(AppPalette.elevated)
         .clipShape(RoundedRectangle(cornerRadius: 10))
+        .glassEffectIfAvailable(in: RoundedRectangle(cornerRadius: 10))
         .overlay(
             RoundedRectangle(cornerRadius: 10)
                 .stroke(AppPalette.border, lineWidth: 1)

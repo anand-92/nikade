@@ -1,31 +1,32 @@
 import AppKit
-import Combine
 import Foundation
+import Observation
 
 @MainActor
-final class GitChangesStore: ObservableObject {
-    @Published private(set) var repositoryURL: URL?
-    @Published private(set) var statusSnapshot: GitStatusSnapshot?
-    @Published private(set) var branches: [String] = []
-    @Published var selectedBranch: String = ""
-    @Published var newBranchName: String = ""
+@Observable
+final class GitChangesStore {
+    private(set) var repositoryURL: URL?
+    private(set) var statusSnapshot: GitStatusSnapshot?
+    private(set) var branches: [String] = []
+    var selectedBranch: String = ""
+    var newBranchName: String = ""
 
-    @Published var selectedChange: GitFileChange?
-    @Published private(set) var selectedDiffText: String = ""
+    var selectedChange: GitFileChange?
+    private(set) var selectedDiffText: String = ""
 
-    @Published var commitMessage: String = ""
+    var commitMessage: String = ""
 
-    @Published private(set) var isRefreshing = false
-    @Published private(set) var isRunningCommand = false
-    @Published var errorMessage: String?
-    @Published var infoMessage: String?
+    private(set) var isRefreshing = false
+    private(set) var isRunningCommand = false
+    var errorMessage: String?
+    var infoMessage: String?
 
     // Git Graph
-    @Published private(set) var logEntries: [GitLogEntry] = []
-    @Published var selectedCommitHash: String?
-    @Published private(set) var hasMoreLog = true
-    @Published private(set) var commitFiles: [GitFileChange] = []
-    @Published private(set) var commitDiffText: String = ""
+    private(set) var logEntries: [GitLogEntry] = []
+    var selectedCommitHash: String?
+    private(set) var hasMoreLog = true
+    private(set) var commitFiles: [GitFileChange] = []
+    private(set) var commitDiffText: String = ""
     private let logPageSize = 50
 
     var hasDiscardableChanges: Bool {
@@ -33,7 +34,7 @@ final class GitChangesStore: ObservableObject {
         return !statusSnapshot.modified.isEmpty || !statusSnapshot.untracked.isEmpty
     }
 
-    @Published private(set) var isGeneratingMessage = false
+    private(set) var isGeneratingMessage = false
 
     private var gitService: GitService?
     private var watcher: FileWatcher?

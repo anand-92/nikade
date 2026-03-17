@@ -3,13 +3,13 @@ import SwiftUI
 @main
 struct openOwlApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
-    @StateObject private var ghosttyManager: GhosttyAppManager
-    @StateObject private var workspaceStore = TerminalWorkspaceStore()
-    @StateObject private var navigationStore = AppNavigationStore()
-    @StateObject private var projectStore: ProjectStore
-    @StateObject private var gitChangesStore = GitChangesStore()
-    @StateObject private var fileExplorerStore = FileExplorerStore()
-    @StateObject private var deploymentStore = DeploymentStore()
+    @State private var ghosttyManager: GhosttyAppManager
+    @State private var workspaceStore = TerminalWorkspaceStore()
+    @State private var navigationStore = AppNavigationStore()
+    @State private var projectStore: ProjectStore
+    @State private var gitChangesStore = GitChangesStore()
+    @State private var fileExplorerStore = FileExplorerStore()
+    @State private var deploymentStore = DeploymentStore()
 
     init() {
         Self.setupEnvironment()
@@ -20,28 +20,33 @@ struct openOwlApp: App {
         if let url = store.activeProjectURL {
             FileManager.default.changeCurrentDirectoryPath(url.path)
         }
-        _projectStore = StateObject(wrappedValue: store)
-        _ghosttyManager = StateObject(wrappedValue: GhosttyAppManager())
+        _projectStore = State(wrappedValue: store)
+        _ghosttyManager = State(wrappedValue: GhosttyAppManager())
     }
 
     var body: some Scene {
         WindowGroup {
             ContentView()
-                .environmentObject(ghosttyManager)
-                .environmentObject(workspaceStore)
-                .environmentObject(navigationStore)
-                .environmentObject(projectStore)
-                .environmentObject(gitChangesStore)
-                .environmentObject(fileExplorerStore)
-                .environmentObject(deploymentStore)
+                .environment(ghosttyManager)
+                .environment(workspaceStore)
+                .environment(navigationStore)
+                .environment(projectStore)
+                .environment(gitChangesStore)
+                .environment(fileExplorerStore)
+                .environment(deploymentStore)
                 .onAppear {
                     appDelegate.workspaceStore = workspaceStore
                     appDelegate.ghosttyManager = ghosttyManager
                     appDelegate.navigationStore = navigationStore
                     appDelegate.deploymentStore = deploymentStore
+                    appDelegate.projectStore = projectStore
                     deploymentStore.recoverRunningDeployments()
                     ghosttyManager.onPaneTitleChanged = { paneID, title in
                         workspaceStore.updateTitle(for: paneID, title: title)
+                    }
+                    ghosttyManager.onPaneBell = { paneID in
+                        let isTerminalVisible = navigationStore.activeTab == .terminal
+                        workspaceStore.handleBell(paneID: paneID, isTerminalVisible: isTerminalVisible)
                     }
                     syncActiveProjectContext()
                     UpdateChecker.shared.checkOnLaunchIfNeeded()
@@ -52,9 +57,9 @@ struct openOwlApp: App {
                 .onChange(of: navigationStore.activeTab) { _, _ in
                     syncActiveProjectContext()
                 }
-                .onReceive(gitChangesStore.$statusSnapshot) { snapshot in
+                .onChange(of: gitChangesStore.statusSnapshot?.branch) { _, newBranch in
                     // Keep sidebar branch display in sync with git status
-                    guard let snapshot,
+                    guard let snapshot = gitChangesStore.statusSnapshot,
                           let activeID = projectStore.activeProjectID,
                           let activeURL = projectStore.activeProjectURL,
                           snapshot.repositoryRoot.standardizedFileURL == activeURL.standardizedFileURL
@@ -76,9 +81,9 @@ struct openOwlApp: App {
 
         MenuBarExtra("openOwl", image: "MenuBarIcon") {
             DeploymentTrayMenu()
-                .environmentObject(deploymentStore)
-                .environmentObject(navigationStore)
-                .environmentObject(projectStore)
+                .environment(deploymentStore)
+                .environment(navigationStore)
+                .environment(projectStore)
         }
         .menuBarExtraStyle(.menu)
 

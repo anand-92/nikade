@@ -101,7 +101,7 @@ struct ProjectStoreHelpersTests {
             repositoryRoot: URL(fileURLWithPath: "/tmp"),
             branch: "main", upstreamBranch: nil, branchTrackingStatus: nil,
             aheadCount: 0, behindCount: 0,
-            staged: [], modified: [], untracked: []
+            staged: [], modified: [], untracked: [], untrackedTruncated: false
         )
         #expect(empty.hasAnyChanges == false)
         #expect(empty.hasStagedChanges == false)
@@ -111,7 +111,7 @@ struct ProjectStoreHelpersTests {
             branch: "main", upstreamBranch: nil, branchTrackingStatus: nil,
             aheadCount: 0, behindCount: 0,
             staged: [GitFileChange(path: "a", indexStatus: "A", workTreeStatus: " ", section: .staged)],
-            modified: [], untracked: []
+            modified: [], untracked: [], untrackedTruncated: false
         )
         #expect(withStaged.hasAnyChanges == true)
         #expect(withStaged.hasStagedChanges == true)

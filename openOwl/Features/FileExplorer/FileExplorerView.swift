@@ -68,10 +68,10 @@ private class EditTracker: TextViewCoordinator {
 // MARK: - FileExplorerView
 
 struct FileExplorerView: View {
-    @EnvironmentObject private var store: FileExplorerStore
-    @EnvironmentObject private var projectStore: ProjectStore
-    @EnvironmentObject private var gitStore: GitChangesStore
-    @EnvironmentObject private var navigationStore: AppNavigationStore
+    @Environment(FileExplorerStore.self) private var store
+    @Environment(ProjectStore.self) private var projectStore
+    @Environment(GitChangesStore.self) private var gitStore
+    @Environment(AppNavigationStore.self) private var navigationStore
 
     // Tab management
     @State private var openTabs: [EditorTab] = []

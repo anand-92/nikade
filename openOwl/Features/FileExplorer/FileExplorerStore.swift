@@ -1,6 +1,6 @@
 import AppKit
-import Combine
 import Foundation
+import Observation
 
 enum FileGitState: String, Hashable {
     case added
@@ -69,31 +69,28 @@ struct FileQuickOpenMatch: Identifiable, Hashable {
 }
 
 @MainActor
-final class FileExplorerStore: ObservableObject {
-    @Published private(set) var projectURL: URL?
-    @Published private(set) var rootNodes: [FileExplorerNode] = []
-    @Published private(set) var isRefreshing = false
-    @Published var selectedNodeID: String?
-    @Published private(set) var previewState: FilePreviewState = .none
-    @Published var errorMessage: String?
-    @Published var isQuickOpenPresented = false
-    @Published var quickOpenQuery: String = ""
-    @Published var quickOpenSelectionID: String?
+@Observable
+final class FileExplorerStore {
+    private(set) var projectURL: URL?
+    private(set) var rootNodes: [FileExplorerNode] = []
+    private(set) var isRefreshing = false
+    var selectedNodeID: String?
+    private(set) var previewState: FilePreviewState = .none
+    var errorMessage: String?
+    var isQuickOpenPresented = false
+    var quickOpenQuery: String = "" {
+        didSet {
+            if quickOpenQuery != oldValue { updateQuickOpenResults() }
+        }
+    }
+    var quickOpenSelectionID: String?
 
     private(set) var nodeIndex: [String: FileExplorerNode] = [:]
     private var searchableFileNodes: [FileExplorerNode] = []
     private var watcher: FileWatcher?
-    private var querySubscription: AnyCancellable?
-
     func setupQueryAutoSearch() {
-        guard querySubscription == nil else { return }
-        querySubscription = $quickOpenQuery
-            .dropFirst()
-            .removeDuplicates()
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] _ in
-                self?.updateQuickOpenResults()
-            }
+        // No-op: quickOpenQuery.didSet now triggers updateQuickOpenResults() directly.
+        // Kept for API compatibility with callers.
     }
 
     // Cache scan results per project to avoid re-scanning on switch
@@ -108,7 +105,7 @@ final class FileExplorerStore: ObservableObject {
         return nodeIndex[selectedNodeID]
     }
 
-    @Published private(set) var quickOpenResults: [FileQuickOpenMatch] = []
+    private(set) var quickOpenResults: [FileQuickOpenMatch] = []
     private var quickOpenWorkItem: DispatchWorkItem?
     private var quickOpenGeneration: Int = 0
 

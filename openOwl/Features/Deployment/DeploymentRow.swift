@@ -2,8 +2,8 @@ import SwiftUI
 
 struct DeploymentRow: View {
     let deployment: Deployment
-    @EnvironmentObject private var deploymentStore: DeploymentStore
-    @EnvironmentObject private var navigationStore: AppNavigationStore
+    @Environment(DeploymentStore.self) private var deploymentStore
+    @Environment(AppNavigationStore.self) private var navigationStore
     @State private var hovering = false
 
     var body: some View {

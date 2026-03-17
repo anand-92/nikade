@@ -1,23 +1,26 @@
 import AppKit
-import Combine
 import Darwin
+import Observation
 
 /// Manages the ghostty_app_t lifecycle and provides runtime callbacks.
-/// Injected as @EnvironmentObject throughout the SwiftUI view hierarchy.
-final class GhosttyAppManager: ObservableObject {
-    @Published private(set) var isReady = false
-    @Published private(set) var error: String?
+/// Injected via .environment() throughout the SwiftUI view hierarchy.
+@Observable
+final class GhosttyAppManager {
+    private(set) var isReady = false
+    private(set) var error: String?
 
     private(set) var app: ghostty_app_t?
     private var config: GhosttyConfig?
     private var paneSurfaceMap: [UUID: ghostty_surface_t] = [:]
     private var paneViewMap: [UUID: WeakTerminalView] = [:]
+    private var paneScrollViewMap: [UUID: WeakScrollView] = [:]
 
     private(set) var launchProfile = GhosttyLaunchProfile(
         configCommand: nil,
         fallbackShell: "/bin/zsh"
     )
     var onPaneTitleChanged: ((UUID, String) -> Void)?
+    var onPaneBell: ((UUID) -> Void)?
 
     /// Stores a reference to the active surface so clipboard callbacks can reach it.
     /// Updated when a TerminalNSView creates its surface.
@@ -174,11 +177,20 @@ final class GhosttyAppManager: ObservableObject {
         activeSurface = surface
     }
 
+    func registerScrollView(_ scrollView: TerminalScrollView, for paneID: UUID) {
+        paneScrollViewMap[paneID] = WeakScrollView(scrollView)
+    }
+
     func unregisterPane(_ paneID: UUID) {
         if let surface = paneSurfaceMap.removeValue(forKey: paneID), activeSurface == surface {
             activeSurface = nil
         }
         paneViewMap.removeValue(forKey: paneID)
+        paneScrollViewMap.removeValue(forKey: paneID)
+    }
+
+    func terminalView(for paneID: UUID) -> TerminalNSView? {
+        paneViewMap[paneID]?.value
     }
 
     func focusPane(_ paneID: UUID) -> Bool {
@@ -205,6 +217,31 @@ final class GhosttyAppManager: ObservableObject {
                 self?.onPaneTitleChanged?(paneID, title)
             }
             return false
+
+        case GHOSTTY_ACTION_SCROLLBAR:
+            guard let paneID = paneID(for: target) else { return false }
+            let v = action.action.scrollbar
+            let state = TerminalScrollbarState(total: v.total, offset: v.offset, len: v.len)
+            DispatchQueue.main.async { [weak self] in
+                self?.paneScrollViewMap[paneID]?.value?.updateScrollbar(state)
+            }
+            return true
+
+        case GHOSTTY_ACTION_CELL_SIZE:
+            guard let paneID = paneID(for: target) else { return false }
+            let v = action.action.cell_size
+            let size = CGSize(width: CGFloat(v.width), height: CGFloat(v.height))
+            DispatchQueue.main.async { [weak self] in
+                self?.paneScrollViewMap[paneID]?.value?.updateCellSize(size)
+            }
+            return true
+
+        case GHOSTTY_ACTION_RING_BELL:
+            guard let paneID = paneID(for: target) else { return false }
+            DispatchQueue.main.async { [weak self] in
+                self?.onPaneBell?(paneID)
+            }
+            return true
 
         default:
             return false
@@ -262,6 +299,14 @@ private final class WeakTerminalView {
     weak var value: TerminalNSView?
 
     init(_ value: TerminalNSView?) {
+        self.value = value
+    }
+}
+
+private final class WeakScrollView {
+    weak var value: TerminalScrollView?
+
+    init(_ value: TerminalScrollView?) {
         self.value = value
     }
 }
