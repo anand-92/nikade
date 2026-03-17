@@ -246,6 +246,29 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private func handleLocalKeyDown(_ event: NSEvent) -> Bool {
         guard let workspaceStore else { return false }
 
+        // Search shortcuts: Return (next), Shift+Return (previous), Esc (close).
+        // Must be before the Command guard — these keys carry no Command modifier.
+        if let tab = workspaceStore.tabs.first(where: { $0.id == workspaceStore.activeTabID }),
+           let paneID = tab.focusedPaneID ?? tab.splitTree.firstPaneID,
+           let searchState = workspaceStore.paneSearchStates[paneID],
+           searchState.isSearching {
+            switch event.keyCode {
+            case 36: // Return / Enter
+                let action = event.modifierFlags.contains(.shift)
+                    ? "navigate_search:previous"
+                    : "navigate_search:next"
+                ghosttyManager?.terminalView(for: paneID)?.performBindingAction(action)
+                return true
+            case 53: // Escape
+                workspaceStore.endSearch(paneID: paneID)
+                ghosttyManager?.terminalView(for: paneID)?.performBindingAction("end_search")
+                _ = ghosttyManager?.focusPane(paneID)
+                return true
+            default:
+                break
+            }
+        }
+
         let flags = event.modifierFlags.intersection([.command, .shift, .control, .option])
         guard flags.contains(.command) else { return false }
         guard !flags.contains(.control), !flags.contains(.option) else { return false }
@@ -273,45 +296,50 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // All other terminal shortcuts only work when terminal is active
         guard navigationStore?.activeTab == .terminal else { return false }
 
-        // If focus is on a text input (search field, commit message, etc.),
-        // let standard shortcuts (Cmd+A/C/V/X) pass through to the text field.
-        // Only intercept when the terminal NSView itself is the first responder.
-        if let firstResponder = NSApp.keyWindow?.firstResponder,
-           !(firstResponder is TerminalNSView) {
-            return false
-        }
+        // If focus is not on a TerminalNSView (e.g. search field, commit message),
+        // pass all events through so standard text-editing shortcuts work.
+        guard NSApp.keyWindow?.firstResponder is TerminalNSView else { return false }
 
-        switch event.keyCode {
-        case 123: // Left arrow
-            if flags.contains(.shift) {
-                workspaceStore.swapPaneWithNeighbor(.left)
-            } else {
-                workspaceStore.focusNeighbor(.left)
+        // Arrow key pane navigation: only intercept when multiple panes exist.
+        // Single-pane: let ghostty handle its own Cmd+arrow bindings.
+        let isMultiPane: Bool = {
+            guard let tab = workspaceStore.tabs.first(where: { $0.id == workspaceStore.activeTabID }) else { return false }
+            return tab.splitTree.leafCount > 1
+        }()
+
+        if isMultiPane {
+            switch event.keyCode {
+            case 123: // Left arrow
+                if flags.contains(.shift) {
+                    workspaceStore.swapPaneWithNeighbor(.left)
+                } else {
+                    workspaceStore.focusNeighbor(.left)
+                }
+                return true
+            case 124: // Right arrow
+                if flags.contains(.shift) {
+                    workspaceStore.swapPaneWithNeighbor(.right)
+                } else {
+                    workspaceStore.focusNeighbor(.right)
+                }
+                return true
+            case 125: // Down arrow
+                if flags.contains(.shift) {
+                    workspaceStore.swapPaneWithNeighbor(.down)
+                } else {
+                    workspaceStore.focusNeighbor(.down)
+                }
+                return true
+            case 126: // Up arrow
+                if flags.contains(.shift) {
+                    workspaceStore.swapPaneWithNeighbor(.up)
+                } else {
+                    workspaceStore.focusNeighbor(.up)
+                }
+                return true
+            default:
+                break
             }
-            return true
-        case 124: // Right arrow
-            if flags.contains(.shift) {
-                workspaceStore.swapPaneWithNeighbor(.right)
-            } else {
-                workspaceStore.focusNeighbor(.right)
-            }
-            return true
-        case 125: // Down arrow
-            if flags.contains(.shift) {
-                workspaceStore.swapPaneWithNeighbor(.down)
-            } else {
-                workspaceStore.focusNeighbor(.down)
-            }
-            return true
-        case 126: // Up arrow
-            if flags.contains(.shift) {
-                workspaceStore.swapPaneWithNeighbor(.up)
-            } else {
-                workspaceStore.focusNeighbor(.up)
-            }
-            return true
-        default:
-            break
         }
 
         guard let chars = event.charactersIgnoringModifiers?.lowercased() else { return false }

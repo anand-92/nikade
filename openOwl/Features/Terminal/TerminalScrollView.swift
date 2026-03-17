@@ -190,9 +190,11 @@ class TerminalScrollView: NSView {
     private static let acceptedDropTypes: Set<NSPasteboard.PasteboardType> = [.fileURL, .URL, .string]
 
     override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
-        NSLog("openOwl: [TerminalScrollView] draggingEntered types=%@", sender.draggingPasteboard.types?.map(\.rawValue) ?? [])
-        guard let types = sender.draggingPasteboard.types,
-              !Set(types).isDisjoint(with: Self.acceptedDropTypes) else { return [] }
+        let types = sender.draggingPasteboard.types?.map(\.rawValue) ?? []
+        NSLog("openOwl: [TerminalScrollView] draggingEntered types=%@", types)
+        // If paneDragTypeID appears, a pane drag leaked to AppKit (should not happen after fix).
+        guard let pbTypes = sender.draggingPasteboard.types,
+              !Set(pbTypes).isDisjoint(with: Self.acceptedDropTypes) else { return [] }
         return .copy
     }
 
@@ -208,7 +210,9 @@ class TerminalScrollView: NSView {
     }
 
     override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
-        terminalView.performDragOperation(sender)
+        NSLog("openOwl: [TerminalScrollView] performDragOperation types=%@",
+              sender.draggingPasteboard.types?.map(\.rawValue) ?? [])
+        return terminalView.performDragOperation(sender)
     }
 
     // MARK: - Mouse (legacy scroller support)

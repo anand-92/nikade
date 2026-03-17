@@ -11,6 +11,7 @@
 ## Release & Distribution
 
 - [x] v1.0.0 发布 — OpenOwl-1.0.0.dmg (40MB) 签名 + 公证，上传到 GitHub Releases
+- [x] v1.0.1 — Sidebar pane 行 UI 优化、分屏拖拽稳定性修复、FileExplorer MinimapView crash 修复
 
 ## Done
 
@@ -89,6 +90,13 @@
 - [x] Graph Layout 测试 — computeGraphLayout/GraphNode/GraphLayout 从 private 提升为 internal 以支持测试
 - [x] Sidebar bellCount 缓存 — TerminalWorkspaceStore.bellCount(for:) 轻量方法，减少 sidebar 观察依赖
 - [x] Terminal Search (Cmd+F) — TerminalSearchState (@Observable) + TerminalSearchOverlay (SwiftUI 浮层) + per-pane 独立搜索状态 + GhosttyApp 搜索回调 + debounce 策略 (>=3字符立即, <3字符 300ms)
+- [x] REQ-006 Claude 异常提醒 — 仅异常时显示可关闭提醒卡片（history.rss 轮询），关闭后忽略当前 incident，失败静默保留状态
+- [x] Cmd+F 菜单拦截修复 — 将 Cmd+F 处理移到 AppDelegate.handleLocalKeyDown（NSEvent local monitor 最高优先级），Terminal 菜单添加 "Find..." 菜单项
+- [x] 搜索框快捷键放行 — handleLocalKeyDown 添加 `firstResponder is TerminalNSView` guard，非终端焦点时放行所有快捷键
+- [x] Cmd+arrow 单 pane 冲突修复 — 仅 isMultiPane 时拦截方向键做 pane 导航，单 pane 时放行给 ghostty
+- [x] Sidebar PaneStatusRow UI 优化 — 字体 10→11pt、圆点 5→7px、纵向 padding 1→4pt、hover 背景 `.quaternary`、点击聚焦 pane、accessibility 支持
+- [x] Pane 拖拽稳定性修复 — 自定义 UTType `com.openowl.terminal.pane-drag` 避免 TerminalScrollView 拦截；移除 `draggingPaneID != nil` 条件解决时序竞争；全路径拖拽日志覆盖
+- [x] FileExplorer crash 修复 — fork CodeEditSourceEditor，修复 MinimapView `brightnessComponent` 对 catalog color 直接调用 crash，切换依赖指向 fork fix branch
 
 ## Pending Issues
 

@@ -124,11 +124,14 @@ struct FileExplorerView: View {
             previewImage = nil
         }
         .onChange(of: store.selectedNodeID) { _, newID in
-            // Auto-open file when selected externally (e.g. QuickOpen)
+            // Auto-open file when selected externally (e.g. QuickOpen).
+            // Defer state mutations to avoid "modifying state during view update".
             guard let newID,
                   let node = store.nodeIndex[newID],
                   !node.isDirectory else { return }
-            openFileInTab(node)
+            Task { @MainActor in
+                openFileInTab(node)
+            }
         }
         .onDisappear {
             saveAllDirtyTabs()

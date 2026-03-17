@@ -2,6 +2,12 @@ import AppKit
 import SwiftUI
 import UniformTypeIdentifiers
 
+/// Private UTType for in-app pane rearrangement drag.
+/// Using a dedicated type prevents TerminalScrollView (which accepts .string)
+/// from intercepting pane drags, and allows the drop overlay to be
+/// always-present without interfering with Finder file drops (.fileURL).
+private let paneDragTypeID = "com.openowl.terminal.pane-drag"
+
 struct TerminalWorkspaceView: View {
     let ghosttyApp: ghostty_app_t
 
@@ -253,6 +259,8 @@ private struct TerminalTabContentView: View {
                             PaneDragHandle(paneID: paneID)
                         }
 
+                        TerminalSearchOverlay(paneID: paneID)
+
                         TerminalPanel(
                             ghosttyApp: ghosttyApp,
                             paneID: paneID,
@@ -292,22 +300,26 @@ private struct TerminalTabContentView: View {
                         }
                     }
                     .overlay {
-                        // Only register pane-rearrangement drop when a pane drag is in progress.
-                        // Otherwise this .onDrop intercepts ALL drops (including file drops from Finder).
-                        if !isMaximized,
-                           workspace.draggingPaneID != nil,
-                           workspace.draggingPaneID != paneID {
+                        // Always register drop target (not conditional on draggingPaneID).
+                        // Conditional registration caused a timing race: SwiftUI re-renders
+                        // asynchronously, so the overlay wasn't ready when the drag first
+                        // entered the target pane — AppKit's TerminalScrollView caught it first.
+                        //
+                        // Safe to always register because paneDragTypeID is a private UTType
+                        // that TerminalScrollView never registers for — Finder file drops
+                        // (.fileURL) won't match it and will reach the AppKit layer unimpeded.
+                        if !isMaximized, workspace.draggingPaneID != paneID {
                             Color.clear
                                 .contentShape(Rectangle())
-                                .onDrop(of: [.text], delegate: PaneDropDelegate(
-                                    targetPaneID: paneID,
-                                    workspace: workspace,
-                                    viewSize: frame.size
-                                ))
+                                .onDrop(
+                                    of: [UTType(exportedAs: paneDragTypeID)],
+                                    delegate: PaneDropDelegate(
+                                        targetPaneID: paneID,
+                                        workspace: workspace,
+                                        viewSize: frame.size
+                                    )
+                                )
                         }
-                    }
-                    .overlay(alignment: .topTrailing) {
-                        TerminalSearchOverlay(paneID: paneID)
                     }
                     .position(x: frame.midX, y: frame.midY)
                     .zIndex(isMaximizedPane ? 2 : 0)
@@ -498,7 +510,16 @@ private struct PaneDragHandle: View {
             .onHover { isHovered = $0 }
             .onDrag {
                 workspace.draggingPaneID = paneID
-                return NSItemProvider(object: paneID.uuidString as NSString)
+                NSLog("openOwl: [PaneDrag] drag started pane=%@", paneID.uuidString)
+                // Use private UTType — prevents TerminalScrollView (.string acceptor)
+                // from intercepting this drag through the AppKit layer.
+                let provider = NSItemProvider()
+                let data = paneID.uuidString.data(using: .utf8)!
+                provider.registerDataRepresentation(
+                    forTypeIdentifier: paneDragTypeID,
+                    visibility: .all
+                ) { completion in completion(data, nil); return nil }
+                return provider
             }
 
             // Bottom separator
@@ -528,16 +549,24 @@ private struct PaneDropDelegate: DropDelegate {
     func dropUpdated(info: DropInfo) -> DropProposal? {
         guard workspace.draggingPaneID != nil,
               workspace.draggingPaneID != targetPaneID else {
+            // No active pane drag or drag is over its own source — reject silently.
+            // (overlay is always-present; this fires when cursor passes over non-drag drags)
             return DropProposal(operation: .cancel)
         }
 
         workspace.dragOverPaneID = targetPaneID
-        workspace.dropZone = detectZone(at: info.location)
+        let newZone = detectZone(at: info.location)
+        if newZone != workspace.dropZone {
+            NSLog("openOwl: [PaneDropDelegate] zone changed target=%@ zone=%@",
+                  targetPaneID.uuidString, "\(newZone)")
+            workspace.dropZone = newZone
+        }
         return DropProposal(operation: .move)
     }
 
     func dropExited(info: DropInfo) {
         if workspace.dragOverPaneID == targetPaneID {
+            NSLog("openOwl: [PaneDropDelegate] dropExited target=%@", targetPaneID.uuidString)
             workspace.dragOverPaneID = nil
             workspace.dropZone = nil
         }
@@ -546,11 +575,15 @@ private struct PaneDropDelegate: DropDelegate {
     func performDrop(info: DropInfo) -> Bool {
         guard let sourceID = workspace.draggingPaneID,
               sourceID != targetPaneID else {
+            NSLog("openOwl: [PaneDropDelegate] performDrop SKIPPED target=%@ draggingPane=%@",
+                  targetPaneID.uuidString, workspace.draggingPaneID?.uuidString ?? "nil")
             cleanup()
             return false
         }
 
         let zone = workspace.dropZone ?? .center
+        NSLog("openOwl: [PaneDropDelegate] performDrop source=%@ target=%@ zone=%@",
+              sourceID.uuidString, targetPaneID.uuidString, "\(zone)")
         workspace.movePaneToTarget(sourceID: sourceID, targetID: targetPaneID, zone: zone)
         cleanup()
         return true

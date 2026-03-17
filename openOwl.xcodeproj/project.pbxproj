@@ -111,8 +111,8 @@
 		56D3EFADA4D64C3ABBF4887E /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		59A610067D9D2B18B1055069 /* DeploymentPanelView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeploymentPanelView.swift; sourceTree = "<group>"; };
 		5B122245FE1DC1B610224F5B /* TerminalSearchState.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = TerminalSearchState.swift; sourceTree = "<group>"; };
-		5C122245FE1DC1B610224F5C /* TerminalSearchOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalSearchOverlay.swift; sourceTree = "<group>"; };
 		5BAFE9E75DAA3DB62ECD73CB /* FileWatcher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileWatcher.swift; sourceTree = "<group>"; };
+		5C122245FE1DC1B610224F5C /* TerminalSearchOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalSearchOverlay.swift; sourceTree = "<group>"; };
 		61BBA8C4BCDD5442FF64552D /* UpdateChecker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UpdateChecker.swift; sourceTree = "<group>"; };
 		61BBAD397E75BD6423E0EB63 /* SpinningIcon.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpinningIcon.swift; sourceTree = "<group>"; };
 		61C1A374304AF8134D201B42 /* GitService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GitService.swift; sourceTree = "<group>"; };
@@ -658,7 +658,7 @@
 					"@executable_path/../Frameworks",
 				);
 				LIBRARY_SEARCH_PATHS = "$(PROJECT_DIR)/GhosttyKit.xcframework/macos-arm64_x86_64";
-				MARKETING_VERSION = 1.0.0;
+				MARKETING_VERSION = 1.0.1;
 				OTHER_LDFLAGS = (
 					"-lghostty",
 					"-framework",
@@ -695,7 +695,7 @@
 		A9481ADEE39A2A3F06E9DEE8 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIconDev;
 				CODE_SIGN_ENTITLEMENTS = openOwl/Resources/openOwl.entitlements;
 				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
 				COMBINE_HIDPI_IMAGES = YES;
@@ -711,7 +711,7 @@
 					"@executable_path/../Frameworks",
 				);
 				LIBRARY_SEARCH_PATHS = "$(PROJECT_DIR)/GhosttyKit.xcframework/macos-arm64_x86_64";
-				MARKETING_VERSION = 1.0.0;
+				MARKETING_VERSION = 1.0.1;
 				OTHER_LDFLAGS = (
 					"-lghostty",
 					"-framework",
@@ -862,10 +862,10 @@
 /* Begin XCRemoteSwiftPackageReference section */
 		FC3996149C85E8C6346B63DE /* XCRemoteSwiftPackageReference "CodeEditSourceEditor" */ = {
 			isa = XCRemoteSwiftPackageReference;
-			repositoryURL = "https://github.com/CodeEditApp/CodeEditSourceEditor";
+			repositoryURL = "https://github.com/sanvibyfish/CodeEditSourceEditor";
 			requirement = {
-				kind = upToNextMajorVersion;
-				minimumVersion = 0.15.2;
+				branch = "fix/minimap-brightness-catalog-color";
+				kind = branch;
 			};
 		};
 /* End XCRemoteSwiftPackageReference section */

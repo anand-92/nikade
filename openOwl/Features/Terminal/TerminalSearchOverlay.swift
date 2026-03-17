@@ -18,6 +18,7 @@ struct TerminalSearchOverlay: View {
     var body: some View {
         if let state = searchState, state.isSearching {
             searchBar(state)
+                .frame(maxWidth: .infinity, alignment: .trailing)
                 .transition(.move(edge: .top).combined(with: .opacity))
         }
     }
@@ -88,8 +89,8 @@ struct TerminalSearchOverlay: View {
             RoundedRectangle(cornerRadius: AppSpacing.cornerRadius)
                 .strokeBorder(AppPalette.border, lineWidth: 0.5)
         )
-        .padding(.trailing, 12)
-        .padding(.top, 8)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 4)
         .onAppear { isTextFieldFocused = true }
     }
 
