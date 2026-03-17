@@ -28,6 +28,10 @@ ghostty-resources
 # Generated Xcode project
 *.xcodeproj
 
-# Secrets
+# Secrets & signing
 .env
 *.pem
+*.cer
+*.key
+*.p12
+*.pfx
