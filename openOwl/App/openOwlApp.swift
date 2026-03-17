@@ -10,6 +10,7 @@ struct openOwlApp: App {
     @State private var gitChangesStore = GitChangesStore()
     @State private var fileExplorerStore = FileExplorerStore()
     @State private var deploymentStore = DeploymentStore()
+    @State private var claudeStatusStore = ClaudeStatusStore()
 
     init() {
         Self.setupEnvironment()
@@ -34,6 +35,7 @@ struct openOwlApp: App {
                 .environment(gitChangesStore)
                 .environment(fileExplorerStore)
                 .environment(deploymentStore)
+                .environment(claudeStatusStore)
                 .onAppear {
                     appDelegate.workspaceStore = workspaceStore
                     appDelegate.ghosttyManager = ghosttyManager
@@ -50,6 +52,10 @@ struct openOwlApp: App {
                     }
                     syncActiveProjectContext()
                     UpdateChecker.shared.checkOnLaunchIfNeeded()
+                    claudeStatusStore.startPollingIfNeeded()
+                }
+                .onDisappear {
+                    claudeStatusStore.stopPolling()
                 }
                 .onChange(of: projectStore.activeProjectID) { _, _ in
                     syncActiveProjectContext()
