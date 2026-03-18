@@ -205,7 +205,9 @@ final class FileExplorerStore {
         for url in childURLs {
             if Self.shouldIgnore(url: url, gitContext: gitContext) { continue }
             let path = url.standardizedFileURL.path
-            if Self.isGitIgnored(path: path, gitContext: gitContext) { continue }
+            // Do NOT call isGitIgnored here: gitignore filtering is the responsibility
+            // of the initial tree scan (buildNode). expandDirectory is an explicit user
+            // action — showing empty children for an ignored directory is a regression.
             let rv: URLResourceValues
             do {
                 rv = try url.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey])
@@ -447,18 +449,23 @@ final class FileExplorerStore {
             if selectedNodeID == id { selectedNodeID = nil; previewState = .none }
         }
 
-        // Trash in background; restore failed items and surface error to user
+        // Trash off the main actor (FileExplorerStore is @MainActor; a plain Task
+        // would inherit it and block the UI). Task.detached runs on the cooperative
+        // pool; we await its result back on the main actor to update state.
         Task {
-            var failedNames: [String] = []
-            for url in urls {
-                do {
-                    try FileManager.default.trashItem(at: url, resultingItemURL: nil)
-                } catch {
-                    NSLog("openOwl: [FileExplorer] trashItem failed for %@: %@",
-                          url.path, error.localizedDescription)
-                    failedNames.append(url.lastPathComponent)
+            let failedNames: [String] = await Task.detached(priority: .userInitiated) {
+                var failed: [String] = []
+                for url in urls {
+                    do {
+                        try FileManager.default.trashItem(at: url, resultingItemURL: nil)
+                    } catch {
+                        NSLog("openOwl: [FileExplorer] trashItem failed for %@: %@",
+                              url.path, error.localizedDescription)
+                        failed.append(url.lastPathComponent)
+                    }
                 }
-            }
+                return failed
+            }.value
             if !failedNames.isEmpty {
                 errorMessage = "无法删除：\(failedNames.joined(separator: "、"))"
                 refreshNow()  // re-scan to restore failed items in the tree
