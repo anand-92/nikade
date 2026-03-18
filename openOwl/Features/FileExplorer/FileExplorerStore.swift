@@ -1,6 +1,6 @@
 import AppKit
-import Combine
 import Foundation
+import Observation
 
 enum FileGitState: String, Hashable {
     case added
@@ -69,31 +69,28 @@ struct FileQuickOpenMatch: Identifiable, Hashable {
 }
 
 @MainActor
-final class FileExplorerStore: ObservableObject {
-    @Published private(set) var projectURL: URL?
-    @Published private(set) var rootNodes: [FileExplorerNode] = []
-    @Published private(set) var isRefreshing = false
-    @Published var selectedNodeID: String?
-    @Published private(set) var previewState: FilePreviewState = .none
-    @Published var errorMessage: String?
-    @Published var isQuickOpenPresented = false
-    @Published var quickOpenQuery: String = ""
-    @Published var quickOpenSelectionID: String?
+@Observable
+final class FileExplorerStore {
+    private(set) var projectURL: URL?
+    private(set) var rootNodes: [FileExplorerNode] = []
+    private(set) var isRefreshing = false
+    var selectedNodeID: String?
+    private(set) var previewState: FilePreviewState = .none
+    var errorMessage: String?
+    var isQuickOpenPresented = false
+    var quickOpenQuery: String = "" {
+        didSet {
+            if quickOpenQuery != oldValue { updateQuickOpenResults() }
+        }
+    }
+    var quickOpenSelectionID: String?
 
     private(set) var nodeIndex: [String: FileExplorerNode] = [:]
     private var searchableFileNodes: [FileExplorerNode] = []
     private var watcher: FileWatcher?
-    private var querySubscription: AnyCancellable?
-
     func setupQueryAutoSearch() {
-        guard querySubscription == nil else { return }
-        querySubscription = $quickOpenQuery
-            .dropFirst()
-            .removeDuplicates()
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] _ in
-                self?.updateQuickOpenResults()
-            }
+        // No-op: quickOpenQuery.didSet now triggers updateQuickOpenResults() directly.
+        // Kept for API compatibility with callers.
     }
 
     // Cache scan results per project to avoid re-scanning on switch
@@ -108,7 +105,7 @@ final class FileExplorerStore: ObservableObject {
         return nodeIndex[selectedNodeID]
     }
 
-    @Published private(set) var quickOpenResults: [FileQuickOpenMatch] = []
+    private(set) var quickOpenResults: [FileQuickOpenMatch] = []
     private var quickOpenWorkItem: DispatchWorkItem?
     private var quickOpenGeneration: Int = 0
 
@@ -189,7 +186,11 @@ final class FileExplorerStore: ObservableObject {
 
     func refreshNow() {
         Task {
-            await refresh()
+            if rootNodes.isEmpty {
+                await refresh()        // First load: shallow + full (instant feedback)
+            } else {
+                await refreshFullOnly() // Subsequent: full only (preserves expanded tree)
+            }
         }
     }
 
@@ -197,20 +198,46 @@ final class FileExplorerStore: ObservableObject {
     func expandDirectory(_ dirPath: String) {
         guard let node = nodeIndex[dirPath], node.isDirectory, node.children == nil else { return }
 
+        let gitContext = currentGitContext
         // Scan this directory synchronously (single directory is fast)
         let childURLs = Self.sortEntries(Self.directoryEntries(at: node.url))
         var newChildren: [FileExplorerNode] = []
         for url in childURLs {
-            if Self.shouldIgnore(url: url, gitContext: .empty) { continue }
+            if Self.shouldIgnore(url: url, gitContext: gitContext) { continue }
             let path = url.standardizedFileURL.path
-            let rv = try? url.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey])
-            let isDir = rv?.isDirectory ?? false
-            let isSym = rv?.isSymbolicLink ?? false
+            // Do NOT call isGitIgnored here: gitignore filtering is the responsibility
+            // of the initial tree scan (buildNode). expandDirectory is an explicit user
+            // action — showing empty children for an ignored directory is a regression.
+            let rv: URLResourceValues
+            do {
+                rv = try url.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey])
+            } catch let error as NSError where error.code == NSFileNoSuchFileError {
+                continue  // file removed between enumeration and stat — skip silently
+            } catch {
+                NSLog("openOwl: [FileExplorer] resourceValues failed for %@: %@",
+                      url.path, error.localizedDescription)
+                continue  // skip rather than misclassify as file
+            }
+            let isDir = rv.isDirectory ?? false
+            let isSym = rv.isSymbolicLink ?? false
+
+            // Compute git state from the cached context
+            var gitState: FileGitState? = gitContext.statusByAbsolutePath[path]
+            if isDir && !isSym {
+                // Directory: infer from any status entries under this path
+                let prefix = path + "/"
+                for (statusPath, fileState) in gitContext.statusByAbsolutePath {
+                    if statusPath.hasPrefix(prefix) {
+                        gitState = Self.mergeGitState(gitState, fileState)
+                    }
+                }
+            }
+
             let child = FileExplorerNode(
                 id: path, url: url,
                 name: Self.displayName(for: url),
                 isDirectory: isDir && !isSym,
-                gitState: nil,
+                gitState: gitState,
                 children: (isDir && !isSym) ? nil : nil // lazy for subdirs too
             )
             nodeIndex[child.id] = child
@@ -422,10 +449,26 @@ final class FileExplorerStore: ObservableObject {
             if selectedNodeID == id { selectedNodeID = nil; previewState = .none }
         }
 
-        // Trash in background
-        DispatchQueue.global(qos: .userInitiated).async {
-            for url in urls {
-                try? FileManager.default.trashItem(at: url, resultingItemURL: nil)
+        // Trash off the main actor (FileExplorerStore is @MainActor; a plain Task
+        // would inherit it and block the UI). Task.detached runs on the cooperative
+        // pool; we await its result back on the main actor to update state.
+        Task {
+            let failedNames: [String] = await Task.detached(priority: .userInitiated) {
+                var failed: [String] = []
+                for url in urls {
+                    do {
+                        try FileManager.default.trashItem(at: url, resultingItemURL: nil)
+                    } catch {
+                        NSLog("openOwl: [FileExplorer] trashItem failed for %@: %@",
+                              url.path, error.localizedDescription)
+                        failed.append(url.lastPathComponent)
+                    }
+                }
+                return failed
+            }.value
+            if !failedNames.isEmpty {
+                errorMessage = "无法删除：\(failedNames.joined(separator: "、"))"
+                refreshNow()  // re-scan to restore failed items in the tree
             }
         }
     }
@@ -492,6 +535,7 @@ final class FileExplorerStore: ObservableObject {
         guard projectURL == capturedURL else { return }
         NSLog("FileExplorer: full scan %.0fms (%d nodes)", (CFAbsoluteTimeGetCurrent() - t1) * 1000, fullResult.index.count)
 
+        currentGitContext = gitContext
         rootNodes = fullResult.nodes
         nodeIndex = fullResult.index
         searchableFileNodes = sortedFiles
@@ -538,6 +582,7 @@ final class FileExplorerStore: ObservableObject {
         guard self.projectURL == capturedURL else { return }
         NSLog("FileExplorer: background refresh %.0fms (%d nodes)", (CFAbsoluteTimeGetCurrent() - t1) * 1000, fullResult.index.count)
 
+        currentGitContext = gitContext
         rootNodes = fullResult.nodes
         nodeIndex = fullResult.index
         searchableFileNodes = sortedFiles
@@ -559,6 +604,10 @@ final class FileExplorerStore: ObservableObject {
         watcher = FileWatcher(directoryURL: projectURL) { [weak self] in
             self?.refreshNow()
         }
+        if watcher == nil {
+            NSLog("openOwl: [FileExplorer] FileWatcher init failed for %@ — auto-refresh unavailable",
+                  projectURL.path)
+        }
         watcher?.start()
     }
 
@@ -579,15 +628,27 @@ final class FileExplorerStore: ObservableObject {
         previewState = Self.makePreviewState(for: node.url)
     }
 
+    /// Most recent git context (status + ignore rules). Updated after each full scan.
+    /// Used by expandDirectory so lazily-loaded children show correct git state.
+    private var currentGitContext: GitContext = .empty
+
     private var cachedRepoRoot: [String: URL] = [:]
 
     private func repoRoot(for projectURL: URL) async -> URL? {
         let key = projectURL.path
         if let cached = cachedRepoRoot[key] { return cached }
         let probe = GitService(workingDirectory: projectURL)
-        guard let root = try? await probe.repositoryRoot() else { return nil }
-        cachedRepoRoot[key] = root
-        return root
+        do {
+            let root = try await probe.repositoryRoot()
+            cachedRepoRoot[key] = root
+            return root
+        } catch GitServiceError.notGitRepository {
+            return nil
+        } catch {
+            NSLog("openOwl: [FileExplorer] repoRoot failed for %@: %@",
+                  projectURL.path, error.localizedDescription)
+            return nil
+        }
     }
 
     /// Fast: only gitignore list, no status
@@ -598,7 +659,8 @@ final class FileExplorerStore: ObservableObject {
         var ignoredExactPaths: Set<String> = []
         var ignoredDirectoryPrefixes: [String] = []
 
-        if let ignoredPaths = try? await gitService.ignoredPaths() {
+        do {
+            let ignoredPaths = try await gitService.ignoredPaths()
             for ignoredPath in ignoredPaths {
                 let normalized = ignoredPath.trimmingCharacters(in: .whitespacesAndNewlines)
                 guard !normalized.isEmpty else { continue }
@@ -618,6 +680,11 @@ final class FileExplorerStore: ObservableObject {
                     ignoredExactPaths.insert(absolutePath)
                 }
             }
+        } catch GitServiceError.notGitRepository {
+            return .empty
+        } catch {
+            NSLog("openOwl: [FileExplorer] loadIgnoreContext failed for %@: %@",
+                  projectURL.path, error.localizedDescription)
         }
 
         let compactedPrefixes = Self.compactDirectoryPrefixes(ignoredDirectoryPrefixes)
@@ -640,7 +707,8 @@ final class FileExplorerStore: ObservableObject {
         let gitService = GitService(workingDirectory: repositoryRoot)
         var statusMap: [String: FileGitState] = [:]
 
-        if let snapshot = try? await gitService.status() {
+        do {
+            let snapshot = try await gitService.status()
             let allChanges = snapshot.staged + snapshot.modified + snapshot.untracked
             for change in allChanges {
                 let absolutePath = repositoryRoot
@@ -651,6 +719,11 @@ final class FileExplorerStore: ObservableObject {
                 let existing = statusMap[absolutePath]
                 statusMap[absolutePath] = Self.mergeGitState(existing, state)
             }
+        } catch GitServiceError.notGitRepository {
+            return [:]
+        } catch {
+            NSLog("openOwl: [FileExplorer] loadGitStatus failed for %@: %@",
+                  projectURL.path, error.localizedDescription)
         }
         return statusMap
     }
@@ -825,9 +898,20 @@ extension FileExplorerStore {
         }
 
         let path = url.standardizedFileURL.path
-        let resourceValues = try? url.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey])
-        let isDirectory = resourceValues?.isDirectory ?? false
-        let isSymbolicLink = resourceValues?.isSymbolicLink ?? false
+        let isDirectory: Bool
+        let isSymbolicLink: Bool
+        do {
+            let rv = try url.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey])
+            isDirectory = rv.isDirectory ?? false
+            isSymbolicLink = rv.isSymbolicLink ?? false
+        } catch let err as NSError
+            where err.code == NSFileNoSuchFileError || err.code == NSFileReadNoSuchFileError {
+            return nil  // Race condition: file disappeared between scan and build
+        } catch {
+            NSLog("openOwl: [FileExplorer] buildNode resourceValues failed for %@: %@",
+                  url.path, error.localizedDescription)
+            return nil
+        }
 
         if isDirectory && !isSymbolicLink {
             // Don't recurse into gitignored directories (node_modules etc.)
@@ -906,24 +990,40 @@ extension FileExplorerStore {
     }
 
     nonisolated static func directoryEntries(at directoryURL: URL) -> [URL] {
-        (try? FileManager.default.contentsOfDirectory(
-            at: directoryURL,
-            includingPropertiesForKeys: [.isDirectoryKey, .isSymbolicLinkKey],
-            options: [.skipsPackageDescendants]
-        )) ?? []
+        do {
+            return try FileManager.default.contentsOfDirectory(
+                at: directoryURL,
+                includingPropertiesForKeys: [.isDirectoryKey, .isSymbolicLinkKey],
+                options: [.skipsPackageDescendants]
+            )
+        } catch let err as NSError
+            where err.code == NSFileReadNoSuchFileError || err.code == NSFileNoSuchFileError {
+            return []  // Directory was deleted just before scan — expected, silent
+        } catch {
+            NSLog("openOwl: [FileExplorer] directoryEntries failed for %@: %@",
+                  directoryURL.path, error.localizedDescription)
+            return []
+        }
     }
 
     nonisolated static func sortEntries(_ entries: [URL]) -> [URL] {
-        entries.sorted { lhs, rhs in
-            let lhsValues = try? lhs.resourceValues(forKeys: [.isDirectoryKey])
-            let rhsValues = try? rhs.resourceValues(forKeys: [.isDirectoryKey])
-            let lhsIsDirectory = lhsValues?.isDirectory ?? false
-            let rhsIsDirectory = rhsValues?.isDirectory ?? false
-
-            if lhsIsDirectory != rhsIsDirectory {
-                return lhsIsDirectory
+        // Pre-compute isDirectory once per URL (O(n)) rather than inside the
+        // comparator (O(n log n)), and log failures instead of silently defaulting.
+        var isDirectoryCache: [URL: Bool] = Dictionary(minimumCapacity: entries.count)
+        for url in entries {
+            do {
+                let rv = try url.resourceValues(forKeys: [.isDirectoryKey])
+                isDirectoryCache[url] = rv.isDirectory ?? false
+            } catch {
+                NSLog("openOwl: [FileExplorer] sortEntries resourceValues failed for %@: %@",
+                      url.path, error.localizedDescription)
+                isDirectoryCache[url] = false
             }
-
+        }
+        return entries.sorted { lhs, rhs in
+            let lhsIsDirectory = isDirectoryCache[lhs] ?? false
+            let rhsIsDirectory = isDirectoryCache[rhs] ?? false
+            if lhsIsDirectory != rhsIsDirectory { return lhsIsDirectory }
             return displayName(for: lhs)
                 .localizedStandardCompare(displayName(for: rhs)) == .orderedAscending
         }

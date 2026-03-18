@@ -18,42 +18,42 @@ enum AppConstants {
 
 // MARK: - Design System
 
-/// 暗色调色盘 — 4 层背景 + 3 层文字 + 边框 + 强调色
+/// 语义调色盘 — 自适应亮/暗模式，尊重用户系统设置
 enum AppPalette {
-    // 背景 4 层
-    static let base      = Color(nsColor: NSColor(red: 0.078, green: 0.078, blue: 0.086, alpha: 1)) // #141416
-    static let surface   = Color(nsColor: NSColor(red: 0.110, green: 0.110, blue: 0.122, alpha: 1)) // #1c1c1f
-    static let elevated  = Color(nsColor: NSColor(red: 0.141, green: 0.141, blue: 0.157, alpha: 1)) // #242428
-    static let overlay   = Color(nsColor: NSColor(red: 0.173, green: 0.173, blue: 0.192, alpha: 1)) // #2c2c31
+    // 背景 4 层（system semantic colors adapt to light/dark mode）
+    static let base      = Color(nsColor: .windowBackgroundColor)
+    static let surface   = Color(nsColor: .controlBackgroundColor)
+    static let elevated  = Color(nsColor: .underPageBackgroundColor)
+    static let overlay   = Color(nsColor: .controlBackgroundColor)
 
     // 文字 3 层
-    static let textPrimary   = Color(nsColor: NSColor(white: 0.91, alpha: 1))
-    static let textSecondary = Color(nsColor: NSColor(white: 0.56, alpha: 1))
-    static let textTertiary  = Color(nsColor: NSColor(white: 0.35, alpha: 1))
+    static let textPrimary: Color   = .primary
+    static let textSecondary: Color = .secondary
+    static let textTertiary  = Color(nsColor: .tertiaryLabelColor)
 
     // 边框
-    static let border      = Color.white.opacity(0.06)
-    static let borderHover = Color.white.opacity(0.12)
+    static let border      = Color(nsColor: .separatorColor)
+    static let borderHover = Color(nsColor: .quaternaryLabelColor)
 
-    // 强调色
-    static let accent = Color(nsColor: NSColor(red: 0.42, green: 0.71, blue: 0.93, alpha: 1))
+    // 强调色（respects user's system accent color）
+    static let accent: Color = .accentColor
 
     // NSColor 变体 — 供 CodeEditSourceEditor 等需要 NSColor 的 API 使用
     enum ns {
-        static let surface   = NSColor(red: 0.110, green: 0.110, blue: 0.122, alpha: 1)
-        static let elevated  = NSColor(red: 0.141, green: 0.141, blue: 0.157, alpha: 1)
-        static let textPrimary = NSColor(white: 0.91, alpha: 1)
-        static let accent    = NSColor(red: 0.42, green: 0.71, blue: 0.93, alpha: 1)
+        static let surface: NSColor   = .controlBackgroundColor
+        static let elevated: NSColor  = .underPageBackgroundColor
+        static let textPrimary: NSColor = .labelColor
+        static let accent: NSColor    = .controlAccentColor
     }
 }
 
 enum AppColors {
     /// 选中/活动态背景
-    static let activeBackground = AppPalette.accent.opacity(0.12)
+    static let activeBackground = Color.accentColor.opacity(0.12)
     /// 悬停态背景
-    static let hoverBackground = Color.white.opacity(0.05)
+    static let hoverBackground = Color(nsColor: .unemphasizedSelectedContentBackgroundColor)
     /// 选中边框
-    static let selectedBorder = AppPalette.accent
+    static let selectedBorder: Color = .accentColor
 
     // 状态色
     static let error = Color.red

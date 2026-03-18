@@ -1,7 +1,9 @@
 import SwiftUI
 
 struct SidebarView: View {
-    @EnvironmentObject private var projectStore: ProjectStore
+    @Environment(ProjectStore.self) private var projectStore
+    @Environment(ClaudeStatusStore.self) private var claudeStatusStore
+    @Environment(\.openURL) private var openURL
 
     /// Selection binding — only branch rows and worktree rows are selectable.
     /// Folder headers have no .tag() and are never highlighted.
@@ -33,7 +35,18 @@ struct SidebarView: View {
         )
     }
 
+    /// Map project ID → shortcut number (1-based), derived from orderedProjectTabs
+    private var shortcutMap: [String: Int] {
+        var map: [String: Int] = [:]
+        for (index, item) in projectStore.orderedProjectTabs.enumerated() where index < 9 {
+            map[item.id] = index + 1
+        }
+        return map
+    }
+
     var body: some View {
+        let shortcuts = shortcutMap
+
         List(selection: listSelection) {
             ForEach(projectStore.rootProjects) { project in
                 // 1) Project header — no .tag(), never selectable
@@ -41,11 +54,16 @@ struct SidebarView: View {
 
                 // 2) Expanded children: branch row (always) + worktree rows
                 if projectStore.isExpanded(project.id) {
-                    BranchRow(branch: project.lastBranch ?? "No commits yet", path: project.path)
-                        .tag("branch-\(project.id)")
+                    BranchRow(
+                        branch: project.lastBranch ?? "No commits yet",
+                        path: project.path,
+                        projectID: project.id,
+                        shortcutNumber: shortcuts[project.id]
+                    )
+                    .tag("branch-\(project.id)")
 
                     ForEach(projectStore.worktrees(for: project.id)) { wt in
-                        WorktreeRow(wt: wt)
+                        WorktreeRow(wt: wt, projectID: wt.id, shortcutNumber: shortcuts[wt.id])
                             .tag(wt.id)
                     }
                 }
@@ -53,6 +71,20 @@ struct SidebarView: View {
         }
         .listStyle(.sidebar)
         .navigationTitle("Projects")
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            if claudeStatusStore.shouldShowIncidentBanner {
+                ClaudeIncidentSidebarCard(
+                    title: claudeStatusStore.bannerTitle,
+                    onOpenStatus: { openURL(claudeStatusStore.bannerIncidentURL) },
+                    onDismiss: { claudeStatusStore.dismissCurrentIncident() }
+                )
+                .padding(.horizontal, 8)
+                .padding(.top, 8)
+                .padding(.bottom, 10)
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+        }
+        .animation(.easeOut(duration: 0.15), value: claudeStatusStore.shouldShowIncidentBanner)
         .overlay {
             if projectStore.projects.isEmpty {
                 ContentUnavailableView {
@@ -80,11 +112,66 @@ struct SidebarView: View {
     }
 }
 
+private struct ClaudeIncidentSidebarCard: View {
+    let title: String
+    let onOpenStatus: () -> Void
+    let onDismiss: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .top, spacing: 8) {
+                Image(systemName: "exclamationmark.triangle")
+                    .foregroundStyle(Color.yellow)
+                Text(title)
+                    .font(.system(size: 14, weight: .semibold))
+                    .lineLimit(2)
+                    .multilineTextAlignment(.leading)
+                    .foregroundStyle(Color.yellow)
+
+                Spacer(minLength: 4)
+
+                Button(action: onDismiss) {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(Color.yellow.opacity(0.9))
+                }
+                .buttonStyle(.plain)
+            }
+
+            Text("Anthropic is reporting an active incident.")
+                .font(.system(size: 12))
+                .foregroundStyle(.primary)
+                .lineLimit(2)
+
+            Button(action: onOpenStatus) {
+                HStack(spacing: 4) {
+                    Text("Open status page")
+                    Image(systemName: "arrow.up.right")
+                        .font(.system(size: 10, weight: .semibold))
+                }
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(Color.yellow)
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .background(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(Color.yellow.opacity(0.12))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .stroke(Color.yellow.opacity(0.45), lineWidth: 1)
+        )
+    }
+}
+
 // MARK: - Project Header Row (flat, no nested children)
 
 private struct ProjectHeaderRow: View {
     let project: ProjectItem
-    @EnvironmentObject private var projectStore: ProjectStore
+    @Environment(ProjectStore.self) private var projectStore
     @State private var creating = false
     @State private var hovering = false
     private var expanded: Bool { projectStore.isExpanded(project.id) }
@@ -186,32 +273,60 @@ private struct ProjectHeaderRow: View {
 private struct BranchRow: View {
     let branch: String
     let path: String
+    let projectID: String
+    var shortcutNumber: Int?
 
+    @Environment(TerminalWorkspaceStore.self) private var workspace
     @State private var hovering = false
 
+    private var paneInfos: [PaneInfo] { workspace.paneInfos(for: projectID) }
+    private var unreadCount: Int { workspace.bellCount(for: projectID) }
+
     var body: some View {
-        HStack(spacing: 5) {
-            Image(systemName: "arrow.triangle.branch")
-                .font(.system(size: 12))
-            Text(branch)
-                .font(.system(size: 12))
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 5) {
+                Image(systemName: "arrow.triangle.branch")
+                    .font(.system(size: 12))
+                Text(branch)
+                    .font(.system(size: 12))
 
-            Spacer(minLength: 4)
+                Spacer(minLength: 4)
 
-            if hovering {
-                Button {
-                    NSPasteboard.general.clearContents()
-                    NSPasteboard.general.setString(path, forType: .string)
-                } label: {
-                    Image(systemName: "doc.on.doc")
-                        .font(.system(size: 9))
+                if unreadCount > 0 {
+                    Text("\(unreadCount)")
+                        .font(AppFonts.badge)
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 4)
+                        .background(Capsule().fill(Color.accentColor))
                 }
-                .buttonStyle(.plain)
-                .foregroundStyle(.tertiary)
-                .help("Copy path")
+
+                if let n = shortcutNumber {
+                    Text("\u{2318}\(n)")
+                        .font(AppFonts.badge)
+                        .foregroundStyle(.tertiary)
+                }
+
+                if hovering {
+                    Button {
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString(path, forType: .string)
+                    } label: {
+                        Image(systemName: "doc.on.doc")
+                            .font(.system(size: 9))
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(.tertiary)
+                    .help("Copy path")
+                }
+            }
+            .padding(.leading, 16)
+
+            if !paneInfos.isEmpty {
+                ForEach(paneInfos) { info in
+                    PaneStatusRow(info: info)
+                }
             }
         }
-        .padding(.leading, 16)
         .onHover { hovering = $0 }
         .contextMenu {
             Button("Copy Path") {
@@ -226,63 +341,91 @@ private struct BranchRow: View {
 
 private struct WorktreeRow: View {
     let wt: ProjectItem
-    @EnvironmentObject private var projectStore: ProjectStore
+    let projectID: String
+    var shortcutNumber: Int?
+    @Environment(ProjectStore.self) private var projectStore
+    @Environment(TerminalWorkspaceStore.self) private var workspace
 
     @State private var hovering = false
     @State private var isRenaming = false
     @State private var renameText = ""
     @FocusState private var renameFieldFocused: Bool
 
+    private var paneInfos: [PaneInfo] { workspace.paneInfos(for: projectID) }
+    private var unreadCount: Int { workspace.bellCount(for: projectID) }
+
     var body: some View {
-        HStack(spacing: 5) {
-            Image(systemName: "arrow.triangle.branch")
-                .font(.system(size: isRenaming ? 10 : 12))
-                .foregroundStyle(isRenaming ? .secondary : .primary)
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 5) {
+                Image(systemName: "arrow.triangle.branch")
+                    .font(.system(size: isRenaming ? 10 : 12))
+                    .foregroundStyle(isRenaming ? .secondary : .primary)
 
-            if isRenaming {
-                TextField("", text: $renameText)
-                    .textFieldStyle(.plain)
-                    .font(.system(size: 12))
-                    .focused($renameFieldFocused)
-                    .onSubmit {
-                        let trimmed = renameText.trimmingCharacters(in: .whitespacesAndNewlines)
-                        if !trimmed.isEmpty {
-                            projectStore.renameWorktreeProject(id: wt.id, newBranch: trimmed)
+                if isRenaming {
+                    TextField("", text: $renameText)
+                        .textFieldStyle(.plain)
+                        .font(.system(size: 12))
+                        .focused($renameFieldFocused)
+                        .onSubmit {
+                            let trimmed = renameText.trimmingCharacters(in: .whitespacesAndNewlines)
+                            if !trimmed.isEmpty {
+                                projectStore.renameWorktreeProject(id: wt.id, newBranch: trimmed)
+                            }
+                            isRenaming = false
                         }
-                        isRenaming = false
+                        .onExitCommand { isRenaming = false }
+                } else {
+                    Text(wt.worktreeBranch ?? wt.name)
+                        .font(.system(size: 12))
+                }
+
+                Spacer(minLength: 4)
+
+                if unreadCount > 0 {
+                    Text("\(unreadCount)")
+                        .font(AppFonts.badge)
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 4)
+                        .background(Capsule().fill(Color.accentColor))
+                }
+
+                if let n = shortcutNumber {
+                    Text("\u{2318}\(n)")
+                        .font(AppFonts.badge)
+                        .foregroundStyle(.tertiary)
+                }
+
+                if hovering && !isRenaming {
+                    Button {
+                        Task { await archiveWorktree() }
+                    } label: {
+                        Image(systemName: "archivebox")
+                            .font(.system(size: 9))
                     }
-                    .onExitCommand { isRenaming = false }
-            } else {
-                Text(wt.worktreeBranch ?? wt.name)
-                    .font(.system(size: 12))
+                    .buttonStyle(.plain)
+                    .foregroundStyle(.tertiary)
+                    .help("Archive worktree")
+
+                    Button {
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString(wt.path, forType: .string)
+                    } label: {
+                        Image(systemName: "doc.on.doc")
+                            .font(.system(size: 9))
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(.tertiary)
+                    .help("Copy path")
+                }
             }
+            .padding(.leading, 16)
 
-            Spacer(minLength: 4)
-
-            if hovering && !isRenaming {
-                Button {
-                    Task { await archiveWorktree() }
-                } label: {
-                    Image(systemName: "archivebox")
-                        .font(.system(size: 9))
+            if !paneInfos.isEmpty {
+                ForEach(paneInfos) { info in
+                    PaneStatusRow(info: info)
                 }
-                .buttonStyle(.plain)
-                .foregroundStyle(.tertiary)
-                .help("Archive worktree")
-
-                Button {
-                    NSPasteboard.general.clearContents()
-                    NSPasteboard.general.setString(wt.path, forType: .string)
-                } label: {
-                    Image(systemName: "doc.on.doc")
-                        .font(.system(size: 9))
-                }
-                .buttonStyle(.plain)
-                .foregroundStyle(.tertiary)
-                .help("Copy path")
             }
         }
-        .padding(.leading, 16)
         .onHover { hovering = $0 }
         .contextMenu {
             Button("Rename Branch") {
@@ -337,5 +480,59 @@ private struct WorktreeRow: View {
         }
 
         projectStore.removeWorktreeProject(id: wt.id)
+    }
+}
+
+// MARK: - Pane Status Row (terminal pane indicator under branch/worktree)
+
+private struct PaneStatusRow: View {
+    let info: PaneInfo
+    @Environment(TerminalWorkspaceStore.self) private var workspace
+    @Environment(GhosttyAppManager.self) private var ghosttyManager
+    @State private var hovering = false
+
+    var body: some View {
+        HStack(spacing: 6) {
+            // Status dot — color + icon ensures info isn't conveyed by color alone (HIG)
+            Circle()
+                .fill(info.hasBell ? Color.accentColor : Color.secondary.opacity(0.4))
+                .frame(width: 7, height: 7)
+
+            Text(info.title)
+                .font(.system(size: 11))
+                .foregroundStyle(info.hasBell ? AnyShapeStyle(.primary) : AnyShapeStyle(.secondary))
+                .lineLimit(1)
+
+            Spacer(minLength: 4)
+
+            if info.hasBell {
+                // Redundant bell icon: VoiceOver + color-blind users can identify state beyond dot color
+                Image(systemName: "bell.fill")
+                    .font(.system(size: 9))
+                    .foregroundStyle(Color.accentColor)
+            }
+        }
+        .padding(.leading, 24)
+        .padding(.trailing, 6)
+        .padding(.vertical, 4)          // row height ≥22pt (macOS HIG minimum click target)
+        .background(
+            RoundedRectangle(cornerRadius: 4, style: .continuous)
+                .fill(hovering ? AnyShapeStyle(.quaternary) : AnyShapeStyle(.clear))
+        )
+        .contentShape(Rectangle())      // full-width click area including Spacer
+        .onHover { hovering = $0 }
+        .onTapGesture {
+            workspace.focusPane(info.paneID)
+            // workspace.focusPane only mutates store state; if the pane is already the
+            // focusedPaneID in the active tab, no onChange fires in TerminalWorkspaceView
+            // and the TerminalNSView never becomes first responder.  Call focusPane on
+            // GhosttyAppManager directly so AppKit focus always transfers.
+            _ = ghosttyManager.focusPane(info.paneID)
+        }
+        // Accessibility: treat row as button, describe state beyond color
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(info.hasBell ? "\(info.title), has notification" : info.title)
+        .accessibilityHint("Focus this pane")
+        .accessibilityAddTraits(.isButton)
     }
 }

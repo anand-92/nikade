@@ -6,7 +6,7 @@
 
 ## 1. 功能概述
 
-项目列表导航：添加/移除项目、切换活跃项目、Git Worktree 子项目管理、分支前缀自动检测。持久化到 `~/.openowl/openowl.json`。
+项目列表导航：添加/移除项目、切换活跃项目、Git Worktree 子项目管理、分支前缀自动检测。持久化到 `~/.openowl/openowl.json`。异常时显示 Claude 状态提醒卡片（读取官方 status RSS）。
 
 ## 2. 用户流程
 
@@ -14,6 +14,7 @@
 2. **切换项目**: 点击项目名称，终端 / Git / 文件浏览器同步切换
 3. **Worktree**: 在项目下创建 Git Worktree，显示为子项目
 4. **移除项目**: 右键移除（只从列表移除，不删除文件）
+5. **状态感知**: Claude 出现异常时弹出提醒卡片，可点击打开官方状态页或关闭忽略本次 incident
 
 ## 3. 技术实现
 
@@ -77,6 +78,15 @@ Worktree 目录统一存放在 `~/.openowl/workspace/projects/` 下。
 - Git：切换到该项目的仓库
 - 文件浏览器：切换到该项目的目录
 
+### 3.6 Claude 异常提醒卡片
+
+- 位置：Sidebar 底部（仅异常时显示）
+- 数据源：`https://status.claude.com/history.rss`
+- 判定：存在未 `Resolved` incident 即显示异常（包括 `Monitoring`）
+- 刷新：启动立即拉取，之后每 5 分钟轮询
+- 容错：拉取失败时静默保留当前显示，等待下一次轮询
+- 关闭行为：用户点 `x` 后忽略当前 incident，仅新 incident 再次弹出
+
 ## 4. 注意事项
 
 - 项目列表按名称排序（worktree 跟随父项目）
@@ -85,10 +95,11 @@ Worktree 目录统一存放在 `~/.openowl/workspace/projects/` 下。
 
 ## 5. 相关需求
 
-- 无独立需求文档（属于基础架构）
+- [REQ-006: Claude 状态 Sidebar 指示器](../requirements/REQ-006-claude-status-sidebar.md)
 
 ## 6. 更新记录
 
 | 日期 | 说明 |
 |------|------|
 | 2026-03-16 | 创建文档 |
+| 2026-03-18 | 新增 Claude 异常提醒卡片（RSS 轮询 + 可关闭忽略） |

@@ -1,4 +1,5 @@
 import Foundation
+import Observation
 import SwiftUI
 
 // MARK: - Model
@@ -112,13 +113,14 @@ struct Deployment: Identifiable, Codable, Hashable {
 // MARK: - Store
 
 @MainActor
-final class DeploymentStore: ObservableObject {
-    @Published private(set) var deployments: [Deployment] = []
-    @Published var selectedDeploymentID: String?
-    @Published private(set) var logContent: String = ""
-    @Published private(set) var healthStatus: [String: Bool] = [:]  // id → healthy
-    @Published private(set) var healthError: [String: String] = [:] // id → error message
-    @Published private(set) var healthLastChecked: [String: Date] = [:] // id → timestamp
+@Observable
+final class DeploymentStore {
+    private(set) var deployments: [Deployment] = []
+    var selectedDeploymentID: String?
+    private(set) var logContent: String = ""
+    private(set) var healthStatus: [String: Bool] = [:]  // id → healthy
+    private(set) var healthError: [String: String] = [:] // id → error message
+    private(set) var healthLastChecked: [String: Date] = [:] // id → timestamp
 
     private let processManager = DeploymentProcessManager()
     private let defaults = UserDefaults.standard
@@ -275,23 +277,28 @@ final class DeploymentStore: ObservableObject {
 
         updateDeployment(id: id) { $0.status = .building }
 
-        // Install if needed
-        if let installCmd = dep.installCommand, !installCmd.isEmpty {
-            try await runBuild(id: id, command: installCmd, workDir: dep.cloneURL, envVars: dep.envVars)
-        }
+        do {
+            // Install if needed
+            if let installCmd = dep.installCommand, !installCmd.isEmpty {
+                try await runBuild(id: id, command: installCmd, workDir: dep.cloneURL, envVars: dep.envVars)
+            }
 
-        // Build if needed
-        if let buildCmd = dep.buildCommand, !buildCmd.isEmpty {
-            try await runBuild(id: id, command: buildCmd, workDir: dep.cloneURL, envVars: dep.envVars)
-        }
+            // Build if needed
+            if let buildCmd = dep.buildCommand, !buildCmd.isEmpty {
+                try await runBuild(id: id, command: buildCmd, workDir: dep.cloneURL, envVars: dep.envVars)
+            }
 
-        // Start if command provided
-        if let startCmd = dep.startCommand, !startCmd.isEmpty {
-            try startProcess(id: id)
-        } else {
-            updateDeployment(id: id) { $0.status = .stopped }
+            // Start if command provided
+            if let startCmd = dep.startCommand, !startCmd.isEmpty {
+                try startProcess(id: id)
+            } else {
+                updateDeployment(id: id) { $0.status = .stopped }
+            }
+            startBranchPoll(id: id)
+        } catch {
+            updateDeployment(id: id) { $0.status = .error }
+            throw error
         }
-        startBranchPoll(id: id)
     }
 
     func stop(id: String) async {

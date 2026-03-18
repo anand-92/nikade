@@ -3,9 +3,9 @@ import SwiftUI
 // MARK: - Quick Open Panel (Pure SwiftUI — no NSViewRepresentable)
 
 struct QuickOpenPanel: View {
-    @EnvironmentObject private var store: FileExplorerStore
-    @EnvironmentObject private var navigationStore: AppNavigationStore
-    @EnvironmentObject private var gitStore: GitChangesStore
+    @Environment(FileExplorerStore.self) private var store
+    @Environment(AppNavigationStore.self) private var navigationStore
+    @Environment(GitChangesStore.self) private var gitStore
     @State private var selectedIndex: Int = 0
     @FocusState private var isSearchFocused: Bool
 
@@ -23,6 +23,7 @@ struct QuickOpenPanel: View {
     }
 
     var body: some View {
+        @Bindable var store = store
         VStack(spacing: 0) {
             HStack(spacing: 8) {
                 Image(systemName: "magnifyingglass")
@@ -79,6 +80,7 @@ struct QuickOpenPanel: View {
         .frame(width: 500)
         .background(AppPalette.elevated)
         .clipShape(RoundedRectangle(cornerRadius: 10))
+        .glassEffectIfAvailable(in: RoundedRectangle(cornerRadius: 10))
         .overlay(
             RoundedRectangle(cornerRadius: 10)
                 .stroke(AppPalette.border, lineWidth: 1)
@@ -118,10 +120,10 @@ struct QuickOpenPanel: View {
         store.dismissQuickOpen()
         // Switch tab FIRST so the target view is in the hierarchy
         if store.isChangedFile(match.node) {
-            navigationStore.activeTab = .gitChanges
+            navigationStore.navigate(to: .gitChanges)
             gitStore.openDiff(forFileURL: match.node.url)
         } else {
-            navigationStore.activeTab = .fileExplorer
+            navigationStore.navigate(to: .fileExplorer)
         }
         // Then select node — FileExplorerView's onChange will fire
         DispatchQueue.main.async {
@@ -176,27 +178,11 @@ private struct QuickOpenRow: View {
 
     private var iconName: String {
         if node.isDirectory { return "folder.fill" }
-        let ext = node.url.pathExtension.lowercased()
-        switch ext {
-        case "swift": return "swift"
-        case "md", "txt", "log": return "doc.text"
-        case "json", "yml", "yaml", "toml", "plist": return "curlybraces"
-        case "png", "jpg", "jpeg", "gif", "webp", "svg": return "photo"
-        case "sh", "zsh", "bash": return "terminal"
-        case "js", "ts", "tsx", "jsx": return "chevron.left.forwardslash.chevron.right"
-        default: return "doc"
-        }
+        return FileIcons.iconName(for: node.url)
     }
 
     private var iconColor: Color {
         if node.isDirectory { return Color(nsColor: .systemBlue) }
-        let ext = node.url.pathExtension.lowercased()
-        switch ext {
-        case "swift": return Color(nsColor: .systemOrange)
-        case "js", "ts", "tsx", "jsx": return Color(nsColor: .systemYellow)
-        case "py": return Color(nsColor: .systemGreen)
-        case "json", "yml", "yaml": return Color(nsColor: .systemPurple)
-        default: return .secondary
-        }
+        return FileIcons.iconColor(for: node.url)
     }
 }

@@ -3,10 +3,10 @@ import SwiftUI
 /// 底部状态栏，参照 CodeEdit 的 StatusBarView。
 /// 28pt 高度，左侧 Git branch + 文件变更数，右侧文件/终端信息。
 struct StatusBarView: View {
-    @EnvironmentObject private var gitStore: GitChangesStore
-    @EnvironmentObject private var navigationStore: AppNavigationStore
-    @EnvironmentObject private var projectStore: ProjectStore
-    @EnvironmentObject private var fileExplorerStore: FileExplorerStore
+    @Environment(GitChangesStore.self) private var gitStore
+    @Environment(AppNavigationStore.self) private var navigationStore
+    @Environment(ProjectStore.self) private var projectStore
+    @Environment(FileExplorerStore.self) private var fileExplorerStore
 
     static let height: CGFloat = AppSpacing.statusBarHeight
 

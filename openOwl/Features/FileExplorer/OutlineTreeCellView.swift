@@ -185,16 +185,7 @@ final class OutlineTreeCellView: NSTableCellView {
 
     static func iconName(for node: FileExplorerNode) -> String {
         if node.isDirectory { return "folder.fill" }
-        let ext = node.url.pathExtension.lowercased()
-        switch ext {
-        case "swift": return "swift"
-        case "md", "txt", "log": return "doc.text"
-        case "json", "yml", "yaml", "toml", "plist": return "curlybraces"
-        case "png", "jpg", "jpeg", "gif", "webp", "svg": return "photo"
-        case "sh", "zsh", "bash": return "terminal"
-        case "js", "ts", "tsx", "jsx": return "chevron.left.forwardslash.chevron.right"
-        default: return "doc"
-        }
+        return FileIcons.iconName(for: node.url)
     }
 
     static func gitColor(for state: FileGitState?) -> NSColor? {

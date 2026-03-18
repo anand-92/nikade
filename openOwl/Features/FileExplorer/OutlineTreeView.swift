@@ -1,8 +1,7 @@
-import Combine
 import SwiftUI
 
 struct OutlineTreeView: NSViewControllerRepresentable {
-    @EnvironmentObject private var store: FileExplorerStore
+    @Environment(FileExplorerStore.self) private var store
 
     var onSelectFile: ((FileExplorerNode) -> Void)?
     var onStage: ((FileExplorerNode) -> Void)?
@@ -30,14 +29,11 @@ struct OutlineTreeView: NSViewControllerRepresentable {
         controller.onPaste = onPaste
         controller.onCopyPath = onCopyPath
         controller.onDropFiles = onDropFiles
-        controller.onExpandDirectory = onExpandDirectory
+        controller.onExpandDirectory = makeExpandDirectoryHandler(controller: controller)
 
         // Initial data load
         controller.updateData(rootNodes: store.rootNodes, nodeIndex: store.nodeIndex)
         // Start collapsed — user expands directories manually
-
-        // Subscribe to store changes
-        context.coordinator.subscribe(store: store, controller: controller)
 
         return controller
     }
@@ -55,44 +51,34 @@ struct OutlineTreeView: NSViewControllerRepresentable {
         controller.onPaste = onPaste
         controller.onCopyPath = onCopyPath
         controller.onDropFiles = onDropFiles
-        controller.onExpandDirectory = onExpandDirectory
+        controller.onExpandDirectory = makeExpandDirectoryHandler(controller: controller)
+
+        // Only reload when data actually changed. syncData (from expandDirectory)
+        // already updates the controller's local snapshot without reloading,
+        // so we skip redundant reloadData() calls that cause expand flicker.
+        if controller.rootNodes != store.rootNodes {
+            controller.updateData(rootNodes: store.rootNodes, nodeIndex: store.nodeIndex)
+        }
+
+        if let newID = store.selectedNodeID {
+            controller.selectAndReveal(nodeID: newID)
+        }
+    }
+
+    /// Build the expand callback: invoke the outer handler (which updates the store),
+    /// then immediately sync the controller's local snapshot so NSOutlineView
+    /// can query the updated children count during the same expand cycle.
+    private func makeExpandDirectoryHandler(controller: OutlineTreeViewController) -> (String) -> Void {
+        let storeRef = store
+        return { [weak controller] path in
+            onExpandDirectory?(path)
+            controller?.syncData(rootNodes: storeRef.rootNodes, nodeIndex: storeRef.nodeIndex)
+        }
     }
 
     func makeCoordinator() -> Coordinator {
         Coordinator()
     }
 
-    final class Coordinator {
-        private var cancellables = Set<AnyCancellable>()
-
-        @MainActor
-        func subscribe(store: FileExplorerStore, controller: OutlineTreeViewController) {
-            cancellables.removeAll()
-
-            // Reload tree when data changes
-            store.$rootNodes
-                .dropFirst()
-                .receive(on: RunLoop.main)
-                .sink { [weak controller, weak store] newRootNodes in
-                    guard let controller, let store else { return }
-                    controller.updateData(rootNodes: newRootNodes, nodeIndex: store.nodeIndex)
-                }
-                .store(in: &cancellables)
-
-            // Reveal & select node when selectedNodeID changes (e.g. from Quick Open)
-            store.$selectedNodeID
-                .dropFirst()
-                .removeDuplicates()
-                .receive(on: RunLoop.main)
-                .sink { [weak controller] newID in
-                    guard let controller, let newID else { return }
-                    controller.selectAndReveal(nodeID: newID)
-                }
-                .store(in: &cancellables)
-        }
-
-        deinit {
-            cancellables.removeAll()
-        }
-    }
+    final class Coordinator {}
 }

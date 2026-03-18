@@ -3,8 +3,8 @@ import Foundation
 import SwiftUI
 
 struct GitChangesView: View {
-    @EnvironmentObject private var store: GitChangesStore
-    @EnvironmentObject private var projectStore: ProjectStore
+    @Environment(GitChangesStore.self) private var store
+    @Environment(ProjectStore.self) private var projectStore
     @State private var confirmationAction: GitConfirmationAction?
     @State private var selectedIDs: Set<String> = []
     @State private var lastClickedID: String?
@@ -104,7 +104,8 @@ struct GitChangesView: View {
     // MARK: - Commit Area (compact, web-style)
 
     private var commitArea: some View {
-        VStack(spacing: 6) {
+        @Bindable var store = store
+        return VStack(spacing: 6) {
             // Commit message with inline AI generate button
             ZStack(alignment: .topTrailing) {
                 TextEditor(text: $store.commitMessage)
@@ -744,12 +745,21 @@ struct GitChangesView: View {
               let repoURL = store.repositoryURL,
               let path = store.selectedChange?.path else { return }
         let fileURL = repoURL.appendingPathComponent(path)
-        do {
-            let content = try String(contentsOf: fileURL, encoding: .utf8)
-            cachedFileLines = content.components(separatedBy: "\n")
-        } catch {
-            cachedFileLines = [] // prevent repeated failed reads
-            store.errorMessage = "Could not read \(fileURL.lastPathComponent)"
+        cachedFileLines = [] // sentinel: prevents duplicate loads while async in flight
+        Task {
+            let lines = await Task.detached(priority: .userInitiated) {
+                (try? String(contentsOf: fileURL, encoding: .utf8))?.components(separatedBy: "\n") ?? []
+            }.value
+            // Guard: selection may have changed while the detached read was in flight.
+            // If so, reset the sentinel so the new selection's loadFileIfNeeded can run.
+            guard store.selectedChange?.path == path else {
+                cachedFileLines = nil
+                return
+            }
+            cachedFileLines = lines
+            if lines.isEmpty {
+                store.errorMessage = "Could not read \(fileURL.lastPathComponent)"
+            }
         }
     }
 
@@ -1309,21 +1319,21 @@ private let laneColors: [Color] = [
     Color(red: 0.38, green: 0.55, blue: 0.31),  // dark green
 ]
 
-private struct GraphNode {
+struct GraphNode {
     let hash: String
     let column: Int
     let row: Int
     let color: Color
 }
 
-private struct GraphLayout {
+struct GraphLayout {
     let nodes: [GraphNode]
     let segments: [(col: Int, row: Int, color: Color)]
     let connectors: [(fromCol: Int, fromRow: Int, toCol: Int, toRow: Int, color: Color)]
     let maxColumns: Int
 }
 
-private func computeGraphLayout(entries: [GitLogEntry]) -> GraphLayout {
+func computeGraphLayout(entries: [GitLogEntry]) -> GraphLayout {
     guard !entries.isEmpty else {
         return GraphLayout(nodes: [], segments: [], connectors: [], maxColumns: 0)
     }
@@ -1400,8 +1410,14 @@ private struct GitGraphContentView: View {
     let onLoadMore: () -> Void
     let hasMore: Bool
 
+    @State private var layout = GraphLayout(nodes: [], segments: [], connectors: [], maxColumns: 0)
+
+    /// Lightweight identity for detecting entries changes without requiring Equatable
+    private var entriesIdentity: String {
+        "\(entries.count)-\(entries.first?.hash ?? "")-\(entries.last?.hash ?? "")"
+    }
+
     var body: some View {
-        let layout = computeGraphLayout(entries: entries)
         let graphWidth = graphLeftPad + CGFloat(max(layout.maxColumns, 1)) * graphColWidth + graphLeftPad
 
         HStack(alignment: .top, spacing: 0) {
@@ -1450,7 +1466,7 @@ private struct GitGraphContentView: View {
             .frame(width: graphWidth, height: CGFloat(entries.count) * graphRowHeight)
 
             // Commit list
-            VStack(alignment: .leading, spacing: 0) {
+            LazyVStack(alignment: .leading, spacing: 0) {
                 ForEach(entries) { entry in
                     CommitRow(entry: entry, isSelected: entry.hash == selectedHash)
                         .onTapGesture { onSelect(entry.hash) }
@@ -1467,12 +1483,20 @@ private struct GitGraphContentView: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
+        .onAppear {
+            layout = computeGraphLayout(entries: entries)
+        }
+        .onChange(of: entriesIdentity) { _, _ in
+            layout = computeGraphLayout(entries: entries)
+        }
     }
 }
 
 private struct CommitRow: View {
     let entry: GitLogEntry
     let isSelected: Bool
+
+    private static let iso8601 = ISO8601DateFormatter()
 
     var body: some View {
         HStack(spacing: 4) {
@@ -1531,7 +1555,7 @@ private struct CommitRow: View {
     }
 
     private var relativeDate: String {
-        guard let date = ISO8601DateFormatter().date(from: entry.date) else { return "" }
+        guard let date = Self.iso8601.date(from: entry.date) else { return "" }
         let diff = Int(Date().timeIntervalSince(date))
         if diff < 60 { return "now" }
         if diff < 3600 { return "\(diff / 60)m" }

@@ -68,10 +68,10 @@ private class EditTracker: TextViewCoordinator {
 // MARK: - FileExplorerView
 
 struct FileExplorerView: View {
-    @EnvironmentObject private var store: FileExplorerStore
-    @EnvironmentObject private var projectStore: ProjectStore
-    @EnvironmentObject private var gitStore: GitChangesStore
-    @EnvironmentObject private var navigationStore: AppNavigationStore
+    @Environment(FileExplorerStore.self) private var store
+    @Environment(ProjectStore.self) private var projectStore
+    @Environment(GitChangesStore.self) private var gitStore
+    @Environment(AppNavigationStore.self) private var navigationStore
 
     // Tab management
     @State private var openTabs: [EditorTab] = []
@@ -124,11 +124,14 @@ struct FileExplorerView: View {
             previewImage = nil
         }
         .onChange(of: store.selectedNodeID) { _, newID in
-            // Auto-open file when selected externally (e.g. QuickOpen)
+            // Auto-open file when selected externally (e.g. QuickOpen).
+            // Defer state mutations to avoid "modifying state during view update".
             guard let newID,
                   let node = store.nodeIndex[newID],
                   !node.isDirectory else { return }
-            openFileInTab(node)
+            Task { @MainActor in
+                openFileInTab(node)
+            }
         }
         .onDisappear {
             saveAllDirtyTabs()
@@ -327,6 +330,7 @@ struct FileExplorerView: View {
         }
         .frame(height: AppSpacing.editorTabBarHeight)
         .background(AppPalette.surface)
+        .glassEffectIfAvailable(in: Rectangle())
     }
 
     // MARK: - Tab Management
@@ -515,7 +519,7 @@ struct FileExplorerView: View {
 
     private func openDiff(_ node: FileExplorerNode) {
         guard !node.isDirectory else { return }
-        navigationStore.activeTab = .gitChanges
+        navigationStore.navigate(to: .gitChanges)
         gitStore.openDiff(forFileURL: node.url)
     }
 
@@ -526,27 +530,11 @@ struct FileExplorerView: View {
     }
 
     fileprivate static func fileIconName(for url: URL) -> String {
-        let ext = url.pathExtension.lowercased()
-        switch ext {
-        case "swift": return "swift"
-        case "md", "txt", "log": return "doc.text"
-        case "json", "yml", "yaml", "toml", "plist": return "curlybraces"
-        case "png", "jpg", "jpeg", "gif", "webp", "svg": return "photo"
-        case "sh", "zsh", "bash": return "terminal"
-        case "js", "ts", "tsx", "jsx": return "chevron.left.forwardslash.chevron.right"
-        default: return "doc"
-        }
+        FileIcons.iconName(for: url)
     }
 
     fileprivate static func fileIconColor(for url: URL) -> Color {
-        let ext = url.pathExtension.lowercased()
-        switch ext {
-        case "swift": return Color(nsColor: .systemOrange)
-        case "js", "ts", "tsx", "jsx": return Color(nsColor: .systemYellow)
-        case "py": return Color(nsColor: .systemGreen)
-        case "json", "yml", "yaml": return Color(nsColor: .systemPurple)
-        default: return .secondary
-        }
+        FileIcons.iconColor(for: url)
     }
 
     private func fileIcon(for node: FileExplorerNode) -> String {
@@ -590,7 +578,12 @@ private struct EditorTabButton: View {
         }
         .padding(.trailing, 4)
         .frame(height: AppSpacing.editorTabBarHeight)
-        .background(isActive ? AppColors.activeBackground : (isHovering ? AppColors.hoverBackground : Color.clear))
+        .glassEffectWithTint(
+            isActive,
+            in: Rectangle(),
+            fallback: Rectangle()
+                .fill(isActive ? AppColors.activeBackground : (isHovering ? AppColors.hoverBackground : Color.clear))
+        )
         .overlay(alignment: .trailing) {
             Rectangle()
                 .fill(Color.secondary.opacity(0.15))

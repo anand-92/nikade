@@ -1,8 +1,8 @@
 import SwiftUI
 
 struct DeploymentPanelView: View {
-    @EnvironmentObject private var deploymentStore: DeploymentStore
-    @EnvironmentObject private var projectStore: ProjectStore
+    @Environment(DeploymentStore.self) private var deploymentStore
+    @Environment(ProjectStore.self) private var projectStore
     @State private var showCreateSheet = false
 
     private var projectDeployments: [Deployment] {
@@ -23,7 +23,8 @@ struct DeploymentPanelView: View {
     // MARK: - Left: Deployment List
 
     private var deploymentList: some View {
-        VStack(spacing: 0) {
+        @Bindable var deploymentStore = deploymentStore
+        return VStack(spacing: 0) {
             List(selection: $deploymentStore.selectedDeploymentID) {
                 ForEach(projectDeployments) { dep in
                     DeploymentListItem(deployment: dep)
@@ -75,7 +76,7 @@ struct DeploymentPanelView: View {
 
 private struct DeploymentListItem: View {
     let deployment: Deployment
-    @EnvironmentObject private var deploymentStore: DeploymentStore
+    @Environment(DeploymentStore.self) private var deploymentStore
 
     var body: some View {
         HStack(spacing: 6) {
@@ -133,7 +134,7 @@ private struct DeploymentListItem: View {
 
 private struct DeploymentDetailView: View {
     let deployment: Deployment
-    @EnvironmentObject private var deploymentStore: DeploymentStore
+    @Environment(DeploymentStore.self) private var deploymentStore
     @State private var isPerformingAction = false
 
     // Editable fields
@@ -256,6 +257,19 @@ private struct DeploymentDetailView: View {
                 }
 
                 Spacer()
+
+                if !deployment.isRemote {
+                    Button {
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString(deployment.clonePath, forType: .string)
+                    } label: {
+                        Image(systemName: "doc.on.doc")
+                            .font(.system(size: 12))
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(.secondary)
+                    .help("Copy clone path")
+                }
 
                 Button(role: .destructive) {
                     performAction { await deploymentStore.removeDeployment(id: deployment.id) }
@@ -465,8 +479,10 @@ private struct ActionButton: View {
             }
             .padding(.horizontal, 14)
             .padding(.vertical, 6)
-            .background(
-                RoundedRectangle(cornerRadius: AppSpacing.cornerRadius)
+            .glassEffectWithTint(
+                hovering,
+                in: RoundedRectangle(cornerRadius: AppSpacing.cornerRadius),
+                fallback: RoundedRectangle(cornerRadius: AppSpacing.cornerRadius)
                     .fill(hovering ? AppColors.hoverBackground : Color(nsColor: .controlBackgroundColor))
             )
             .overlay(

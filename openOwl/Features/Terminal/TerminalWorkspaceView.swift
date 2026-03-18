@@ -1,11 +1,18 @@
 import AppKit
 import SwiftUI
+import UniformTypeIdentifiers
+
+/// Private UTType for in-app pane rearrangement drag.
+/// Using a dedicated type prevents TerminalScrollView (which accepts .string)
+/// from intercepting pane drags, and allows the drop overlay to be
+/// always-present without interfering with Finder file drops (.fileURL).
+private let paneDragTypeID = "com.openowl.terminal.pane-drag"
 
 struct TerminalWorkspaceView: View {
     let ghosttyApp: ghostty_app_t
 
-    @EnvironmentObject private var workspace: TerminalWorkspaceStore
-    @EnvironmentObject private var ghosttyManager: GhosttyAppManager
+    @Environment(TerminalWorkspaceStore.self) private var workspace
+    @Environment(GhosttyAppManager.self) private var ghosttyManager
     @State private var activatedTabIDs: Set<UUID> = []
 
     var body: some View {
@@ -19,6 +26,7 @@ struct TerminalWorkspaceView: View {
                     let isActive = workspace.activeTabID == tab.id && workspace.isTabVisible(tab.id)
                     TerminalTabContentView(ghosttyApp: ghosttyApp, tab: tab)
                         .opacity(isActive ? 1 : 0)
+                        .transaction { $0.animation = nil }
                         .allowsHitTesting(isActive)
                 }
             }
@@ -30,6 +38,7 @@ struct TerminalWorkspaceView: View {
                     _ = ghosttyManager?.focusPane(paneID)
                 }
             }
+            connectSearchCallbacks()
             workspace.ensureInitialTab()
             activateVisibleTabs()
             focusCurrentPaneIfPossible()
@@ -41,11 +50,27 @@ struct TerminalWorkspaceView: View {
         .onChange(of: workspace.activeProjectID) { _, _ in
             activateVisibleTabs()
         }
+        .onReceive(NotificationCenter.default.publisher(for: .terminalSearch)) { notification in
+            guard let paneID = notification.userInfo?["paneID"] as? UUID else { return }
+            workspace.startSearch(paneID: paneID)
+        }
     }
 
     private func activateVisibleTabs() {
         for tab in workspace.visibleTabs {
             activatedTabIDs.insert(tab.id)
+        }
+    }
+
+    private func connectSearchCallbacks() {
+        ghosttyManager.onSearchEnd = { [weak workspace] paneID in
+            workspace?.endSearch(paneID: paneID)
+        }
+        ghosttyManager.onSearchTotal = { [weak workspace] paneID, total in
+            workspace?.paneSearchStates[paneID]?.total = total
+        }
+        ghosttyManager.onSearchSelected = { [weak workspace] paneID, selected in
+            workspace?.paneSearchStates[paneID]?.selected = selected
         }
     }
 
@@ -61,86 +86,91 @@ struct TerminalWorkspaceView: View {
 }
 
 private struct TerminalTabBarView: View {
-    @EnvironmentObject private var workspace: TerminalWorkspaceStore
-    @State private var hoveredTabID: UUID?
+    @Environment(TerminalWorkspaceStore.self) private var workspace
+    @Environment(ProjectStore.self) private var projectStore
+    @State private var hoveredTabID: String?
 
-    private var displayTabs: [TerminalTabState] { workspace.visibleTabs }
-    private var hasMultipleTabs: Bool { displayTabs.count > 1 }
+    private var projectTabs: [ProjectItem] { projectStore.orderedProjectTabs }
 
     var body: some View {
         HStack(spacing: 0) {
-            // Tab 列表 (only current project's tabs)
-            ForEach(Array(displayTabs.enumerated()), id: \.element.id) { index, tab in
-                let isActive = workspace.activeTabID == tab.id
-                let isHovered = hoveredTabID == tab.id
+            // Project/worktree tab 列表
+            ForEach(Array(projectTabs.enumerated()), id: \.element.id) { index, project in
+                let isActive = projectStore.activeProjectID == project.id
+                let isHovered = hoveredTabID == project.id
 
-                HStack(spacing: 4) {
-                    Button {
-                        workspace.activeTabID = tab.id
-                    } label: {
-                        HStack(spacing: 3) {
-                            Text(tab.title)
-                                .font(.system(size: 11, weight: .medium))
-                                .lineLimit(1)
+                // Determine if we should show a divider after this tab:
+                // No divider between worktrees of the same root, divider between different roots
+                let showDivider: Bool = {
+                    guard index < projectTabs.count - 1 else { return false }
+                    let next = projectTabs[index + 1]
+                    // Same group: next is a worktree of current root, or both are worktrees of same parent
+                    if next.worktreeOf == project.id { return false }
+                    if project.isWorktree, next.isWorktree, project.worktreeOf == next.worktreeOf { return false }
+                    return true
+                }()
 
-                            // ⌘N 快捷键标签
-                            if index < 9 {
-                                Text("⌘\(index + 1)")
-                                    .font(AppFonts.badge)
-                                    .foregroundStyle(.tertiary)
-                            }
+                Button {
+                    projectStore.activateProject(id: project.id)
+                } label: {
+                    HStack(spacing: 3) {
+                        // Worktree indicator
+                        if project.isWorktree {
+                            Image(systemName: "arrow.triangle.branch")
+                                .font(.system(size: 9))
+                                .foregroundStyle(.tertiary)
                         }
-                    }
-                    .buttonStyle(.plain)
 
-                    // 关闭按钮：仅多 tab 时显示
-                    if hasMultipleTabs {
-                        Button {
-                            workspace.activeTabID = tab.id
-                            if workspace.closeCurrent() == .closeWindow {
-                                NSApp.keyWindow?.performClose(nil)
-                            }
-                        } label: {
-                            Image(systemName: "xmark")
-                                .font(.system(size: 8, weight: .semibold))
+                        Text(project.isWorktree ? (project.worktreeBranch ?? project.name) : project.displayName)
+                            .font(.system(size: 11, weight: isActive ? .semibold : .medium))
+                            .lineLimit(1)
+
+                        // ⌘N 快捷键标签
+                        if index < 9 {
+                            Text("⌘\(index + 1)")
+                                .font(AppFonts.badge)
+                                .foregroundStyle(.tertiary)
                         }
-                        .buttonStyle(.plain)
-                        .opacity(isHovered ? 1.0 : 0.7)
                     }
                 }
+                .buttonStyle(.plain)
                 .padding(.horizontal, 8)
                 .padding(.vertical, 4)
-                .background(
-                    RoundedRectangle(cornerRadius: AppSpacing.cornerRadius)
+                .glassEffectWithTint(
+                    isActive,
+                    in: RoundedRectangle(cornerRadius: AppSpacing.cornerRadius),
+                    fallback: RoundedRectangle(cornerRadius: AppSpacing.cornerRadius)
                         .fill(
                             isActive
                                 ? AppColors.activeBackground
                                 : (isHovered ? AppColors.hoverBackground : Color.clear)
                         )
                 )
-                .onHover { hoveredTabID = $0 ? tab.id : nil }
+                .onHover { hoveredTabID = $0 ? project.id : nil }
 
-                // Tab 分隔线
-                if index < displayTabs.count - 1 {
+                // Group divider (between different root projects)
+                if showDivider {
                     TerminalTabDivider()
                 }
             }
 
-            // 新 tab 按钮（紧贴 tab 列表右侧）
-            Button {
-                workspace.newTab()
-            } label: {
-                Image(systemName: "plus")
-                    .font(.system(size: 10, weight: .semibold))
-                    .frame(width: 20, height: AppSpacing.headerHeight)
-            }
-            .buttonStyle(.plain)
-            .opacity(0.7)
-
             Spacer(minLength: 8)
 
-            // 右侧：分屏按钮
+            // 右侧：分屏按钮 + maximize 指示
             HStack(spacing: 4) {
+                // Maximize indicator/restore button
+                if workspace.maximizedPaneID != nil {
+                    Button {
+                        workspace.toggleMaximizeCurrentPane()
+                    } label: {
+                        Image(systemName: "arrow.down.right.and.arrow.up.left")
+                            .font(.system(size: 10))
+                            .foregroundStyle(.orange)
+                    }
+                    .buttonStyle(.plain)
+                    .help("Restore pane (⇧⌘↩)")
+                }
+
                 Button {
                     workspace.splitCurrent(axis: .horizontal)
                 } label: {
@@ -173,7 +203,7 @@ private struct TerminalTabBarView: View {
         .padding(.horizontal, 4)
         .frame(height: AppSpacing.headerHeight)
         .background(Color(nsColor: .underPageBackgroundColor))
-        .animation(.easeInOut(duration: 0.15), value: workspace.activeTabID)
+        .animation(.easeInOut(duration: 0.15), value: projectStore.activeProjectID)
     }
 }
 
@@ -201,15 +231,16 @@ private struct TerminalTabContentView: View {
     let ghosttyApp: ghostty_app_t
     let tab: TerminalTabState
 
-    @EnvironmentObject private var workspace: TerminalWorkspaceStore
-    @State private var dividerDragStart: [String: Double] = [:]
+    @Environment(TerminalWorkspaceStore.self) private var workspace
+    @Environment(GhosttyAppManager.self) private var ghosttyManager
 
     var body: some View {
         let paneIDs = tab.splitTree.allPaneIDs
         let isMultiPane = paneIDs.count > 1
+        let isMaximized = workspace.maximizedPaneID != nil
+            && paneIDs.contains(where: { $0 == workspace.maximizedPaneID })
 
         GeometryReader { geometry in
-            let _ = clearStaleDragState(dividers: tab.splitTree.dividerInfos(in: CGRect(origin: .zero, size: geometry.size)))
             let size = geometry.size
             let bounds = CGRect(origin: .zero, size: size)
             let frames = tab.splitTree.paneFrames(in: bounds)
@@ -218,10 +249,13 @@ private struct TerminalTabContentView: View {
             ZStack(alignment: .topLeading) {
                 // All terminal panes with absolute positioning
                 ForEach(paneIDs, id: \.self) { paneID in
-                    let frame = frames[paneID] ?? .zero
+                    let isMaximizedPane = isMaximized && paneID == workspace.maximizedPaneID
+                    let isHiddenByMaximize = isMaximized && paneID != workspace.maximizedPaneID
+                    // Maximized pane fills the entire bounds; others keep their normal frame
+                    let frame = isMaximizedPane ? bounds : (frames[paneID] ?? .zero)
 
                     VStack(spacing: 0) {
-                        if isMultiPane {
+                        if isMultiPane && !isMaximized {
                             PaneDragHandle(paneID: paneID)
                         }
 
@@ -236,78 +270,96 @@ private struct TerminalTabContentView: View {
                         )
                     }
                     .frame(width: max(frame.width, 1), height: max(frame.height, 1))
-                    .contentShape(Rectangle())
+                    .animation(.easeInOut(duration: 0.15), value: isMaximized)
                     .clipped()
+                    // File drops are handled at the AppKit level by TerminalScrollView
+                    // (registerForDraggedTypes + performDragOperation).
+                    // A SwiftUI-level .onDrop + .contentShape(Rectangle()) here would
+                    // create a full-pane hit target that blocks mouse events (selection,
+                    // click-to-focus) from reaching the TerminalNSView below.
+                    .opacity(isHiddenByMaximize ? 0 : 1)
+                    .allowsHitTesting(!isHiddenByMaximize)
                     .overlay {
                         // 非聚焦 pane 遮罩（轻柔）
-                        if isMultiPane, !workspace.isFocusedPane(paneID, in: tab.id) {
+                        if isMultiPane && !isMaximized, !workspace.isFocusedPane(paneID, in: tab.id) {
                             Color.black.opacity(0.06)
                                 .allowsHitTesting(false)
                         }
                     }
                     .overlay {
-                        if workspace.dragOverPaneID == paneID, let zone = workspace.dropZone {
+                        if !isMaximized, workspace.dragOverPaneID == paneID, let zone = workspace.dropZone {
                             DropZoneHighlightView(zone: zone)
                                 .allowsHitTesting(false)
                         }
                     }
                     .overlay {
-                        Color.clear
-                            .contentShape(Rectangle())
-                            .onDrop(of: [.text], delegate: PaneDropDelegate(
-                                targetPaneID: paneID,
-                                workspace: workspace,
-                                viewSize: frame.size
-                            ))
-                            .allowsHitTesting(workspace.draggingPaneID != nil && workspace.draggingPaneID != paneID)
+                        // Only register drop target when a pane drag is actually in progress
+                        // and this pane is not the drag source.
+                        // Previously used `draggingPaneID != paneID` which is true even
+                        // when draggingPaneID is nil — causing the contentShape overlay to
+                        // block all mouse events at all times.
+                        //
+                        // Safe to use paneDragTypeID (private UTType) — TerminalScrollView
+                        // only registers for .fileURL, so Finder drops reach AppKit unimpeded.
+                        if !isMaximized,
+                           let draggingID = workspace.draggingPaneID,
+                           draggingID != paneID {
+                            Color.clear
+                                .contentShape(Rectangle())
+                                .onDrop(
+                                    of: [UTType(exportedAs: paneDragTypeID)],
+                                    delegate: PaneDropDelegate(
+                                        targetPaneID: paneID,
+                                        workspace: workspace,
+                                        viewSize: frame.size
+                                    )
+                                )
+                        }
+                    }
+                    // Search overlay is the outermost overlay so it renders above
+                    // the pane drop delegate (Color.clear.contentShape) and receives clicks.
+                    .overlay(alignment: .topTrailing) {
+                        let isFocused = workspace.isFocusedPane(paneID, in: tab.id)
+                        TerminalSearchOverlay(paneID: paneID, isFocused: isFocused)
                     }
                     .position(x: frame.midX, y: frame.midY)
-                    .zIndex(0)
+                    .zIndex(isMaximizedPane ? 2 : 0)
                 }
 
-                // Dividers
-                ForEach(dividers) { divider in
-                    let isH = divider.axis == .horizontal
-                    SplitDividerView(axis: divider.axis, hitAreaThickness: 6)
-                        .frame(
-                            width: isH ? 6 : divider.frame.width,
-                            height: isH ? divider.frame.height : 6
-                        )
-                        .position(x: divider.frame.midX, y: divider.frame.midY)
-                        .zIndex(1)
-                        .gesture(DragGesture(minimumDistance: 1)
-                            .onChanged { value in
-                                if dividerDragStart[divider.id] == nil {
-                                    dividerDragStart[divider.id] = divider.ratio
+                // Dividers (hidden when maximized)
+                if !isMaximized {
+                    ForEach(dividers) { divider in
+                        let isH = divider.axis == .horizontal
+                        SplitDividerView(axis: divider.axis, hitAreaThickness: 6)
+                            .frame(
+                                width: isH ? 6 : divider.frame.width,
+                                height: isH ? divider.frame.height : 6
+                            )
+                            .position(x: divider.frame.midX, y: divider.frame.midY)
+                            .zIndex(1)
+                            .gesture(DragGesture(minimumDistance: 1, coordinateSpace: .named("splitContainer"))
+                                .onChanged { value in
+                                    let pos = isH ? value.location.x : value.location.y
+                                    let origin = isH ? divider.splitRect.minX : divider.splitRect.minY
+                                    let splitSize = isH ? divider.splitRect.width : divider.splitRect.height
+                                    guard splitSize > 1 else { return }
+                                    workspace.updateSplitRatio(
+                                        firstPaneID: divider.firstPaneID,
+                                        secondPaneID: divider.secondPaneID,
+                                        newRatio: (pos - origin) / splitSize
+                                    )
                                 }
-                                let baseRatio = dividerDragStart[divider.id] ?? divider.ratio
-                                let totalSize = isH ? size.width : size.height
-                                let delta = isH ? value.translation.width : value.translation.height
-                                workspace.updateSplitRatio(
-                                    firstPaneID: divider.firstPaneID,
-                                    secondPaneID: divider.secondPaneID,
-                                    newRatio: baseRatio + delta / totalSize
-                                )
+                            )
+                            .onTapGesture(count: 2) {
+                                workspace.equalizeSplits()
                             }
-                            .onEnded { _ in
-                                dividerDragStart.removeValue(forKey: divider.id)
-                            }
-                        )
-                        .onTapGesture(count: 2) {
-                            workspace.equalizeSplits()
-                        }
+                    }
                 }
             }
+            .coordinateSpace(name: "splitContainer")
         }
     }
 
-    /// Remove drag-start entries for dividers that no longer exist (tree changed mid-drag)
-    private func clearStaleDragState(dividers: [SplitDividerInfo]) {
-        let validIDs = Set(dividers.map(\.id))
-        for key in dividerDragStart.keys where !validIDs.contains(key) {
-            dividerDragStart.removeValue(forKey: key)
-        }
-    }
 }
 
 private struct SplitDividerView: View {
@@ -403,7 +455,7 @@ private struct PaneDragHandle: View {
     let paneID: UUID
 
     @State private var isHovered = false
-    @EnvironmentObject private var workspace: TerminalWorkspaceStore
+    @Environment(TerminalWorkspaceStore.self) private var workspace
 
     var body: some View {
         VStack(spacing: 0) {
@@ -421,7 +473,16 @@ private struct PaneDragHandle: View {
             .onHover { isHovered = $0 }
             .onDrag {
                 workspace.draggingPaneID = paneID
-                return NSItemProvider(object: paneID.uuidString as NSString)
+                NSLog("openOwl: [PaneDrag] drag started pane=%@", paneID.uuidString)
+                // Use private UTType — prevents TerminalScrollView (.string acceptor)
+                // from intercepting this drag through the AppKit layer.
+                let provider = NSItemProvider()
+                let data = paneID.uuidString.data(using: .utf8)!
+                provider.registerDataRepresentation(
+                    forTypeIdentifier: paneDragTypeID,
+                    visibility: .all
+                ) { completion in completion(data, nil); return nil }
+                return provider
             }
 
             // Bottom separator
@@ -443,22 +504,32 @@ private struct PaneDropDelegate: DropDelegate {
     let viewSize: CGSize
 
     func dropEntered(info: DropInfo) {
+        NSLog("openOwl: [PaneDropDelegate] dropEntered target=%@ draggingPane=%@",
+              targetPaneID.uuidString, workspace.draggingPaneID?.uuidString ?? "nil")
         workspace.dragOverPaneID = targetPaneID
     }
 
     func dropUpdated(info: DropInfo) -> DropProposal? {
         guard workspace.draggingPaneID != nil,
               workspace.draggingPaneID != targetPaneID else {
+            // No active pane drag or drag is over its own source — reject silently.
+            // (overlay is always-present; this fires when cursor passes over non-drag drags)
             return DropProposal(operation: .cancel)
         }
 
         workspace.dragOverPaneID = targetPaneID
-        workspace.dropZone = detectZone(at: info.location)
+        let newZone = detectZone(at: info.location)
+        if newZone != workspace.dropZone {
+            NSLog("openOwl: [PaneDropDelegate] zone changed target=%@ zone=%@",
+                  targetPaneID.uuidString, "\(newZone)")
+            workspace.dropZone = newZone
+        }
         return DropProposal(operation: .move)
     }
 
     func dropExited(info: DropInfo) {
         if workspace.dragOverPaneID == targetPaneID {
+            NSLog("openOwl: [PaneDropDelegate] dropExited target=%@", targetPaneID.uuidString)
             workspace.dragOverPaneID = nil
             workspace.dropZone = nil
         }
@@ -467,11 +538,15 @@ private struct PaneDropDelegate: DropDelegate {
     func performDrop(info: DropInfo) -> Bool {
         guard let sourceID = workspace.draggingPaneID,
               sourceID != targetPaneID else {
+            NSLog("openOwl: [PaneDropDelegate] performDrop SKIPPED target=%@ draggingPane=%@",
+                  targetPaneID.uuidString, workspace.draggingPaneID?.uuidString ?? "nil")
             cleanup()
             return false
         }
 
         let zone = workspace.dropZone ?? .center
+        NSLog("openOwl: [PaneDropDelegate] performDrop source=%@ target=%@ zone=%@",
+              sourceID.uuidString, targetPaneID.uuidString, "\(zone)")
         workspace.movePaneToTarget(sourceID: sourceID, targetID: targetPaneID, zone: zone)
         cleanup()
         return true

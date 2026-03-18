@@ -1,6 +1,6 @@
 import AppKit
-import Combine
 import Foundation
+import Observation
 
 struct ProjectItem: Identifiable, Hashable, Codable {
     let id: String
@@ -32,10 +32,11 @@ struct ProjectItem: Identifiable, Hashable, Codable {
 }
 
 @MainActor
-final class ProjectStore: ObservableObject {
-    @Published private(set) var projects: [ProjectItem] = []
-    @Published var activeProjectID: String?
-    @Published var collapsedProjectIDs: Set<String> = []
+@Observable
+final class ProjectStore {
+    private(set) var projects: [ProjectItem] = []
+    var activeProjectID: String?
+    var collapsedProjectIDs: Set<String> = []
 
     private static let storeURL: URL = {
         let home = FileManager.default.homeDirectoryForCurrentUser
@@ -61,6 +62,17 @@ final class ProjectStore: ObservableObject {
 
     var rootProjects: [ProjectItem] {
         projects.filter { !$0.isWorktree }
+    }
+
+    /// Flat ordered list: each root project followed by its worktrees.
+    /// Used as the data source for the global tab bar and Cmd+N shortcuts.
+    var orderedProjectTabs: [ProjectItem] {
+        var result: [ProjectItem] = []
+        for root in rootProjects {
+            result.append(root)
+            result.append(contentsOf: worktrees(for: root.id))
+        }
+        return result
     }
 
     func worktrees(for projectID: String) -> [ProjectItem] {
