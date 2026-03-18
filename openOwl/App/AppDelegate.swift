@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import UserNotifications
 
 @MainActor
 class AppDelegate: NSObject, NSApplicationDelegate {
@@ -17,6 +18,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         installTerminalMenu()
         installViewMenu()
         installLocalKeyMonitor()
+        requestNotificationPermission()
+    }
+
+    private func requestNotificationPermission() {
+        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { _, _ in }
     }
 
     /// In Debug builds, override the Dock icon with the DEV-badged variant.
@@ -261,6 +267,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         if let localKeyMonitor {
             NSEvent.removeMonitor(localKeyMonitor)
         }
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        // Stop all security-scoped access sessions so macOS can clean up
+        projectStore?.bookmarkStore.stopAll()
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {

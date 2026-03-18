@@ -38,6 +38,8 @@ final class ProjectStore {
     var activeProjectID: String?
     var collapsedProjectIDs: Set<String> = []
 
+    let bookmarkStore = BookmarkStore()
+
     private static let storeURL: URL = {
         let home = FileManager.default.homeDirectoryForCurrentUser
         return home.appendingPathComponent(".openowl/openowl.json")
@@ -132,6 +134,8 @@ final class ProjectStore {
             return lhs.displayName.localizedStandardCompare(rhs.displayName) == .orderedAscending
         }
         activeProjectID = item.id
+        bookmarkStore.save(projectID: item.id, url: url)
+        bookmarkStore.startAccessing(projectID: item.id)
         persist()
     }
 
@@ -174,6 +178,8 @@ final class ProjectStore {
         if activeProjectID == id || childIDs.contains(activeProjectID ?? "") {
             activeProjectID = projects.first?.id
         }
+        bookmarkStore.remove(projectID: id)
+        childIDs.forEach { bookmarkStore.remove(projectID: $0) }
         persist()
     }
 
@@ -203,12 +209,16 @@ final class ProjectStore {
         )
         projects.append(item)
         activeProjectID = item.id
+        let worktreeURL = URL(fileURLWithPath: path, isDirectory: true)
+        bookmarkStore.save(projectID: item.id, url: worktreeURL)
+        bookmarkStore.startAccessing(projectID: item.id)
         persist()
         return item
     }
 
     func removeWorktreeProject(id: String) {
         let parentID = projects.first(where: { $0.id == id })?.worktreeOf
+        bookmarkStore.remove(projectID: id)
         projects.removeAll { $0.id == id }
         if activeProjectID == id {
             if let parentID, let parent = projects.first(where: { $0.id == parentID }) {
@@ -249,6 +259,12 @@ final class ProjectStore {
                 NSLog("openOwl: [ProjectStore] Failed to read %@: %@. Falling back to migration.",
                       Self.storeURL.path, error.localizedDescription)
             }
+        }
+
+        // Restore security-scoped access for all loaded projects.
+        // This re-establishes TCC authorization granted on previous launches without prompting.
+        for project in projects {
+            bookmarkStore.startAccessing(projectID: project.id)
         }
 
         // 2) Migrate from UserDefaults (one-time)
