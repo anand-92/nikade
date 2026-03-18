@@ -10,14 +10,21 @@ import Foundation
 /// treats as a fresh programmatic access and may re-prompt each launch.
 @MainActor
 final class BookmarkStore {
-    private static let storeURL: URL =
-        FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent(".openowl/bookmarks.plist")
-
+    private let storeURL: URL
     private var bookmarks: [String: Data] = [:]  // projectID → bookmark Data
     private var activeAccess: [String: URL] = [:] // projectID → currently-accessed URL
 
-    init() { load() }
+    init(storeURL: URL? = nil) {
+        self.storeURL = storeURL ?? FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".openowl/bookmarks.plist")
+        load()
+    }
+
+    /// Returns true if a bookmark exists for the given project ID.
+    /// Exposed for testing; use startAccessing to actually restore access.
+    func hasBookmark(for projectID: String) -> Bool {
+        bookmarks[projectID] != nil
+    }
 
     // MARK: - Public API
 
@@ -91,7 +98,7 @@ final class BookmarkStore {
     // MARK: - Persistence
 
     private func load() {
-        guard let data = try? Data(contentsOf: Self.storeURL),
+        guard let data = try? Data(contentsOf: storeURL),
               let decoded = try? PropertyListDecoder().decode([String: Data].self, from: data)
         else { return }
         bookmarks = decoded
@@ -100,9 +107,9 @@ final class BookmarkStore {
     private func persist() {
         do {
             let data = try PropertyListEncoder().encode(bookmarks)
-            let dir = Self.storeURL.deletingLastPathComponent()
+            let dir = storeURL.deletingLastPathComponent()
             try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-            try data.write(to: Self.storeURL, options: .atomic)
+            try data.write(to: storeURL, options: .atomic)
         } catch {
             NSLog("openOwl: [BookmarkStore] persist failed: %@", error.localizedDescription)
         }
