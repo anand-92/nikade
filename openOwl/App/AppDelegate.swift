@@ -222,10 +222,18 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         switch menuItem.action {
         case #selector(menuNewTab), #selector(menuCloseTab),
              #selector(menuSplitHorizontal), #selector(menuSplitVertical),
-             #selector(menuFocusLeft), #selector(menuFocusRight),
-             #selector(menuFocusUp), #selector(menuFocusDown),
              #selector(menuTerminalSearch):
             return terminalOnly
+
+        case #selector(menuFocusLeft), #selector(menuFocusRight),
+             #selector(menuFocusUp), #selector(menuFocusDown):
+            // Disable when single pane — mirrors handleLocalKeyDown's guard.
+            // If enabled with one pane, the menu key equivalent consumes Cmd+Arrow
+            // before the terminal NSView receives it (local monitor passes it through).
+            guard terminalOnly, let ws = workspaceStore,
+                  let tabID = ws.activeTabID,
+                  let tab = ws.tabs.first(where: { $0.id == tabID }) else { return false }
+            return tab.splitTree.leafCount > 1
 
         case #selector(menuToggleMaximize):
             if let ws = workspaceStore {

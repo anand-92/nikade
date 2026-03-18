@@ -745,11 +745,17 @@ struct GitChangesView: View {
               let repoURL = store.repositoryURL,
               let path = store.selectedChange?.path else { return }
         let fileURL = repoURL.appendingPathComponent(path)
-        cachedFileLines = [] // prevent duplicate loads while async in flight
+        cachedFileLines = [] // sentinel: prevents duplicate loads while async in flight
         Task {
             let lines = await Task.detached(priority: .userInitiated) {
                 (try? String(contentsOf: fileURL, encoding: .utf8))?.components(separatedBy: "\n") ?? []
             }.value
+            // Guard: selection may have changed while the detached read was in flight.
+            // If so, reset the sentinel so the new selection's loadFileIfNeeded can run.
+            guard store.selectedChange?.path == path else {
+                cachedFileLines = nil
+                return
+            }
             cachedFileLines = lines
             if lines.isEmpty {
                 store.errorMessage = "Could not read \(fileURL.lastPathComponent)"

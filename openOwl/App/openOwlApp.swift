@@ -63,14 +63,15 @@ struct openOwlApp: App {
                 .onChange(of: navigationStore.activeTab) { _, _ in
                     syncActiveProjectContext()
                 }
-                .onChange(of: gitChangesStore.statusSnapshot?.branch) { _, newBranch in
-                    // Keep sidebar branch display in sync with git status
-                    guard let snapshot = gitChangesStore.statusSnapshot,
-                          let activeID = projectStore.activeProjectID,
-                          let activeURL = projectStore.activeProjectURL,
-                          snapshot.repositoryRoot.standardizedFileURL == activeURL.standardizedFileURL
-                    else { return }
-                    projectStore.updateProjectBranch(activeID, branch: snapshot.branch)
+                .onChange(of: gitChangesStore.statusSnapshot?.branch) { _, _ in
+                    // Fires on branch change within the same repo (e.g. checkout)
+                    updateActiveBranchLabel()
+                }
+                .onChange(of: gitChangesStore.statusSnapshot?.repositoryRoot) { _, _ in
+                    // Fires when the repo root changes (e.g. switching projects that both
+                    // have a 'main' branch — branch string alone wouldn't change, so we
+                    // need this second observer to keep the sidebar label in sync).
+                    updateActiveBranchLabel()
                 }
                 .frame(
                     minWidth: AppConstants.windowMinWidth,
@@ -135,6 +136,16 @@ struct openOwlApp: App {
                 dir = next
             }
         }
+    }
+
+    @MainActor
+    private func updateActiveBranchLabel() {
+        guard let snapshot = gitChangesStore.statusSnapshot,
+              let activeID = projectStore.activeProjectID,
+              let activeURL = projectStore.activeProjectURL,
+              snapshot.repositoryRoot.standardizedFileURL == activeURL.standardizedFileURL
+        else { return }
+        projectStore.updateProjectBranch(activeID, branch: snapshot.branch)
     }
 
     @MainActor
