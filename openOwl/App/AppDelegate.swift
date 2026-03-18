@@ -218,11 +218,22 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
         let terminalOnly = navigationStore?.activeTab == .terminal
+        // Menu key-equivalents run before NSEvent local monitors. The firstResponder
+        // guard must match handleLocalKeyDown so shortcuts don't fire when the search
+        // TextField (or any other non-terminal control) has focus.
+        let terminalFocused = terminalOnly && NSApp.keyWindow?.firstResponder is TerminalNSView
 
         switch menuItem.action {
+        // These shortcuts must only fire when a terminal NSView has focus.
+        // Without the firstResponder guard, ⌘T/⌘W/⌘D/⌘F would be consumed by the
+        // menu before the search TextField ever sees them.
         case #selector(menuNewTab), #selector(menuCloseTab),
-             #selector(menuSplitHorizontal), #selector(menuSplitVertical),
-             #selector(menuTerminalSearch):
+             #selector(menuSplitHorizontal), #selector(menuSplitVertical):
+            return terminalFocused
+
+        // Search can be started even if the cursor is elsewhere in the terminal tab
+        // (e.g. sidebar, status bar), so only require the tab, not TerminalNSView focus.
+        case #selector(menuTerminalSearch):
             return terminalOnly
 
         case #selector(menuFocusLeft), #selector(menuFocusRight),
@@ -230,7 +241,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             // Disable when single pane — mirrors handleLocalKeyDown's guard.
             // If enabled with one pane, the menu key equivalent consumes Cmd+Arrow
             // before the terminal NSView receives it (local monitor passes it through).
-            guard terminalOnly, let ws = workspaceStore,
+            guard terminalFocused, let ws = workspaceStore,
                   let tabID = ws.activeTabID,
                   let tab = ws.tabs.first(where: { $0.id == tabID }) else { return false }
             return tab.splitTree.leafCount > 1
@@ -320,14 +331,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             return true
         }
 
-        // Cmd+Shift+Return: toggle maximize/restore current pane
+        // All other terminal shortcuts only work when terminal is active
+        guard navigationStore?.activeTab == .terminal else { return false }
+
+        // Cmd+Shift+Return: toggle maximize/restore current pane (terminal tab only)
         if flags == [.command, .shift], event.keyCode == 36 {
             workspaceStore.toggleMaximizeCurrentPane()
             return true
         }
-
-        // All other terminal shortcuts only work when terminal is active
-        guard navigationStore?.activeTab == .terminal else { return false }
 
         // If focus is not on a TerminalNSView (e.g. search field, commit message),
         // pass all events through so standard text-editing shortcuts work.

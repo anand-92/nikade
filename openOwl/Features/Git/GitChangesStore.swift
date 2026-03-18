@@ -487,6 +487,10 @@ final class GitChangesStore {
         watcher = FileWatcher(directoryURL: repositoryURL) { [weak self] in
             self?.refreshNow()
         }
+        if watcher == nil {
+            NSLog("openOwl: [GitChanges] FileWatcher init failed for %@ — auto-refresh unavailable",
+                  repositoryURL.path)
+        }
         watcher?.start()
     }
 

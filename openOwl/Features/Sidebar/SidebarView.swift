@@ -488,6 +488,7 @@ private struct WorktreeRow: View {
 private struct PaneStatusRow: View {
     let info: PaneInfo
     @Environment(TerminalWorkspaceStore.self) private var workspace
+    @Environment(GhosttyAppManager.self) private var ghosttyManager
     @State private var hovering = false
 
     var body: some View {
@@ -520,7 +521,14 @@ private struct PaneStatusRow: View {
         )
         .contentShape(Rectangle())      // full-width click area including Spacer
         .onHover { hovering = $0 }
-        .onTapGesture { workspace.focusPane(info.paneID) }
+        .onTapGesture {
+            workspace.focusPane(info.paneID)
+            // workspace.focusPane only mutates store state; if the pane is already the
+            // focusedPaneID in the active tab, no onChange fires in TerminalWorkspaceView
+            // and the TerminalNSView never becomes first responder.  Call focusPane on
+            // GhosttyAppManager directly so AppKit focus always transfers.
+            _ = ghosttyManager.focusPane(info.paneID)
+        }
         // Accessibility: treat row as button, describe state beyond color
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(info.hasBell ? "\(info.title), has notification" : info.title)

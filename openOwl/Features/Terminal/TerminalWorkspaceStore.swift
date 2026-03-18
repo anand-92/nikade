@@ -654,6 +654,7 @@ final class TerminalWorkspaceStore {
     func endSearch(paneID: UUID) {
         guard let state = paneSearchStates[paneID] else { return }
         state.debounceTask?.cancel()
+        state.debounceTask = nil
         state.isSearching = false
         state.needle = ""
         state.total = nil

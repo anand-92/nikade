@@ -117,9 +117,12 @@ struct TerminalSearchOverlay: View {
             // Debounce short queries; task stored on the shared state so the
             // AppDelegate Esc path (endSearch) can cancel it too.
             searchState?.debounceTask = Task { @MainActor in
-                try? await Task.sleep(for: .milliseconds(300))
-                guard !Task.isCancelled else { return }
-                performAction("search:\(needle)")
+                do {
+                    try await Task.sleep(for: .milliseconds(300))
+                    performAction("search:\(needle)")
+                } catch {
+                    // Task.sleep throws CancellationError when cancelled — exit without firing search
+                }
             }
         }
     }
@@ -151,6 +154,8 @@ struct TerminalSearchOverlay: View {
     }
 
     private func refocusTerminal() {
-        _ = ghosttyManager.focusPane(paneID)
+        if !ghosttyManager.focusPane(paneID) {
+            NSLog("openOwl: [TerminalSearch] refocusTerminal failed for pane=%@", paneID.uuidString)
+        }
     }
 }

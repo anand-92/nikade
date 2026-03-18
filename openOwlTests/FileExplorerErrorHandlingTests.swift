@@ -78,24 +78,26 @@ struct FileExplorerErrorHandlingTests {
         #expect(result.isEmpty)
     }
 
-    /// sortEntries must place directories before files regardless of alphabetical order
-    /// (a-dir < z-file alphabetically AND by directory-first rule).
+    /// sortEntries must place directories before files even when the directory name
+    /// sorts AFTER the file name alphabetically (z-dir > a-file.txt).
+    /// Using conflicting names ensures a purely-alphabetical comparator would fail.
     @Test func sortEntries_directoriesBeforeFiles() throws {
         let tmp = FileManager.default.temporaryDirectory
             .appendingPathComponent("openowl-test-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: tmp) }
 
-        let fileURL = tmp.appendingPathComponent("z-file.txt")
-        let dirURL  = tmp.appendingPathComponent("a-dir")
+        let fileURL = tmp.appendingPathComponent("a-file.txt")  // alphabetically first
+        let dirURL  = tmp.appendingPathComponent("z-dir")       // alphabetically last
         try "x".write(to: fileURL, atomically: true, encoding: .utf8)
         try FileManager.default.createDirectory(at: dirURL, withIntermediateDirectories: true)
 
         // Pass file first to prove sorting, not insertion order
         let sorted = FileExplorerStore.sortEntries([fileURL, dirURL])
 
-        #expect(sorted.first?.lastPathComponent == "a-dir")
-        #expect(sorted.last?.lastPathComponent  == "z-file.txt")
+        // Directory must win even though "z-dir" > "a-file.txt" alphabetically
+        #expect(sorted.first?.lastPathComponent == "z-dir")
+        #expect(sorted.last?.lastPathComponent  == "a-file.txt")
     }
 
     @Test func sortEntries_alphabeticalWithinFiles() throws {

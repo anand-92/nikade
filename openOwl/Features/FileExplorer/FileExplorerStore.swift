@@ -604,6 +604,10 @@ final class FileExplorerStore {
         watcher = FileWatcher(directoryURL: projectURL) { [weak self] in
             self?.refreshNow()
         }
+        if watcher == nil {
+            NSLog("openOwl: [FileExplorer] FileWatcher init failed for %@ — auto-refresh unavailable",
+                  projectURL.path)
+        }
         watcher?.start()
     }
 
@@ -900,7 +904,8 @@ extension FileExplorerStore {
             let rv = try url.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey])
             isDirectory = rv.isDirectory ?? false
             isSymbolicLink = rv.isSymbolicLink ?? false
-        } catch let err as NSError where err.code == NSFileNoSuchFileError {
+        } catch let err as NSError
+            where err.code == NSFileNoSuchFileError || err.code == NSFileReadNoSuchFileError {
             return nil  // Race condition: file disappeared between scan and build
         } catch {
             NSLog("openOwl: [FileExplorer] buildNode resourceValues failed for %@: %@",
