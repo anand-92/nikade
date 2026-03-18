@@ -894,9 +894,19 @@ extension FileExplorerStore {
         }
 
         let path = url.standardizedFileURL.path
-        let resourceValues = try? url.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey])
-        let isDirectory = resourceValues?.isDirectory ?? false
-        let isSymbolicLink = resourceValues?.isSymbolicLink ?? false
+        let isDirectory: Bool
+        let isSymbolicLink: Bool
+        do {
+            let rv = try url.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey])
+            isDirectory = rv.isDirectory ?? false
+            isSymbolicLink = rv.isSymbolicLink ?? false
+        } catch let err as NSError where err.code == NSFileNoSuchFileError {
+            return nil  // Race condition: file disappeared between scan and build
+        } catch {
+            NSLog("openOwl: [FileExplorer] buildNode resourceValues failed for %@: %@",
+                  url.path, error.localizedDescription)
+            return nil
+        }
 
         if isDirectory && !isSymbolicLink {
             // Don't recurse into gitignored directories (node_modules etc.)
@@ -975,24 +985,40 @@ extension FileExplorerStore {
     }
 
     nonisolated static func directoryEntries(at directoryURL: URL) -> [URL] {
-        (try? FileManager.default.contentsOfDirectory(
-            at: directoryURL,
-            includingPropertiesForKeys: [.isDirectoryKey, .isSymbolicLinkKey],
-            options: [.skipsPackageDescendants]
-        )) ?? []
+        do {
+            return try FileManager.default.contentsOfDirectory(
+                at: directoryURL,
+                includingPropertiesForKeys: [.isDirectoryKey, .isSymbolicLinkKey],
+                options: [.skipsPackageDescendants]
+            )
+        } catch let err as NSError
+            where err.code == NSFileReadNoSuchFileError || err.code == NSFileNoSuchFileError {
+            return []  // Directory was deleted just before scan — expected, silent
+        } catch {
+            NSLog("openOwl: [FileExplorer] directoryEntries failed for %@: %@",
+                  directoryURL.path, error.localizedDescription)
+            return []
+        }
     }
 
     nonisolated static func sortEntries(_ entries: [URL]) -> [URL] {
-        entries.sorted { lhs, rhs in
-            let lhsValues = try? lhs.resourceValues(forKeys: [.isDirectoryKey])
-            let rhsValues = try? rhs.resourceValues(forKeys: [.isDirectoryKey])
-            let lhsIsDirectory = lhsValues?.isDirectory ?? false
-            let rhsIsDirectory = rhsValues?.isDirectory ?? false
-
-            if lhsIsDirectory != rhsIsDirectory {
-                return lhsIsDirectory
+        // Pre-compute isDirectory once per URL (O(n)) rather than inside the
+        // comparator (O(n log n)), and log failures instead of silently defaulting.
+        var isDirectoryCache: [URL: Bool] = Dictionary(minimumCapacity: entries.count)
+        for url in entries {
+            do {
+                let rv = try url.resourceValues(forKeys: [.isDirectoryKey])
+                isDirectoryCache[url] = rv.isDirectory ?? false
+            } catch {
+                NSLog("openOwl: [FileExplorer] sortEntries resourceValues failed for %@: %@",
+                      url.path, error.localizedDescription)
+                isDirectoryCache[url] = false
             }
-
+        }
+        return entries.sorted { lhs, rhs in
+            let lhsIsDirectory = isDirectoryCache[lhs] ?? false
+            let rhsIsDirectory = isDirectoryCache[rhs] ?? false
+            if lhsIsDirectory != rhsIsDirectory { return lhsIsDirectory }
             return displayName(for: lhs)
                 .localizedStandardCompare(displayName(for: rhs)) == .orderedAscending
         }

@@ -11,9 +11,6 @@ struct TerminalSearchOverlay: View {
     @Environment(GhosttyAppManager.self) private var ghosttyManager
     @FocusState private var isTextFieldFocused: Bool
 
-    /// Task handle for debounced search
-    @State private var debounceTask: Task<Void, Never>?
-
     private var searchState: TerminalSearchState? {
         workspace.paneSearchStates[paneID]
     }
@@ -103,7 +100,7 @@ struct TerminalSearchOverlay: View {
     // MARK: - Search Logic
 
     private func scheduleSearch(_ needle: String) {
-        debounceTask?.cancel()
+        searchState?.debounceTask?.cancel()
 
         if needle.isEmpty {
             // Clear search immediately
@@ -117,8 +114,9 @@ struct TerminalSearchOverlay: View {
             // Immediate search for >= 3 chars
             performAction("search:\(needle)")
         } else {
-            // Debounce short queries
-            debounceTask = Task { @MainActor in
+            // Debounce short queries; task stored on the shared state so the
+            // AppDelegate Esc path (endSearch) can cancel it too.
+            searchState?.debounceTask = Task { @MainActor in
                 try? await Task.sleep(for: .milliseconds(300))
                 guard !Task.isCancelled else { return }
                 performAction("search:\(needle)")
@@ -135,7 +133,7 @@ struct TerminalSearchOverlay: View {
     }
 
     private func closeSearch(refocus: Bool = true) {
-        debounceTask?.cancel()
+        searchState?.debounceTask?.cancel()
         performAction("end_search")
         workspace.endSearch(paneID: paneID)
         if refocus { refocusTerminal() }

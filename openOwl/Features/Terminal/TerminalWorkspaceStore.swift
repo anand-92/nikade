@@ -357,6 +357,11 @@ final class TerminalWorkspaceStore {
     func switchProject(_ projectID: String?) {
         activeProjectID = projectID
         maximizedPaneID = nil  // Reset maximize when switching projects
+        // Clear stale drag state: dragging a pane then switching project would leave
+        // the ContentShape overlay on every non-source pane in the new project's tab.
+        draggingPaneID = nil
+        dragOverPaneID = nil
+        dropZone = nil
 
         // Create initial tab if project has none
         let projectTabs = tabs.filter { tabProjectMap[$0.id] == projectID }
@@ -648,6 +653,7 @@ final class TerminalWorkspaceStore {
 
     func endSearch(paneID: UUID) {
         guard let state = paneSearchStates[paneID] else { return }
+        state.debounceTask?.cancel()
         state.isSearching = false
         state.needle = ""
         state.total = nil
