@@ -70,7 +70,7 @@ final class OutlineTreeViewController: NSViewController {
         outlineView.usesAlternatingRowBackgroundColors = false
         outlineView.selectionHighlightStyle = .sourceList
         outlineView.floatsGroupRows = false
-        outlineView.autoresizesOutlineColumn = true
+        outlineView.autoresizesOutlineColumn = false
 
         let column = NSTableColumn(identifier: NSUserInterfaceItemIdentifier("FileColumn"))
         column.isEditable = false

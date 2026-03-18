@@ -186,7 +186,11 @@ final class FileExplorerStore {
 
     func refreshNow() {
         Task {
-            await refresh()
+            if rootNodes.isEmpty {
+                await refresh()        // First load: shallow + full (instant feedback)
+            } else {
+                await refreshFullOnly() // Subsequent: full only (preserves expanded tree)
+            }
         }
     }
 
@@ -194,20 +198,44 @@ final class FileExplorerStore {
     func expandDirectory(_ dirPath: String) {
         guard let node = nodeIndex[dirPath], node.isDirectory, node.children == nil else { return }
 
+        let gitContext = currentGitContext
         // Scan this directory synchronously (single directory is fast)
         let childURLs = Self.sortEntries(Self.directoryEntries(at: node.url))
         var newChildren: [FileExplorerNode] = []
         for url in childURLs {
-            if Self.shouldIgnore(url: url, gitContext: .empty) { continue }
+            if Self.shouldIgnore(url: url, gitContext: gitContext) { continue }
             let path = url.standardizedFileURL.path
-            let rv = try? url.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey])
-            let isDir = rv?.isDirectory ?? false
-            let isSym = rv?.isSymbolicLink ?? false
+            if Self.isGitIgnored(path: path, gitContext: gitContext) { continue }
+            let rv: URLResourceValues
+            do {
+                rv = try url.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey])
+            } catch let error as NSError where error.code == NSFileNoSuchFileError {
+                continue  // file removed between enumeration and stat — skip silently
+            } catch {
+                NSLog("openOwl: [FileExplorer] resourceValues failed for %@: %@",
+                      url.path, error.localizedDescription)
+                continue  // skip rather than misclassify as file
+            }
+            let isDir = rv.isDirectory ?? false
+            let isSym = rv.isSymbolicLink ?? false
+
+            // Compute git state from the cached context
+            var gitState: FileGitState? = gitContext.statusByAbsolutePath[path]
+            if isDir && !isSym {
+                // Directory: infer from any status entries under this path
+                let prefix = path + "/"
+                for (statusPath, fileState) in gitContext.statusByAbsolutePath {
+                    if statusPath.hasPrefix(prefix) {
+                        gitState = Self.mergeGitState(gitState, fileState)
+                    }
+                }
+            }
+
             let child = FileExplorerNode(
                 id: path, url: url,
                 name: Self.displayName(for: url),
                 isDirectory: isDir && !isSym,
-                gitState: nil,
+                gitState: gitState,
                 children: (isDir && !isSym) ? nil : nil // lazy for subdirs too
             )
             nodeIndex[child.id] = child
@@ -419,10 +447,21 @@ final class FileExplorerStore {
             if selectedNodeID == id { selectedNodeID = nil; previewState = .none }
         }
 
-        // Trash in background
-        DispatchQueue.global(qos: .userInitiated).async {
+        // Trash in background; restore failed items and surface error to user
+        Task {
+            var failedNames: [String] = []
             for url in urls {
-                try? FileManager.default.trashItem(at: url, resultingItemURL: nil)
+                do {
+                    try FileManager.default.trashItem(at: url, resultingItemURL: nil)
+                } catch {
+                    NSLog("openOwl: [FileExplorer] trashItem failed for %@: %@",
+                          url.path, error.localizedDescription)
+                    failedNames.append(url.lastPathComponent)
+                }
+            }
+            if !failedNames.isEmpty {
+                errorMessage = "无法删除：\(failedNames.joined(separator: "、"))"
+                refreshNow()  // re-scan to restore failed items in the tree
             }
         }
     }
@@ -489,6 +528,7 @@ final class FileExplorerStore {
         guard projectURL == capturedURL else { return }
         NSLog("FileExplorer: full scan %.0fms (%d nodes)", (CFAbsoluteTimeGetCurrent() - t1) * 1000, fullResult.index.count)
 
+        currentGitContext = gitContext
         rootNodes = fullResult.nodes
         nodeIndex = fullResult.index
         searchableFileNodes = sortedFiles
@@ -535,6 +575,7 @@ final class FileExplorerStore {
         guard self.projectURL == capturedURL else { return }
         NSLog("FileExplorer: background refresh %.0fms (%d nodes)", (CFAbsoluteTimeGetCurrent() - t1) * 1000, fullResult.index.count)
 
+        currentGitContext = gitContext
         rootNodes = fullResult.nodes
         nodeIndex = fullResult.index
         searchableFileNodes = sortedFiles
@@ -576,15 +617,27 @@ final class FileExplorerStore {
         previewState = Self.makePreviewState(for: node.url)
     }
 
+    /// Most recent git context (status + ignore rules). Updated after each full scan.
+    /// Used by expandDirectory so lazily-loaded children show correct git state.
+    private var currentGitContext: GitContext = .empty
+
     private var cachedRepoRoot: [String: URL] = [:]
 
     private func repoRoot(for projectURL: URL) async -> URL? {
         let key = projectURL.path
         if let cached = cachedRepoRoot[key] { return cached }
         let probe = GitService(workingDirectory: projectURL)
-        guard let root = try? await probe.repositoryRoot() else { return nil }
-        cachedRepoRoot[key] = root
-        return root
+        do {
+            let root = try await probe.repositoryRoot()
+            cachedRepoRoot[key] = root
+            return root
+        } catch GitServiceError.notGitRepository {
+            return nil
+        } catch {
+            NSLog("openOwl: [FileExplorer] repoRoot failed for %@: %@",
+                  projectURL.path, error.localizedDescription)
+            return nil
+        }
     }
 
     /// Fast: only gitignore list, no status
@@ -595,7 +648,8 @@ final class FileExplorerStore {
         var ignoredExactPaths: Set<String> = []
         var ignoredDirectoryPrefixes: [String] = []
 
-        if let ignoredPaths = try? await gitService.ignoredPaths() {
+        do {
+            let ignoredPaths = try await gitService.ignoredPaths()
             for ignoredPath in ignoredPaths {
                 let normalized = ignoredPath.trimmingCharacters(in: .whitespacesAndNewlines)
                 guard !normalized.isEmpty else { continue }
@@ -615,6 +669,11 @@ final class FileExplorerStore {
                     ignoredExactPaths.insert(absolutePath)
                 }
             }
+        } catch GitServiceError.notGitRepository {
+            return .empty
+        } catch {
+            NSLog("openOwl: [FileExplorer] loadIgnoreContext failed for %@: %@",
+                  projectURL.path, error.localizedDescription)
         }
 
         let compactedPrefixes = Self.compactDirectoryPrefixes(ignoredDirectoryPrefixes)
@@ -637,7 +696,8 @@ final class FileExplorerStore {
         let gitService = GitService(workingDirectory: repositoryRoot)
         var statusMap: [String: FileGitState] = [:]
 
-        if let snapshot = try? await gitService.status() {
+        do {
+            let snapshot = try await gitService.status()
             let allChanges = snapshot.staged + snapshot.modified + snapshot.untracked
             for change in allChanges {
                 let absolutePath = repositoryRoot
@@ -648,6 +708,11 @@ final class FileExplorerStore {
                 let existing = statusMap[absolutePath]
                 statusMap[absolutePath] = Self.mergeGitState(existing, state)
             }
+        } catch GitServiceError.notGitRepository {
+            return [:]
+        } catch {
+            NSLog("openOwl: [FileExplorer] loadGitStatus failed for %@: %@",
+                  projectURL.path, error.localizedDescription)
         }
         return statusMap
     }

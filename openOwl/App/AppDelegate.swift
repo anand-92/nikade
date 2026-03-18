@@ -12,10 +12,22 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.regular)
+        applyDevIcon()
         ensureEditMenu()
         installTerminalMenu()
         installViewMenu()
         installLocalKeyMonitor()
+    }
+
+    /// In Debug builds, override the Dock icon with the DEV-badged variant.
+    /// The asset catalog compiler generates an incomplete icns for alternate icon sets,
+    /// so we load the full-resolution image from Assets.car at runtime instead.
+    private func applyDevIcon() {
+        #if DEBUG
+        if let devIcon = NSImage(named: "AppIconDev") {
+            NSApp.applicationIconImage = devIcon
+        }
+        #endif
     }
 
     /// SwiftUI sometimes omits the Edit menu. Ensure Cut/Copy/Paste/Select All exist
@@ -237,29 +249,42 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func installLocalKeyMonitor() {
-        localKeyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+        localKeyMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .leftMouseUp]) { [weak self] event in
             guard let self else { return event }
-            return self.handleLocalKeyDown(event) ? nil : event
+            switch event.type {
+            case .keyDown:
+                return self.handleLocalKeyDown(event) ? nil : event
+            case .leftMouseUp:
+                // Deferred so PaneDropDelegate.performDrop() (called synchronously by
+                // AppKit during the same event dispatch) runs first. For successful
+                // drops cleanup() already clears draggingPaneID and this is a no-op.
+                // For cancelled drags (no valid target), this clears the stuck overlay.
+                Task { @MainActor [weak self] in
+                    self?.workspaceStore?.cancelDragIfActive()
+                }
+                return event
+            default:
+                return event
+            }
         }
     }
 
     private func handleLocalKeyDown(_ event: NSEvent) -> Bool {
         guard let workspaceStore else { return false }
 
-        // Search shortcuts: Return (next), Shift+Return (previous), Esc (close).
-        // Must be before the Command guard — these keys carry no Command modifier.
+        // Search shortcuts: Esc (close) works from anywhere.
+        // Return/Shift+Return (navigate) only when the search text field is focused —
+        // if TerminalNSView has focus, the user is typing in the terminal and Return
+        // must reach the shell (e.g. IME confirmation, command execution).
         if let tab = workspaceStore.tabs.first(where: { $0.id == workspaceStore.activeTabID }),
            let paneID = tab.focusedPaneID ?? tab.splitTree.firstPaneID,
            let searchState = workspaceStore.paneSearchStates[paneID],
            searchState.isSearching {
             switch event.keyCode {
-            case 36: // Return / Enter
-                let action = event.modifierFlags.contains(.shift)
-                    ? "navigate_search:previous"
-                    : "navigate_search:next"
-                ghosttyManager?.terminalView(for: paneID)?.performBindingAction(action)
-                return true
-            case 53: // Escape
+            // Return/Shift+Return handled by SwiftUI onKeyPress in TerminalSearchOverlay —
+            // only fires when the search text field has SwiftUI focus, so it never
+            // steals Enter from the terminal (IME confirmation, command execution).
+            case 53: // Escape — close search from anywhere
                 workspaceStore.endSearch(paneID: paneID)
                 ghosttyManager?.terminalView(for: paneID)?.performBindingAction("end_search")
                 _ = ghosttyManager?.focusPane(paneID)

@@ -619,6 +619,19 @@ final class TerminalWorkspaceStore {
         }
     }
 
+    // MARK: - Drag
+
+    /// Called when a pane drag ends without a valid drop target (drag cancelled).
+    /// In the success path, `PaneDropDelegate.cleanup()` clears state first and
+    /// this becomes a no-op.
+    func cancelDragIfActive() {
+        guard draggingPaneID != nil else { return }
+        NSLog("openOwl: [PaneDrag] drag cancelled (no performDrop) — clearing state")
+        draggingPaneID = nil
+        dragOverPaneID = nil
+        dropZone = nil
+    }
+
     // MARK: - Search
 
     func searchState(for paneID: UUID) -> TerminalSearchState {

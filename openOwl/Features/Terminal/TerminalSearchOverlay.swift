@@ -4,6 +4,9 @@ import SwiftUI
 /// Debounces short queries (< 3 chars) by 300ms, fires immediately for >= 3 chars.
 struct TerminalSearchOverlay: View {
     let paneID: UUID
+    /// Whether the owning pane currently has terminal focus.
+    /// When focus moves to another pane, the search bar auto-closes.
+    let isFocused: Bool
     @Environment(TerminalWorkspaceStore.self) private var workspace
     @Environment(GhosttyAppManager.self) private var ghosttyManager
     @FocusState private var isTextFieldFocused: Bool
@@ -18,8 +21,12 @@ struct TerminalSearchOverlay: View {
     var body: some View {
         if let state = searchState, state.isSearching {
             searchBar(state)
-                .frame(maxWidth: .infinity, alignment: .trailing)
                 .transition(.move(edge: .top).combined(with: .opacity))
+                .onChange(of: isFocused) { _, focused in
+                    // Auto-close when another pane steals terminal focus.
+                    // Do NOT refocus this pane — the new pane already has focus.
+                    if !focused { closeSearch(refocus: false) }
+                }
         }
     }
 
@@ -27,22 +34,21 @@ struct TerminalSearchOverlay: View {
     private func searchBar(_ state: TerminalSearchState) -> some View {
         HStack(spacing: 6) {
             // Search field
+            // .onSubmit fires only when the TextField is the active text input,
+            // unlike .onKeyPress which can intercept Return even when SwiftUI's
+            // @FocusState is out of sync with AppKit's firstResponder in hybrid apps.
+            // Esc is handled by AppDelegate's NSEvent local monitor (always works).
             TextField("Search...", text: Bindable(state).needle)
                 .textFieldStyle(.plain)
                 .font(AppFonts.body)
                 .focused($isTextFieldFocused)
                 .frame(minWidth: 120, maxWidth: 200)
-                .onKeyPress(keys: [.return], phases: .down) { press in
-                    if press.modifiers.contains(.shift) {
+                .onSubmit {
+                    if NSEvent.modifierFlags.contains(.shift) {
                         navigatePrevious()
                     } else {
                         navigateNext()
                     }
-                    return .handled
-                }
-                .onKeyPress(.escape) {
-                    closeSearch()
-                    return .handled
                 }
                 .onChange(of: state.needle) { _, newValue in
                     scheduleSearch(newValue)
@@ -128,15 +134,22 @@ struct TerminalSearchOverlay: View {
         performAction("navigate_search:previous")
     }
 
-    private func closeSearch() {
+    private func closeSearch(refocus: Bool = true) {
         debounceTask?.cancel()
         performAction("end_search")
         workspace.endSearch(paneID: paneID)
-        refocusTerminal()
+        if refocus { refocusTerminal() }
     }
 
     private func performAction(_ action: String) {
-        ghosttyManager.terminalView(for: paneID)?.performBindingAction(action)
+        guard let view = ghosttyManager.terminalView(for: paneID) else {
+            // Pane unregistered (e.g., closed while search was active) — ghostty surface
+            // teardown handles cleanup, so this is benign. Log for future diagnostics.
+            NSLog("openOwl: [TerminalSearch] performAction skipped (pane unregistered) pane=%@ action=%@",
+                  paneID.uuidString, action)
+            return
+        }
+        view.performBindingAction(action)
     }
 
     private func refocusTerminal() {

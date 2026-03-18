@@ -259,8 +259,6 @@ private struct TerminalTabContentView: View {
                             PaneDragHandle(paneID: paneID)
                         }
 
-                        TerminalSearchOverlay(paneID: paneID)
-
                         TerminalPanel(
                             ghosttyApp: ghosttyApp,
                             paneID: paneID,
@@ -273,17 +271,12 @@ private struct TerminalTabContentView: View {
                     }
                     .frame(width: max(frame.width, 1), height: max(frame.height, 1))
                     .animation(.easeInOut(duration: 0.15), value: isMaximized)
-                    .contentShape(Rectangle())
                     .clipped()
-                    .onDrop(of: [UTType.fileURL], isTargeted: Binding(
-                        get: { false },
-                        set: { targeted in
-                            NSLog("openOwl: [FileDrop] onDrop isTargeted=%d pane=%@", targeted ? 1 : 0, paneID.uuidString)
-                        }
-                    )) { providers in
-                        NSLog("openOwl: [FileDrop] onDrop FIRED providers=%d pane=%@", providers.count, paneID.uuidString)
-                        return handleFileDrop(providers: providers, paneID: paneID)
-                    }
+                    // File drops are handled at the AppKit level by TerminalScrollView
+                    // (registerForDraggedTypes + performDragOperation).
+                    // A SwiftUI-level .onDrop + .contentShape(Rectangle()) here would
+                    // create a full-pane hit target that blocks mouse events (selection,
+                    // click-to-focus) from reaching the TerminalNSView below.
                     .opacity(isHiddenByMaximize ? 0 : 1)
                     .allowsHitTesting(!isHiddenByMaximize)
                     .overlay {
@@ -300,15 +293,17 @@ private struct TerminalTabContentView: View {
                         }
                     }
                     .overlay {
-                        // Always register drop target (not conditional on draggingPaneID).
-                        // Conditional registration caused a timing race: SwiftUI re-renders
-                        // asynchronously, so the overlay wasn't ready when the drag first
-                        // entered the target pane — AppKit's TerminalScrollView caught it first.
+                        // Only register drop target when a pane drag is actually in progress
+                        // and this pane is not the drag source.
+                        // Previously used `draggingPaneID != paneID` which is true even
+                        // when draggingPaneID is nil — causing the contentShape overlay to
+                        // block all mouse events at all times.
                         //
-                        // Safe to always register because paneDragTypeID is a private UTType
-                        // that TerminalScrollView never registers for — Finder file drops
-                        // (.fileURL) won't match it and will reach the AppKit layer unimpeded.
-                        if !isMaximized, workspace.draggingPaneID != paneID {
+                        // Safe to use paneDragTypeID (private UTType) — TerminalScrollView
+                        // only registers for .fileURL, so Finder drops reach AppKit unimpeded.
+                        if !isMaximized,
+                           let draggingID = workspace.draggingPaneID,
+                           draggingID != paneID {
                             Color.clear
                                 .contentShape(Rectangle())
                                 .onDrop(
@@ -320,6 +315,12 @@ private struct TerminalTabContentView: View {
                                     )
                                 )
                         }
+                    }
+                    // Search overlay is the outermost overlay so it renders above
+                    // the pane drop delegate (Color.clear.contentShape) and receives clicks.
+                    .overlay(alignment: .topTrailing) {
+                        let isFocused = workspace.isFocusedPane(paneID, in: tab.id)
+                        TerminalSearchOverlay(paneID: paneID, isFocused: isFocused)
                     }
                     .position(x: frame.midX, y: frame.midY)
                     .zIndex(isMaximizedPane ? 2 : 0)
@@ -357,44 +358,6 @@ private struct TerminalTabContentView: View {
             }
             .coordinateSpace(name: "splitContainer")
         }
-    }
-
-    /// Handle file drops from Finder/other apps onto a terminal pane.
-    /// SwiftUI-level drop bypasses NSView hierarchy issues with nested NSViewRepresentable.
-    private func handleFileDrop(providers: [NSItemProvider], paneID: UUID) -> Bool {
-        guard !providers.isEmpty else { return false }
-
-        var pending = providers.count
-        var paths: [String] = []
-        let lock = NSLock()
-
-        for provider in providers {
-            provider.loadItem(forTypeIdentifier: UTType.fileURL.identifier, options: nil) { data, _ in
-                defer {
-                    lock.lock()
-                    pending -= 1
-                    let done = pending == 0
-                    let finalPaths = paths
-                    lock.unlock()
-
-                    if done, !finalPaths.isEmpty {
-                        let payload = finalPaths
-                            .map { TerminalNSView.shellEscapedPath($0) }
-                            .joined(separator: " ") + " "
-                        DispatchQueue.main.async {
-                            self.ghosttyManager.terminalView(for: paneID)?.sendText(payload)
-                        }
-                    }
-                }
-
-                guard let data = data as? Data,
-                      let url = URL(dataRepresentation: data, relativeTo: nil) else { return }
-                lock.lock()
-                paths.append(url.standardizedFileURL.path)
-                lock.unlock()
-            }
-        }
-        return true
     }
 
 }

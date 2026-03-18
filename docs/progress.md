@@ -7,11 +7,14 @@
 - M3: 文件浏览器 + 侧边栏（已完成 T3.1-T3.7 主体实现，待运行时手测）
 - REQ-004: 本地部署服务（主体实现完成，待运行时手测）
 - UI review 后续：DeploymentStore 拆分（P3，分离健康检查/日志/进程管理）
+- Git 角标初始加载位置问题（部分修复，FileWatcher 刷新时展开状态可能丢失）
 
 ## Release & Distribution
 
 - [x] v1.0.0 发布 — OpenOwl-1.0.0.dmg (40MB) 签名 + 公证，上传到 GitHub Releases
 - [x] v1.0.1 — Sidebar pane 行 UI 优化、分屏拖拽稳定性修复、FileExplorer MinimapView crash 修复
+- [x] d5fb73a — REQ-006 Claude 状态 incident banner + Sidebar PaneStatusRow UI 优化
+- [x] 361972c — Pane 拖拽稳定性修复、TerminalSearchOverlay 位置修复、搜索快捷键修复
 
 ## Done
 
@@ -97,6 +100,21 @@
 - [x] Sidebar PaneStatusRow UI 优化 — 字体 10→11pt、圆点 5→7px、纵向 padding 1→4pt、hover 背景 `.quaternary`、点击聚焦 pane、accessibility 支持
 - [x] Pane 拖拽稳定性修复 — 自定义 UTType `com.openowl.terminal.pane-drag` 避免 TerminalScrollView 拦截；移除 `draggingPaneID != nil` 条件解决时序竞争；全路径拖拽日志覆盖
 - [x] FileExplorer crash 修复 — fork CodeEditSourceEditor，修复 MinimapView `brightnessComponent` 对 catalog color 直接调用 crash，切换依赖指向 fork fix branch
+- [x] TerminalSearchOverlay 位置修复 — 从 topTrailing overlay 移入 pane content 内部，修复 padding（horizontal 12pt, vertical 4pt）和宽度对齐
+- [x] 搜索框 Return/Shift+Return/Esc 快捷键 — AppDelegate handleLocalKeyDown 在 command guard 前处理搜索态快捷键
+- [x] FileExplorerView defer 修复 — openFileInTab 改用 defer 延迟，避免 view update 期间改状态
+- [x] 搜索框全面修复 — overlay 移到最外层避免 drop delegate 拦截点击；AppDelegate Return 拦截加 terminalHasFocus 判断修复 IME Enter；TerminalSearchOverlay 加 isFocused 参数失焦自动关闭
+- [x] 搜索框 Enter 阻挡修复 — .onKeyPress(.return) 替换为 .onSubmit（修复 @FocusState 与 AppKit firstResponder 失同步），删除 SwiftUI 层冗余 .contentShape+.onDrop 文件拖拽处理
+- [x] 搜索匹配计数修复 — ghostty selected 0-based → 显示 1-based（selected + 1）
+- [x] Search overlay 布局调整 — 从 overlay 改为 VStack 内元素
+- [x] "Modifying state during view update" 修复 — isProgrammaticSelection flag + updateData 全块保护
+- [x] UTType 声明 — Info.plist 添加 com.openowl.terminal.pane-drag
+- [x] Dev 图标修复 — runtime NSApp.applicationIconImage 设置 + 大号 DEV 横幅（actool 对非 AppIcon 命名的 appiconset 只生成部分 icns）
+- [x] FileExplorer expandDirectory git status — 使用 currentGitContext 代替 .empty
+- [x] syncData 机制 — 展开目录时同步 controller 本地数据
+- [x] refreshNow 优化 — 已有数据时跳过 shallow phase，用 refreshFullOnly()
+- [x] autoresizesOutlineColumn = false — 防止列宽超过 clip view
+- [x] updateNSViewController 条件性跳过 — controller.rootNodes != store.rootNodes 才 updateData（@Observable 迁移时序变化适配）
 
 ## Pending Issues
 
@@ -122,3 +140,5 @@
 - GhosttyKit xcframework 按 commit SHA 缓存在 `~/.cache/openowl/ghosttykit/`
 - Ghostty submodule pinned at commit `04fa71e2`
 - 链接 libghostty 需要额外框架：Carbon, IOKit, UniformTypeIdentifiers
+- actool 对非 AppIcon 命名的 appiconset 只生成部分 icns → Dev 图标改用 runtime NSApp.applicationIconImage 方案
+- @Observable 迁移导致 updateNSViewController 调用时序变化 → 需要 rootNodes 比较条件性跳过 updateData

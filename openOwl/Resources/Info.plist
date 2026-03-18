@@ -13,5 +13,18 @@
 	<string>openOwl needs access to open and manage your project files.</string>
 	<key>NSDownloadsFolderUsageDescription</key>
 	<string>openOwl needs access to open and manage your project files.</string>
+	<key>UTExportedTypeDeclarations</key>
+	<array>
+		<dict>
+			<key>UTTypeIdentifier</key>
+			<string>com.openowl.terminal.pane-drag</string>
+			<key>UTTypeDescription</key>
+			<string>openOwl Terminal Pane Drag</string>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.data</string>
+			</array>
+		</dict>
+	</array>
 </dict>
 </plist>

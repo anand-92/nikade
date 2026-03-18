@@ -29,7 +29,7 @@ struct OutlineTreeView: NSViewControllerRepresentable {
         controller.onPaste = onPaste
         controller.onCopyPath = onCopyPath
         controller.onDropFiles = onDropFiles
-        controller.onExpandDirectory = onExpandDirectory
+        controller.onExpandDirectory = makeExpandDirectoryHandler(controller: controller)
 
         // Initial data load
         controller.updateData(rootNodes: store.rootNodes, nodeIndex: store.nodeIndex)
@@ -51,13 +51,28 @@ struct OutlineTreeView: NSViewControllerRepresentable {
         controller.onPaste = onPaste
         controller.onCopyPath = onCopyPath
         controller.onDropFiles = onDropFiles
-        controller.onExpandDirectory = onExpandDirectory
+        controller.onExpandDirectory = makeExpandDirectoryHandler(controller: controller)
 
-        // @Observable triggers updateNSViewController when store properties change
-        controller.updateData(rootNodes: store.rootNodes, nodeIndex: store.nodeIndex)
+        // Only reload when data actually changed. syncData (from expandDirectory)
+        // already updates the controller's local snapshot without reloading,
+        // so we skip redundant reloadData() calls that cause expand flicker.
+        if controller.rootNodes != store.rootNodes {
+            controller.updateData(rootNodes: store.rootNodes, nodeIndex: store.nodeIndex)
+        }
 
         if let newID = store.selectedNodeID {
             controller.selectAndReveal(nodeID: newID)
+        }
+    }
+
+    /// Build the expand callback: invoke the outer handler (which updates the store),
+    /// then immediately sync the controller's local snapshot so NSOutlineView
+    /// can query the updated children count during the same expand cycle.
+    private func makeExpandDirectoryHandler(controller: OutlineTreeViewController) -> (String) -> Void {
+        let storeRef = store
+        return { [weak controller] path in
+            onExpandDirectory?(path)
+            controller?.syncData(rootNodes: storeRef.rootNodes, nodeIndex: storeRef.nodeIndex)
         }
     }
 
