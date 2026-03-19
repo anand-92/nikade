@@ -326,9 +326,13 @@ final class DeploymentStore {
         await stop(id: id)
 
         if let dep = deployments.first(where: { $0.id == id }) {
-            // Clean up clone directory
+            // Clean up clone directory — only if within ~/.openowl/deployments/
             let deployDir = dep.cloneURL.deletingLastPathComponent()
-            try? FileManager.default.removeItem(at: deployDir)
+            if Self.isSafeDeploymentPath(deployDir) {
+                try? FileManager.default.removeItem(at: deployDir)
+            } else {
+                NSLog("openOwl: [Deployment] REFUSED to delete unsafe path: %@", deployDir.path)
+            }
         }
 
         deployments.removeAll { $0.id == id }
@@ -441,11 +445,25 @@ final class DeploymentStore {
         }
     }
 
+    // MARK: - Path Safety
+
+    /// Only allow deletion of paths within ~/.openowl/deployments/
+    private static func isSafeDeploymentPath(_ url: URL) -> Bool {
+        let home = FileManager.default.homeDirectoryForCurrentUser
+        let safePrefix = home.appendingPathComponent(".openowl/deployments").standardizedFileURL.path
+        let targetPath = url.standardizedFileURL.path
+        return targetPath.hasPrefix(safePrefix) && targetPath.count > safePrefix.count
+    }
+
     // MARK: - Private: Git Operations
 
     private func cloneRepo(remoteURL: String, branch: String, to destination: URL) async throws {
-        // Remove existing directory if present
+        // Remove existing directory if present — only if within ~/.openowl/deployments/
         if FileManager.default.fileExists(atPath: destination.path) {
+            guard Self.isSafeDeploymentPath(destination) else {
+                throw NSError(domain: "openOwl", code: 1,
+                              userInfo: [NSLocalizedDescriptionKey: "Refused to delete unsafe path: \(destination.path)"])
+            }
             try FileManager.default.removeItem(at: destination)
         }
 

@@ -2,13 +2,11 @@
 
 ## In Progress
 
-- 菜单栏快捷键发现性（P0：添加 NSMenu 菜单栏）— 已调研方案，未开始实现
 - M2: Git 变更管理（主体完成，待运行时手测）
 - M3: 文件浏览器 + 侧边栏（已完成 T3.1-T3.7 主体实现，待运行时手测）
 - REQ-004: 本地部署服务（主体实现完成，待运行时手测）
 - UI review 后续：DeploymentStore 拆分（P3，分离健康检查/日志/进程管理）
-- Git 角标初始加载位置问题（部分修复，FileWatcher 刷新时展开状态可能丢失）
-- Metal visibility fix 待实测（切换 Cmd+1/Cmd+2 观察 WindowServer CPU + `[Metal]` 日志）
+- Git 和 File 模块化拆分（待下个 session 开始，预估 3-4 天）
 
 ## Release & Distribution
 
@@ -17,6 +15,7 @@
 - [x] d5fb73a — REQ-006 Claude 状态 incident banner + Sidebar PaneStatusRow UI 优化
 - [x] 361972c — Pane 拖拽稳定性修复、TerminalSearchOverlay 位置修复、搜索快捷键修复
 - [x] v1.0.2 — Deployment 100% CPU 修复 + 侧边栏分支空白页修复 + 终端拖拽 opacity(0) 修复
+- [x] v1.0.3 — surface 泄漏修复 + 项目 Tab 关闭/拖拽 + Worktree 自动发现 + Debug 诊断系统
 
 ## Done
 
@@ -124,6 +123,17 @@
 - [x] WindowServer 压垮修复 — 只渲染 activeTabID + metalLayer.isHidden 双重保护，消除不可见 Metal surface 持续提交 drawables
 - [x] Code Review 修复 — 删除 updateVisiblePanes 死代码、setSurfaceVisibility guard 去重、makeBackingLayer 立即应用 hostVisible、viewDidMoveToWindow focus 保护
 - [x] Health check 指数退避 — 连续失败 30s→5min 退避，恢复后回到 30s，减少无效 TCP 连接
+- [x] Code Review 三轮并行修复 — consecutiveHealthFailures 清理、layout() 冗余、task_info 错误提示、health state 清理
+- [x] @ObservationIgnored 修复 surface 泄漏 — GhosttyAppManager 内部字典标记 @ObservationIgnored，防止级联 re-evaluation 创建幽灵 surface
+- [x] Debug 诊断系统 — ⌘⇧I 一键复制诊断信息 + StatusBarView Metal X/Y 指标（仅 DEBUG）
+- [x] 项目 Tab 关闭 + 拖拽排序 — hover ✕ 按钮 + onDrag/onDrop + ProjectTabDropDelegate + moveRootProject
+- [x] Worktree 自动发现 — addOrActivateProject 时自动 git worktree list，已存在 worktree 自动添加
+- [x] CodeEditSourceEditor fork 修复 — project.yml 指向 fork，修复 MinimapView crash，xcodegen 不再重置依赖
+- [x] v1.0.3 发布 — 版本 1.0.3 build 4，DMG + Apple 公证 + Gatekeeper 通过 + GitHub Release
+- [x] Mori 项目分析 — 对比架构差异，评估 6 个借鉴方向适用性
+- [x] 菜单栏快捷键发现性 — Terminal + View 菜单栏，快捷键可见
+- [x] Git 角标初始加载位置修复 — 首次打开文件浏览器时 git status badge 位置正确
+- [x] Metal visibility fix — WindowServer CPU 修复已合入 v1.0.3，metalLayer.isHidden 双重保护
 
 ## Pending Issues
 
