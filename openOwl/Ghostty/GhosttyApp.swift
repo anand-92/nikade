@@ -10,13 +10,14 @@ final class GhosttyAppManager {
     private(set) var error: String?
 
     private(set) var app: ghostty_app_t?
-    private var config: GhosttyConfig?
-    private var paneSurfaceMap: [UUID: ghostty_surface_t] = [:]
-    private var paneViewMap: [UUID: WeakTerminalView] = [:]
-    private var paneScrollViewMap: [UUID: WeakScrollView] = [:]
-    /// Strong references to TerminalNSViews so they survive SwiftUI view dismantling.
-    /// Removed only when a pane is explicitly closed via destroyPane(_:).
-    private var retainedTerminalViews: [UUID: TerminalNSView] = [:]
+    @ObservationIgnored private var config: GhosttyConfig?
+    // Internal bookkeeping — @ObservationIgnored prevents SwiftUI cascade:
+    // without this, any surface register/unregister triggers view re-evaluation,
+    // which recreates NSViewRepresentable wrappers, which creates MORE surfaces.
+    @ObservationIgnored private var paneSurfaceMap: [UUID: ghostty_surface_t] = [:]
+    @ObservationIgnored private var paneViewMap: [UUID: WeakTerminalView] = [:]
+    @ObservationIgnored private var retainedTerminalViews: [UUID: TerminalNSView] = [:]
+    @ObservationIgnored private var retainedScrollViews: [UUID: TerminalScrollView] = [:]
 
     private(set) var launchProfile = GhosttyLaunchProfile(
         configCommand: nil,
@@ -206,7 +207,7 @@ final class GhosttyAppManager {
     }
 
     func registerScrollView(_ scrollView: TerminalScrollView, for paneID: UUID) {
-        paneScrollViewMap[paneID] = WeakScrollView(scrollView)
+        retainedScrollViews[paneID] = scrollView
     }
 
     func unregisterPane(_ paneID: UUID) {
@@ -214,7 +215,6 @@ final class GhosttyAppManager {
             activeSurface = nil
         }
         paneViewMap.removeValue(forKey: paneID)
-        paneScrollViewMap.removeValue(forKey: paneID)
     }
 
     /// Explicitly destroy a pane's terminal surface and release the retained view.
@@ -223,11 +223,16 @@ final class GhosttyAppManager {
         if let view = retainedTerminalViews.removeValue(forKey: paneID) {
             view.destroySurface()
         }
+        retainedScrollViews.removeValue(forKey: paneID)
         unregisterPane(paneID)
     }
 
     func terminalView(for paneID: UUID) -> TerminalNSView? {
         paneViewMap[paneID]?.value
+    }
+
+    func scrollView(for paneID: UUID) -> TerminalScrollView? {
+        retainedScrollViews[paneID]
     }
 
     func focusPane(_ paneID: UUID) -> Bool {
@@ -238,6 +243,54 @@ final class GhosttyAppManager {
         guard let window = view.window else { return false }
         window.makeKeyAndOrderFront(nil)
         return window.makeFirstResponder(view)
+    }
+
+    /// Surface stats for debug display: (total retained, currently rendering).
+    var surfaceStats: (total: Int, active: Int) {
+        let total = retainedTerminalViews.count
+        let active = retainedTerminalViews.values.filter(\.isRenderingActive).count
+        return (total, active)
+    }
+
+    /// Dump diagnostic info for debugging. Returns a string ready to paste.
+    func diagnosticDump() -> String {
+        var lines: [String] = []
+        lines.append("=== openOwl Diagnostic ===")
+        lines.append("Time: \(ISO8601DateFormatter().string(from: Date()))")
+        lines.append("")
+
+        // Metal surfaces
+        let stats = surfaceStats
+        lines.append("Metal Surfaces: \(stats.active) active / \(stats.total) total")
+        for (paneID, view) in retainedTerminalViews {
+            let state = view.isRenderingActive ? "ACTIVE" : "paused"
+            let hasWindow = view.window != nil ? "in-window" : "detached"
+            let hasSurface = paneSurfaceMap[paneID] != nil ? "surface-ok" : "no-surface"
+            lines.append("  \(String(paneID.uuidString.prefix(8))) [\(state)] [\(hasWindow)] [\(hasSurface)]")
+        }
+        lines.append("")
+
+        // Scroll views
+        let scrollTotal = retainedScrollViews.count
+        lines.append("Scroll Views: \(scrollTotal) retained")
+        lines.append("")
+
+        // Memory
+        var info = mach_task_basic_info()
+        var count = mach_msg_type_number_t(MemoryLayout<mach_task_basic_info>.size) / 4
+        let result = withUnsafeMutablePointer(to: &info) {
+            $0.withMemoryRebound(to: integer_t.self, capacity: Int(count)) {
+                task_info(mach_task_self_, task_flavor_t(MACH_TASK_BASIC_INFO), $0, &count)
+            }
+        }
+        if result == KERN_SUCCESS {
+            lines.append("Memory: \(info.resident_size / 1_048_576) MB resident")
+        } else {
+            lines.append("Memory: unavailable (error \(result))")
+        }
+        lines.append("")
+        lines.append("=== End Diagnostic ===")
+        return lines.joined(separator: "\n")
     }
 
     func surface(for paneID: UUID) -> ghostty_surface_t? {
@@ -259,14 +312,14 @@ final class GhosttyAppManager {
             guard let paneID = paneID(for: target) else { return false }
             let v = action.action.scrollbar
             let state = TerminalScrollbarState(total: v.total, offset: v.offset, len: v.len)
-            paneScrollViewMap[paneID]?.value?.updateScrollbar(state)
+            retainedScrollViews[paneID]?.updateScrollbar(state)
             return true
 
         case GHOSTTY_ACTION_CELL_SIZE:
             guard let paneID = paneID(for: target) else { return false }
             let v = action.action.cell_size
             let size = CGSize(width: CGFloat(v.width), height: CGFloat(v.height))
-            paneScrollViewMap[paneID]?.value?.updateCellSize(size)
+            retainedScrollViews[paneID]?.updateCellSize(size)
             return true
 
         case GHOSTTY_ACTION_RING_BELL:
@@ -354,14 +407,6 @@ private final class WeakTerminalView {
     weak var value: TerminalNSView?
 
     init(_ value: TerminalNSView?) {
-        self.value = value
-    }
-}
-
-private final class WeakScrollView {
-    weak var value: TerminalScrollView?
-
-    init(_ value: TerminalScrollView?) {
         self.value = value
     }
 }

@@ -126,6 +126,7 @@ final class DeploymentStore {
     private let defaults = UserDefaults.standard
     private let storeKey = "openowl.deployments.store"
     private var pollTimers: [String: Timer] = [:]
+    private var consecutiveHealthFailures: [String: Int] = [:]
     private var logPollTimer: Timer?
     private var logPollURL: URL?
     private var logLastSize: UInt64 = 0
@@ -307,6 +308,7 @@ final class DeploymentStore {
     func stop(id: String) async {
         processManager.terminate(id: id)
         activeStreamIDs.remove(id)
+        consecutiveHealthFailures.removeValue(forKey: id)
         updateDeployment(id: id) {
             $0.status = .stopped
             $0.pid = nil
@@ -330,6 +332,9 @@ final class DeploymentStore {
         }
 
         deployments.removeAll { $0.id == id }
+        healthStatus.removeValue(forKey: id)
+        healthError.removeValue(forKey: id)
+        healthLastChecked.removeValue(forKey: id)
         if selectedDeploymentID == id {
             selectedDeploymentID = deployments.first?.id
         }
@@ -654,25 +659,56 @@ final class DeploymentStore {
             return
         }
 
-        NSLog("Health check: %@ → %@", dep.name, urlString)
-
         do {
             let (_, response) = try await Self.healthSession.data(from: url)
             healthLastChecked[dep.id] = Date()
+            consecutiveHealthFailures[dep.id] = 0
             if let http = response as? HTTPURLResponse {
                 let ok = (200...299).contains(http.statusCode)
                 healthStatus[dep.id] = ok
                 healthError[dep.id] = ok ? nil : "HTTP \(http.statusCode)"
-                NSLog("Health check: %@ → %d", dep.name, http.statusCode)
             } else {
                 healthStatus[dep.id] = false
                 healthError[dep.id] = "Invalid response"
             }
+            // Success — restore normal polling interval if it was backed off
+            restartPollIfBackedOff(id: dep.id)
         } catch {
             healthLastChecked[dep.id] = Date()
             healthStatus[dep.id] = false
             healthError[dep.id] = error.localizedDescription
-            NSLog("Health check failed: %@ → %@", dep.name, error.localizedDescription)
+
+            let failures = (consecutiveHealthFailures[dep.id] ?? 0) + 1
+            consecutiveHealthFailures[dep.id] = failures
+
+            // Exponential backoff: after consecutive failures, slow down polling
+            // 1-2 failures: keep 30s, 3: 60s, 4: 120s, 5+: 300s (5 min)
+            if failures >= 3 {
+                restartPollWithBackoff(id: dep.id, failures: failures)
+            }
+        }
+    }
+
+    /// Restart poll timer with exponential backoff interval.
+    private func restartPollWithBackoff(id: String, failures: Int) {
+        stopBranchPoll(id: id)
+        let interval = min(30.0 * pow(2.0, Double(failures - 2)), 300.0)
+        NSLog("openOwl: [Health] %@ backed off to %.0fs after %d failures", id, interval, failures)
+        let timer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                await self?.checkForUpdates(id: id)
+            }
+        }
+        pollTimers[id] = timer
+    }
+
+    /// Restore normal 30s polling after a successful health check.
+    private func restartPollIfBackedOff(id: String) {
+        guard let existing = pollTimers[id] else { return }
+        // Check if current interval is longer than normal (backed off)
+        if existing.timeInterval > 30 {
+            stopBranchPoll(id: id)
+            startBranchPoll(id: id)
         }
     }
 

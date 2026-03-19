@@ -23,6 +23,7 @@ class TerminalScrollView: NSView {
     private var isLiveScrolling = false
     private var lastSentRow: Int?
     private var observers: [NSObjectProtocol] = []
+    private var terminalShouldBeVisible = true
 
     /// Current scrollbar state from ghostty core
     var scrollbarState: TerminalScrollbarState?
@@ -129,6 +130,11 @@ class TerminalScrollView: NSView {
     func updateCellSize(_ size: CGSize) {
         cellSize = size
         synchronizeScrollView()
+    }
+
+    func setTerminalVisibility(_ isVisible: Bool) {
+        terminalShouldBeVisible = isVisible
+        terminalView.setSurfaceVisibility(isVisible)
     }
 
     // MARK: - Scrolling Sync

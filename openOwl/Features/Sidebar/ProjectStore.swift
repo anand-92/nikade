@@ -129,14 +129,39 @@ final class ProjectStore {
 
         let item = ProjectItem(url: url)
         projects.append(item)
-        projects.sort { lhs, rhs in
-            guard !lhs.isWorktree, !rhs.isWorktree else { return false }
-            return lhs.displayName.localizedStandardCompare(rhs.displayName) == .orderedAscending
-        }
         activeProjectID = item.id
         bookmarkStore.save(projectID: item.id, url: url)
         bookmarkStore.startAccessing(projectID: item.id)
         persist()
+
+        // Auto-discover existing worktrees on disk
+        Task { await discoverWorktrees(for: item) }
+    }
+
+    /// Scan git worktrees and add any that aren't already tracked.
+    private func discoverWorktrees(for project: ProjectItem) async {
+        let git = GitService(workingDirectory: project.url)
+        do {
+            let worktrees = try await git.listWorktrees()
+            let mainRepoPath = project.url.standardizedFileURL.path
+            for wt in worktrees {
+                let wtPath = URL(fileURLWithPath: wt.path).standardizedFileURL.path
+                // Skip the main repo itself
+                guard wtPath != mainRepoPath else { continue }
+                // Skip if already tracked
+                guard !projects.contains(where: { $0.path == wtPath }) else { continue }
+                // Skip if directory no longer exists
+                guard FileManager.default.fileExists(atPath: wtPath) else { continue }
+
+                let _ = addWorktreeProject(
+                    parentID: project.id,
+                    path: wtPath,
+                    branch: wt.branch
+                )
+            }
+        } catch {
+            // Not a git repo or no worktrees — fine, skip silently
+        }
     }
 
     func activateProject(id: String) {
@@ -180,6 +205,31 @@ final class ProjectStore {
         }
         bookmarkStore.remove(projectID: id)
         childIDs.forEach { bookmarkStore.remove(projectID: $0) }
+        persist()
+    }
+
+    // MARK: - Tab Reordering
+
+    /// Move a root project (and its worktrees) to a new position among root projects.
+    func moveRootProject(id: String, beforeID: String?) {
+        guard let sourceIdx = projects.firstIndex(where: { $0.id == id && !$0.isWorktree }) else { return }
+        let source = projects[sourceIdx]
+        let children = worktrees(for: id)
+
+        // Remove source + its worktrees
+        projects.removeAll { $0.id == id || $0.worktreeOf == id }
+
+        // Find insertion point
+        if let beforeID, let targetIdx = projects.firstIndex(where: { $0.id == beforeID }) {
+            projects.insert(source, at: targetIdx)
+            for (offset, child) in children.enumerated() {
+                projects.insert(child, at: targetIdx + 1 + offset)
+            }
+        } else {
+            // Move to end
+            projects.append(source)
+            projects.append(contentsOf: children)
+        }
         persist()
     }
 

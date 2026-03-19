@@ -14,10 +14,15 @@ class TerminalNSView: NSView {
     private var trackingArea: NSTrackingArea?
     private var markedText = NSMutableAttributedString()
     private var keyTextAccumulator: [String]?
+    /// Whether the host (TerminalScrollView) considers this surface visible.
+    /// Used by viewDidMoveToWindow to avoid briefly un-hiding a paused surface.
+    private var hostVisible = true
 
     weak var appManager: GhosttyAppManager?
     var onFocus: (() -> Void)?
     var paneIdentifier: UUID { paneID }
+    /// Whether Metal is currently rendering (layer not hidden).
+    var isRenderingActive: Bool { !(metalLayer?.isHidden ?? true) }
 
     init(ghosttyApp: ghostty_app_t, paneID: UUID) {
         self.ghosttyApp = ghosttyApp
@@ -38,6 +43,7 @@ class TerminalNSView: NSView {
         layer.device = MTLCreateSystemDefaultDevice()
         layer.isOpaque = true
         layer.contentsScale = window?.backingScaleFactor ?? 2.0
+        layer.isHidden = !hostVisible
         metalLayer = layer
         return layer
     }
@@ -46,9 +52,30 @@ class TerminalNSView: NSView {
 
     // MARK: - Surface Lifecycle
 
+    /// Toggle Metal rendering based on surface visibility.
+    /// Called by TerminalScrollView when SwiftUI signals visibility changes.
+    /// When hidden, metalLayer.isHidden prevents WindowServer from compositing
+    /// this surface, which is the primary fix for WindowServer CPU exhaustion
+    /// with many terminal surfaces.
+    func setSurfaceVisibility(_ visible: Bool) {
+        guard hostVisible != visible else { return }
+        hostVisible = visible
+        metalLayer?.isHidden = !visible
+    }
+
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
-        guard let window else { return }
+        guard let window else {
+            // View removed from window — pause Metal rendering to prevent
+            // GPU/WindowServer stress from orphaned surfaces.
+            metalLayer?.isHidden = true
+            return
+        }
+        // View (re)attached to a window — only resume rendering if the host
+        // considers this surface visible. Without this guard, a brief
+        // metalLayer.isHidden=false would occur before updateNSView applies
+        // the correct visibility, causing an unnecessary GPU render.
+        metalLayer?.isHidden = !hostVisible
 
         // Reattached to a window with an existing surface (SwiftUI recreated the wrapper).
         // Restore scale/size/focus — the surface and shell process are still alive.
@@ -60,10 +87,14 @@ class TerminalNSView: NSView {
                 ghostty_surface_set_size(surface, UInt32(fbSize.width), UInt32(fbSize.height))
             }
             setupTrackingArea()
-            // Restore focus so ghostty resumes Metal rendering
-            ghostty_surface_set_focus(surface, true)
-            appManager?.activeSurface = surface
-            window.makeFirstResponder(self)
+            // Only restore focus if the host considers this surface visible.
+            // Hidden panes (background tab, maximized sibling) must not grab
+            // focus or trigger ghostty rendering.
+            if hostVisible {
+                ghostty_surface_set_focus(surface, true)
+                appManager?.activeSurface = surface
+                window.makeFirstResponder(self)
+            }
             needsDisplay = true
             return
         }

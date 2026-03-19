@@ -8,6 +8,7 @@
 - REQ-004: 本地部署服务（主体实现完成，待运行时手测）
 - UI review 后续：DeploymentStore 拆分（P3，分离健康检查/日志/进程管理）
 - Git 角标初始加载位置问题（部分修复，FileWatcher 刷新时展开状态可能丢失）
+- Metal visibility fix 待实测（切换 Cmd+1/Cmd+2 观察 WindowServer CPU + `[Metal]` 日志）
 
 ## Release & Distribution
 
@@ -120,6 +121,9 @@
 - [x] 侧边栏分支点击空白页修复 — listSelection setter 加 activeTab = .terminal；PaneStatusRow 移除 onTapGesture 变纯展示组件
 - [x] 终端文件拖拽错误修复 — TerminalScrollView 拖拽方法加 isEffectivelyVisible 检查，拒绝 opacity=0 终端接收拖拽
 - [x] DeploymentLogThrottleTests — 12 个测试覆盖 buffer 累积/flush/100KB cap/activeStreamIDs 生命周期
+- [x] WindowServer 压垮修复 — 只渲染 activeTabID + metalLayer.isHidden 双重保护，消除不可见 Metal surface 持续提交 drawables
+- [x] Code Review 修复 — 删除 updateVisiblePanes 死代码、setSurfaceVisibility guard 去重、makeBackingLayer 立即应用 hostVisible、viewDidMoveToWindow focus 保护
+- [x] Health check 指数退避 — 连续失败 30s→5min 退避，恢复后回到 30s，减少无效 TCP 连接
 
 ## Pending Issues
 

@@ -18,6 +18,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         installTerminalMenu()
         installViewMenu()
         installLocalKeyMonitor()
+        #if DEBUG
+        installDebugMenu()
+        #endif
         requestNotificationPermission()
     }
 
@@ -152,6 +155,33 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let insertIndex = min(mainMenu.items.count, 4) // After Terminal
         mainMenu.insertItem(menuItem, at: insertIndex)
     }
+
+    // MARK: - Debug Menu
+
+    #if DEBUG
+    private func installDebugMenu() {
+        guard let mainMenu = NSApp.mainMenu else { return }
+        let menu = NSMenu(title: "Debug")
+
+        let diag = NSMenuItem(title: "Copy Diagnostic to Clipboard", action: #selector(menuCopyDiagnostic), keyEquivalent: "i")
+        diag.keyEquivalentModifierMask = [.command, .shift]
+        menu.addItem(diag)
+
+        let menuItem = NSMenuItem(title: "Debug", action: nil, keyEquivalent: "")
+        menuItem.submenu = menu
+        mainMenu.addItem(menuItem)
+    }
+
+    @objc private func menuCopyDiagnostic() {
+        guard let dump = ghosttyManager?.diagnosticDump() else {
+            NSSound.beep()
+            return
+        }
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(dump, forType: .string)
+        NSLog("openOwl: [Debug] Diagnostic copied to clipboard (%d bytes)", dump.count)
+    }
+    #endif
 
     // MARK: - Menu Actions
 

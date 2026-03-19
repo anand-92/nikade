@@ -5,12 +5,21 @@ import SwiftUI
 struct TerminalPanel: NSViewRepresentable {
     let ghosttyApp: ghostty_app_t
     let paneID: UUID
+    let isVisible: Bool
     var onFocus: (() -> Void)? = nil
     @Environment(GhosttyAppManager.self) var appManager
 
     func makeNSView(context: Context) -> TerminalScrollView {
-        // Reuse an existing TerminalNSView if SwiftUI dismantled a previous wrapper.
-        // The surface stays alive inside the retained view — no terminal restart.
+        // Reuse an existing TerminalScrollView if SwiftUI dismantled a previous
+        // wrapper. This prevents the TerminalNSView from being reparented
+        // (viewDidMoveToWindow nil→window thrash) on every SwiftUI re-evaluation.
+        if let existing = appManager.scrollView(for: paneID) {
+            existing.terminalView.onFocus = onFocus
+            existing.setTerminalVisibility(isVisible)
+            return existing
+        }
+
+        // Reuse an existing TerminalNSView if only the scroll wrapper was lost.
         let terminalView: TerminalNSView
         if let existing = appManager.terminalView(for: paneID) {
             terminalView = existing
@@ -22,11 +31,13 @@ struct TerminalPanel: NSViewRepresentable {
         }
 
         let scrollView = TerminalScrollView(terminalView: terminalView)
+        scrollView.setTerminalVisibility(isVisible)
         appManager.registerScrollView(scrollView, for: paneID)
         return scrollView
     }
 
     func updateNSView(_ nsView: TerminalScrollView, context: Context) {
-        // No dynamic updates — the surface handles its own state.
+        nsView.terminalView.onFocus = onFocus
+        nsView.setTerminalVisibility(isVisible)
     }
 }

@@ -86,7 +86,10 @@ struct ContentView: View {
     @ViewBuilder
     private var terminalContent: some View {
         if ghosttyManager.isReady {
-            TerminalWorkspaceView(ghosttyApp: ghosttyManager.app!)
+            TerminalWorkspaceView(
+                ghosttyApp: ghosttyManager.app!,
+                isVisible: navigationStore.activeTab == .terminal
+            )
         } else if let error = ghosttyManager.error {
             VStack(spacing: 12) {
                 Image(systemName: "exclamationmark.triangle")

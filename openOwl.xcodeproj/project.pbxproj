@@ -896,10 +896,10 @@
 /* Begin XCRemoteSwiftPackageReference section */
 		FC3996149C85E8C6346B63DE /* XCRemoteSwiftPackageReference "CodeEditSourceEditor" */ = {
 			isa = XCRemoteSwiftPackageReference;
-			repositoryURL = "https://github.com/CodeEditApp/CodeEditSourceEditor";
+			repositoryURL = "https://github.com/sanvibyfish/CodeEditSourceEditor";
 			requirement = {
-				kind = upToNextMajorVersion;
-				minimumVersion = 0.15.2;
+				kind = branch;
+				branch = "fix/minimap-brightness-catalog-color";
 			};
 		};
 /* End XCRemoteSwiftPackageReference section */

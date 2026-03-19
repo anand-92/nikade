@@ -20,6 +20,10 @@ struct StatusBarView: View {
 
             Spacer()
 
+            #if DEBUG
+            MetalStatsView()
+            #endif
+
             // 右侧：根据当前 tab 显示不同信息
             StatusBarContextInfo(
                 activeTab: navigationStore.activeTab,
@@ -119,3 +123,35 @@ private struct StatusBarContextInfo: View {
         }
     }
 }
+
+// MARK: - Metal Stats (DEBUG only)
+
+#if DEBUG
+private struct MetalStatsView: View {
+    @Environment(GhosttyAppManager.self) private var manager
+    @State private var total = 0
+    @State private var active = 0
+
+    var body: some View {
+        HStack(spacing: 3) {
+            Circle()
+                .fill(active <= 1 ? Color.green : Color.orange)
+                .frame(width: 6, height: 6)
+            Text("Metal \(active)/\(total)")
+                .font(.system(size: 10, design: .monospaced))
+        }
+        .foregroundStyle(.tertiary)
+        .help("Active/Total Metal surfaces (ideal: 1 active)")
+        .onAppear { refresh() }
+        .onReceive(Timer.publish(every: 2, on: .main, in: .common).autoconnect()) { _ in
+            refresh()
+        }
+    }
+
+    private func refresh() {
+        let stats = manager.surfaceStats
+        total = stats.total
+        active = stats.active
+    }
+}
+#endif

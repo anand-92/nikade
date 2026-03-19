@@ -10,24 +10,22 @@ private let paneDragTypeID = "com.openowl.terminal.pane-drag"
 
 struct TerminalWorkspaceView: View {
     let ghosttyApp: ghostty_app_t
+    let isVisible: Bool
 
     @Environment(TerminalWorkspaceStore.self) private var workspace
     @Environment(GhosttyAppManager.self) private var ghosttyManager
-    @State private var activatedTabIDs: Set<UUID> = []
 
     var body: some View {
         VStack(spacing: 0) {
             TerminalTabBarView()
 
             ZStack {
-                // Lazy: only render tabs that have been activated at least once
-                // Once rendered, keep alive forever (opacity hide, never removed from tree)
-                ForEach(workspace.tabs.filter { activatedTabIDs.contains($0.id) }) { tab in
-                    let isActive = workspace.activeTabID == tab.id && workspace.isTabVisible(tab.id)
-                    TerminalTabContentView(ghosttyApp: ghosttyApp, tab: tab)
-                        .opacity(isActive ? 1 : 0)
-                        .transaction { $0.animation = nil }
-                        .allowsHitTesting(isActive)
+                ForEach(workspace.visibleTabs.filter { $0.id == workspace.activeTabID }) { tab in
+                    TerminalTabContentView(
+                        ghosttyApp: ghosttyApp,
+                        tab: tab,
+                        isWorkspaceVisible: isVisible
+                    )
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -40,25 +38,17 @@ struct TerminalWorkspaceView: View {
             }
             connectSearchCallbacks()
             workspace.ensureInitialTab()
-            activateVisibleTabs()
             focusCurrentPaneIfPossible()
         }
         .onChange(of: workspace.activeTabID) { _, _ in
-            activateVisibleTabs()
             focusCurrentPaneIfPossible()
         }
-        .onChange(of: workspace.activeProjectID) { _, _ in
-            activateVisibleTabs()
+        .onChange(of: isVisible) { _, _ in
+            focusCurrentPaneIfPossible()
         }
         .onReceive(NotificationCenter.default.publisher(for: .terminalSearch)) { notification in
             guard let paneID = notification.userInfo?["paneID"] as? UUID else { return }
             workspace.startSearch(paneID: paneID)
-        }
-    }
-
-    private func activateVisibleTabs() {
-        for tab in workspace.visibleTabs {
-            activatedTabIDs.insert(tab.id)
         }
     }
 
@@ -75,6 +65,7 @@ struct TerminalWorkspaceView: View {
     }
 
     private func focusCurrentPaneIfPossible() {
+        guard isVisible else { return }
         guard let activeTabID = workspace.activeTabID else { return }
         guard let tab = workspace.tabs.first(where: { $0.id == activeTabID }) else { return }
         guard let paneID = tab.focusedPaneID ?? tab.splitTree.firstPaneID else { return }
@@ -89,6 +80,7 @@ private struct TerminalTabBarView: View {
     @Environment(TerminalWorkspaceStore.self) private var workspace
     @Environment(ProjectStore.self) private var projectStore
     @State private var hoveredTabID: String?
+    @State private var dragOverTabID: String?
 
     private var projectTabs: [ProjectItem] { projectStore.orderedProjectTabs }
 
@@ -104,49 +96,30 @@ private struct TerminalTabBarView: View {
                 let showDivider: Bool = {
                     guard index < projectTabs.count - 1 else { return false }
                     let next = projectTabs[index + 1]
-                    // Same group: next is a worktree of current root, or both are worktrees of same parent
                     if next.worktreeOf == project.id { return false }
                     if project.isWorktree, next.isWorktree, project.worktreeOf == next.worktreeOf { return false }
                     return true
                 }()
 
-                Button {
-                    projectStore.activateProject(id: project.id)
-                } label: {
-                    HStack(spacing: 3) {
-                        // Worktree indicator
-                        if project.isWorktree {
-                            Image(systemName: "arrow.triangle.branch")
-                                .font(.system(size: 9))
-                                .foregroundStyle(.tertiary)
-                        }
-
-                        Text(project.isWorktree ? (project.worktreeBranch ?? project.name) : project.displayName)
-                            .font(.system(size: 11, weight: isActive ? .semibold : .medium))
-                            .lineLimit(1)
-
-                        // ⌘N 快捷键标签
-                        if index < 9 {
-                            Text("⌘\(index + 1)")
-                                .font(AppFonts.badge)
-                                .foregroundStyle(.tertiary)
-                        }
-                    }
-                }
-                .buttonStyle(.plain)
-                .padding(.horizontal, 8)
-                .padding(.vertical, 4)
-                .glassEffectWithTint(
-                    isActive,
-                    in: RoundedRectangle(cornerRadius: AppSpacing.cornerRadius),
-                    fallback: RoundedRectangle(cornerRadius: AppSpacing.cornerRadius)
-                        .fill(
-                            isActive
-                                ? AppColors.activeBackground
-                                : (isHovered ? AppColors.hoverBackground : Color.clear)
-                        )
+                ProjectTabButton(
+                    project: project,
+                    index: index,
+                    isActive: isActive,
+                    isHovered: isHovered,
+                    isDragOver: dragOverTabID == project.id
                 )
                 .onHover { hoveredTabID = $0 ? project.id : nil }
+                .onDrag {
+                    let rootID = project.isWorktree ? (project.worktreeOf ?? project.id) : project.id
+
+
+                    return NSItemProvider(object: rootID as NSString)
+                }
+                .onDrop(of: [.text], delegate: ProjectTabDropDelegate(
+                    targetProject: project,
+                    projectStore: projectStore,
+                    dragOverTabID: $dragOverTabID
+                ))
 
                 // Group divider (between different root projects)
                 if showDivider {
@@ -224,12 +197,116 @@ private struct TerminalTabDivider: View {
     }
 }
 
+// MARK: - Project Tab Drop Delegate
+
+private struct ProjectTabDropDelegate: DropDelegate {
+    let targetProject: ProjectItem
+    let projectStore: ProjectStore
+    @Binding var dragOverTabID: String?
+
+    func dropEntered(info: DropInfo) {
+        dragOverTabID = targetProject.id
+    }
+
+    func dropExited(info: DropInfo) {
+        if dragOverTabID == targetProject.id {
+            dragOverTabID = nil
+        }
+    }
+
+    func dropUpdated(info: DropInfo) -> DropProposal? {
+        DropProposal(operation: .move)
+    }
+
+    func performDrop(info: DropInfo) -> Bool {
+        dragOverTabID = nil
+        guard let item = info.itemProviders(for: [.text]).first else { return false }
+        item.loadObject(ofClass: NSString.self) { obj, _ in
+            guard let sourceID = obj as? String else { return }
+            let targetRoot = targetProject.isWorktree
+                ? (targetProject.worktreeOf ?? targetProject.id)
+                : targetProject.id
+            guard sourceID != targetRoot else { return }
+            DispatchQueue.main.async {
+                projectStore.moveRootProject(id: sourceID, beforeID: targetRoot)
+            }
+        }
+        return true
+    }
+}
+
+// MARK: - Project Tab Button
+
+private struct ProjectTabButton: View {
+    let project: ProjectItem
+    let index: Int
+    let isActive: Bool
+    let isHovered: Bool
+    let isDragOver: Bool
+
+    @Environment(ProjectStore.self) private var projectStore
+
+    var body: some View {
+        HStack(spacing: 3) {
+            if project.isWorktree {
+                Image(systemName: "arrow.triangle.branch")
+                    .font(.system(size: 9))
+                    .foregroundStyle(.tertiary)
+            }
+
+            Text(project.isWorktree ? (project.worktreeBranch ?? project.name) : project.displayName)
+                .font(.system(size: 11, weight: isActive ? .semibold : .medium))
+                .lineLimit(1)
+
+            if index < 9, !isHovered {
+                Text("⌘\(index + 1)")
+                    .font(AppFonts.badge)
+                    .foregroundStyle(.tertiary)
+            }
+
+            // Close button (on hover, replaces shortcut label)
+            if isHovered {
+                Image(systemName: "xmark")
+                    .font(.system(size: 8, weight: .semibold))
+                    .foregroundStyle(.tertiary)
+                    .onTapGesture { closeProject() }
+                    .help("Close project")
+            }
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+        .contentShape(Rectangle())
+        .onTapGesture { projectStore.activateProject(id: project.id) }
+        .glassEffectWithTint(
+            isActive,
+            in: RoundedRectangle(cornerRadius: AppSpacing.cornerRadius),
+            fallback: RoundedRectangle(cornerRadius: AppSpacing.cornerRadius)
+                .fill(
+                    isActive
+                        ? AppColors.activeBackground
+                        : isDragOver
+                            ? AppColors.hoverBackground.opacity(0.8)
+                            : (isHovered ? AppColors.hoverBackground : Color.clear)
+                )
+        )
+    }
+
+    private func closeProject() {
+        if project.isWorktree {
+            projectStore.removeWorktreeProject(id: project.id)
+        } else {
+            projectStore.removeProject(id: project.id)
+        }
+    }
+}
+
 /// Flat layout: all panes are positioned absolutely within a GeometryReader.
 /// This prevents SwiftUI from destroying/recreating terminal views when the
 /// split tree structure changes (add/remove/move splits).
 private struct TerminalTabContentView: View {
     let ghosttyApp: ghostty_app_t
     let tab: TerminalTabState
+    let isWorkspaceVisible: Bool
 
     @Environment(TerminalWorkspaceStore.self) private var workspace
     @Environment(GhosttyAppManager.self) private var ghosttyManager
@@ -251,6 +328,7 @@ private struct TerminalTabContentView: View {
                 ForEach(paneIDs, id: \.self) { paneID in
                     let isMaximizedPane = isMaximized && paneID == workspace.maximizedPaneID
                     let isHiddenByMaximize = isMaximized && paneID != workspace.maximizedPaneID
+                    let isPaneVisible = isWorkspaceVisible && !isHiddenByMaximize
                     // Maximized pane fills the entire bounds; others keep their normal frame
                     let frame = isMaximizedPane ? bounds : (frames[paneID] ?? .zero)
 
@@ -262,6 +340,7 @@ private struct TerminalTabContentView: View {
                         TerminalPanel(
                             ghosttyApp: ghosttyApp,
                             paneID: paneID,
+                            isVisible: isPaneVisible,
                             onFocus: {
                                 DispatchQueue.main.async {
                                     workspace.focusPane(paneID)
