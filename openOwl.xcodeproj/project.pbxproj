@@ -81,6 +81,7 @@
 		F043F631A3AD286B260541AB /* SectionTitle.swift in Sources */ = {isa = PBXBuildFile; fileRef = D3F88A4C649AE808F422E1D1 /* SectionTitle.swift */; };
 		F550C71135677716727CDABC /* MaximizePaneTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F82D68EDEACC74717AAF913C /* MaximizePaneTests.swift */; };
 		F79004DAFFCFE7A81C3C8061 /* OutlineTreeViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 217AE27F0A3DE1C89E12F04E /* OutlineTreeViewController.swift */; };
+		F7A0E506981153607E812058 /* BookmarkStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3EA6C0B7C4F7B3B1E84C0C91 /* BookmarkStoreTests.swift */; };
 		F809C182203DC5D122B19DB8 /* GraphLayoutTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE352528571824276B013180 /* GraphLayoutTests.swift */; };
 		F9DFB41D15D5628E3305431E /* CommitMessageGenerator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6607398740E9040BA756684C /* CommitMessageGenerator.swift */; };
 /* End PBXBuildFile section */
@@ -115,6 +116,7 @@
 		35BDC16C9BB8A7EF4C33FEE8 /* ghostty-resources */ = {isa = PBXFileReference; lastKnownFileType = folder; path = "ghostty-resources"; sourceTree = SOURCE_ROOT; };
 		38E541F2A395A5EB308D9C38 /* Constants.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Constants.swift; sourceTree = "<group>"; };
 		3C32FF68B777207179BFEFB0 /* BranchNameGenerator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BranchNameGenerator.swift; sourceTree = "<group>"; };
+		3EA6C0B7C4F7B3B1E84C0C91 /* BookmarkStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BookmarkStoreTests.swift; sourceTree = "<group>"; };
 		46C97B681433B80851C4C8B2 /* TerminalSplitNodeExtraTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalSplitNodeExtraTests.swift; sourceTree = "<group>"; };
 		490E3122E814DA28B0734EF6 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		4F692AB2575EE0D90EDAE529 /* StatusBarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatusBarView.swift; sourceTree = "<group>"; };
@@ -193,6 +195,7 @@
 			isa = PBXGroup;
 			children = (
 				4F8EC0F396A30C60B408A51F /* AppNavigationStoreTests.swift */,
+				3EA6C0B7C4F7B3B1E84C0C91 /* BookmarkStoreTests.swift */,
 				F5BCF2DFA7863BDF0B13FA97 /* BranchNameGeneratorTests.swift */,
 				7CDAEC5FEAD4C9A90634C404 /* DeploymentCodableTests.swift */,
 				7CBAAA7E39A6465BC2C9F051 /* DeploymentLogThrottleTests.swift */,
@@ -496,6 +499,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				775E5D15613F60A1E6D68FCB /* AppNavigationStoreTests.swift in Sources */,
+				F7A0E506981153607E812058 /* BookmarkStoreTests.swift in Sources */,
 				E2858524718C2F8850AE2DE9 /* BranchNameGeneratorTests.swift in Sources */,
 				6FF30150D03FB6446E61B860 /* DeploymentCodableTests.swift in Sources */,
 				94DC6B1630DEF2A5CC9D4B7B /* DeploymentLogThrottleTests.swift in Sources */,
@@ -685,7 +689,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = openOwl/Resources/openOwl.entitlements;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 2;
+				CURRENT_PROJECT_VERSION = 3;
 				FRAMEWORK_SEARCH_PATHS = (
 					"$(PROJECT_DIR)",
 				);
@@ -703,7 +707,7 @@
 				LIBRARY_SEARCH_PATHS = (
 					"$(PROJECT_DIR)/GhosttyKit.xcframework/macos-arm64_x86_64",
 				);
-				MARKETING_VERSION = 1.0.1;
+				MARKETING_VERSION = 1.0.2;
 				OTHER_LDFLAGS = (
 					"-lghostty",
 					"-framework Metal",
@@ -732,7 +736,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIconDev;
 				CODE_SIGN_ENTITLEMENTS = openOwl/Resources/openOwl.entitlements;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 2;
+				CURRENT_PROJECT_VERSION = 3;
 				FRAMEWORK_SEARCH_PATHS = (
 					"$(PROJECT_DIR)",
 				);
@@ -750,7 +754,7 @@
 				LIBRARY_SEARCH_PATHS = (
 					"$(PROJECT_DIR)/GhosttyKit.xcframework/macos-arm64_x86_64",
 				);
-				MARKETING_VERSION = 1.0.1;
+				MARKETING_VERSION = 1.0.2;
 				OTHER_LDFLAGS = (
 					"-lghostty",
 					"-framework Metal",

@@ -2,6 +2,7 @@ import SwiftUI
 
 struct SidebarView: View {
     @Environment(ProjectStore.self) private var projectStore
+    @Environment(AppNavigationStore.self) private var navigationStore
     @Environment(ClaudeStatusStore.self) private var claudeStatusStore
     @Environment(\.openURL) private var openURL
 
@@ -24,6 +25,7 @@ struct SidebarView: View {
                 // Defer to avoid "publishing changes from within view updates"
                 // (List may call set during body evaluation when rows change)
                 DispatchQueue.main.async {
+                    navigationStore.activeTab = .terminal
                     if tag.hasPrefix("branch-") {
                         let projectID = String(tag.dropFirst("branch-".count))
                         projectStore.activateProject(id: projectID)
@@ -487,13 +489,9 @@ private struct WorktreeRow: View {
 
 private struct PaneStatusRow: View {
     let info: PaneInfo
-    @Environment(TerminalWorkspaceStore.self) private var workspace
-    @Environment(GhosttyAppManager.self) private var ghosttyManager
-    @State private var hovering = false
 
     var body: some View {
         HStack(spacing: 6) {
-            // Status dot — color + icon ensures info isn't conveyed by color alone (HIG)
             Circle()
                 .fill(info.hasBell ? Color.accentColor : Color.secondary.opacity(0.4))
                 .frame(width: 7, height: 7)
@@ -506,7 +504,6 @@ private struct PaneStatusRow: View {
             Spacer(minLength: 4)
 
             if info.hasBell {
-                // Redundant bell icon: VoiceOver + color-blind users can identify state beyond dot color
                 Image(systemName: "bell.fill")
                     .font(.system(size: 9))
                     .foregroundStyle(Color.accentColor)
@@ -514,25 +511,8 @@ private struct PaneStatusRow: View {
         }
         .padding(.leading, 24)
         .padding(.trailing, 6)
-        .padding(.vertical, 4)          // row height ≥22pt (macOS HIG minimum click target)
-        .background(
-            RoundedRectangle(cornerRadius: 4, style: .continuous)
-                .fill(hovering ? AnyShapeStyle(.quaternary) : AnyShapeStyle(.clear))
-        )
-        .contentShape(Rectangle())      // full-width click area including Spacer
-        .onHover { hovering = $0 }
-        .onTapGesture {
-            workspace.focusPane(info.paneID)
-            // workspace.focusPane only mutates store state; if the pane is already the
-            // focusedPaneID in the active tab, no onChange fires in TerminalWorkspaceView
-            // and the TerminalNSView never becomes first responder.  Call focusPane on
-            // GhosttyAppManager directly so AppKit focus always transfers.
-            _ = ghosttyManager.focusPane(info.paneID)
-        }
-        // Accessibility: treat row as button, describe state beyond color
+        .padding(.vertical, 4)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(info.hasBell ? "\(info.title), has notification" : info.title)
-        .accessibilityHint("Focus this pane")
-        .accessibilityAddTraits(.isButton)
     }
 }

@@ -22,7 +22,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func requestNotificationPermission() {
-        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { _, _ in }
+        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { granted, error in
+            NSLog("openOwl: [Notification] permission granted=%d error=%@",
+                  granted ? 1 : 0, error?.localizedDescription ?? "nil")
+        }
     }
 
     /// In Debug builds, override the Dock icon with the DEV-badged variant.

@@ -48,7 +48,27 @@ class TerminalNSView: NSView {
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
-        guard let window, surface == nil else { return }
+        guard let window else { return }
+
+        // Reattached to a window with an existing surface (SwiftUI recreated the wrapper).
+        // Restore scale/size/focus — the surface and shell process are still alive.
+        if let surface {
+            metalLayer.contentsScale = window.backingScaleFactor
+            ghostty_surface_set_content_scale(surface, Double(window.backingScaleFactor), Double(window.backingScaleFactor))
+            let fbSize = convertToBacking(bounds.size)
+            if fbSize.width > 0 && fbSize.height > 0 {
+                ghostty_surface_set_size(surface, UInt32(fbSize.width), UInt32(fbSize.height))
+            }
+            setupTrackingArea()
+            // Restore focus so ghostty resumes Metal rendering
+            ghostty_surface_set_focus(surface, true)
+            appManager?.activeSurface = surface
+            window.makeFirstResponder(self)
+            needsDisplay = true
+            return
+        }
+
+        // First time — create a new surface.
 
         metalLayer.contentsScale = window.backingScaleFactor
 
@@ -122,12 +142,20 @@ class TerminalNSView: NSView {
     }
 
     override func removeFromSuperview() {
-        if let surface {
-            appManager?.unregisterPane(paneID)
-            ghostty_surface_free(surface)
-            self.surface = nil
-        }
+        // Don't free the surface here — SwiftUI's ForEach may dismantle and
+        // recreate NSViewRepresentable wrappers during @Observable re-evaluation.
+        // The surface stays alive so makeNSView can reuse this view later.
+        // Explicit cleanup happens via destroySurface() when a pane is actually closed.
         super.removeFromSuperview()
+    }
+
+    /// Explicitly free the ghostty surface. Called only when the pane is
+    /// permanently closed (not when SwiftUI temporarily removes the view).
+    func destroySurface() {
+        guard let surface else { return }
+        appManager?.unregisterPane(paneID)
+        ghostty_surface_free(surface)
+        self.surface = nil
     }
 
     // MARK: - Public API

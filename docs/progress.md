@@ -15,6 +15,7 @@
 - [x] v1.0.1 — Sidebar pane 行 UI 优化、分屏拖拽稳定性修复、FileExplorer MinimapView crash 修复
 - [x] d5fb73a — REQ-006 Claude 状态 incident banner + Sidebar PaneStatusRow UI 优化
 - [x] 361972c — Pane 拖拽稳定性修复、TerminalSearchOverlay 位置修复、搜索快捷键修复
+- [x] v1.0.2 — Deployment 100% CPU 修复 + 侧边栏分支空白页修复 + 终端拖拽 opacity(0) 修复
 
 ## Done
 
@@ -115,6 +116,10 @@
 - [x] refreshNow 优化 — 已有数据时跳过 shallow phase，用 refreshFullOnly()
 - [x] autoresizesOutlineColumn = false — 防止列宽超过 clip view
 - [x] updateNSViewController 条件性跳过 — controller.rootNodes != store.rootNodes 才 updateData（@Observable 迁移时序变化适配）
+- [x] Deployment 100% CPU 修复 — EOF readabilityHandler nil-out + appendLog 200ms buffer 节流 + activeStreamIDs 去重
+- [x] 侧边栏分支点击空白页修复 — listSelection setter 加 activeTab = .terminal；PaneStatusRow 移除 onTapGesture 变纯展示组件
+- [x] 终端文件拖拽错误修复 — TerminalScrollView 拖拽方法加 isEffectivelyVisible 检查，拒绝 opacity=0 终端接收拖拽
+- [x] DeploymentLogThrottleTests — 12 个测试覆盖 buffer 累积/flush/100KB cap/activeStreamIDs 生命周期
 
 ## Pending Issues
 

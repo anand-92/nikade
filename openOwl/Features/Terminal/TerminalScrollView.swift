@@ -189,29 +189,40 @@ class TerminalScrollView: NSView {
 
     private static let acceptedDropTypes: Set<NSPasteboard.PasteboardType> = [.fileURL, .URL, .string]
 
+    /// Reject drags on hidden terminals (opacity=0 via SwiftUI project tab switching).
+    /// Without this, AppKit routes drags to invisible views in the ZStack, causing
+    /// the file path to appear in the wrong project's terminal.
+    private var isEffectivelyVisible: Bool {
+        var view: NSView? = self
+        while let v = view {
+            if v.isHidden || v.alphaValue < 0.01 { return false }
+            view = v.superview
+        }
+        return true
+    }
+
     override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
-        let types = sender.draggingPasteboard.types?.map(\.rawValue) ?? []
-        NSLog("openOwl: [TerminalScrollView] draggingEntered types=%@", types)
-        // If paneDragTypeID appears, a pane drag leaked to AppKit (should not happen after fix).
+        guard isEffectivelyVisible else { return [] }
         guard let pbTypes = sender.draggingPasteboard.types,
               !Set(pbTypes).isDisjoint(with: Self.acceptedDropTypes) else { return [] }
         return .copy
     }
 
     override func draggingUpdated(_ sender: NSDraggingInfo) -> NSDragOperation {
+        guard isEffectivelyVisible else { return [] }
         guard let types = sender.draggingPasteboard.types,
               !Set(types).isDisjoint(with: Self.acceptedDropTypes) else { return [] }
         return .copy
     }
 
     override func prepareForDragOperation(_ sender: NSDraggingInfo) -> Bool {
+        guard isEffectivelyVisible else { return false }
         guard let types = sender.draggingPasteboard.types else { return false }
         return !Set(types).isDisjoint(with: Self.acceptedDropTypes)
     }
 
     override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
-        NSLog("openOwl: [TerminalScrollView] performDragOperation types=%@",
-              sender.draggingPasteboard.types?.map(\.rawValue) ?? [])
+        guard isEffectivelyVisible else { return false }
         return terminalView.performDragOperation(sender)
     }
 

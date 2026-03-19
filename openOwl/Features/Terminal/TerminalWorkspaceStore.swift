@@ -333,6 +333,9 @@ final class TerminalWorkspaceStore {
     /// Set by the host app to request first responder hand-off to a pane's NSView.
     var focusPaneHandler: ((UUID) -> Void)?
 
+    /// Set by the host app to destroy a pane's ghostty surface when it's permanently closed.
+    var destroyPaneHandler: ((UUID) -> Void)?
+
     /// Drag-to-reposition state
     var draggingPaneID: UUID?
     var dragOverPaneID: UUID?
@@ -349,6 +352,7 @@ final class TerminalWorkspaceStore {
 
     // Pane bell notification state (paneID → last bell time)
     private(set) var paneBellStates: [UUID: Date] = [:]
+
 
     // Per-project terminal tracking
     private(set) var activeProjectID: String?
@@ -457,6 +461,7 @@ final class TerminalWorkspaceStore {
         if tabs.count > 1 {
             let removedTab = tabs[index]
             for pID in removedTab.splitTree.allPaneIDs {
+                destroyPaneHandler?(pID)
                 paneTitles.removeValue(forKey: pID)
                 paneBellStates.removeValue(forKey: pID)
                 paneSearchStates.removeValue(forKey: pID)
@@ -728,6 +733,7 @@ final class TerminalWorkspaceStore {
         guard let oldFrame = oldFrames[currentPane] else { return }
         guard let newTree = tab.splitTree.removingPane(currentPane) else { return }
 
+        destroyPaneHandler?(currentPane)
         paneTitles.removeValue(forKey: currentPane)
         paneBellStates.removeValue(forKey: currentPane)
         paneSearchStates.removeValue(forKey: currentPane)

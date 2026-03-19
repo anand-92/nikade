@@ -39,7 +39,10 @@ final class DeploymentProcessManager {
         // Stream stdout → log file + real-time UI callback
         stdoutPipe.fileHandleForReading.readabilityHandler = { handle in
             let data = handle.availableData
-            guard !data.isEmpty else { return }
+            guard !data.isEmpty else {
+                handle.readabilityHandler = nil
+                return
+            }
             logHandle.write(data)
             if let text = String(data: data, encoding: .utf8) {
                 DispatchQueue.main.async { onOutput(text) }
@@ -49,7 +52,10 @@ final class DeploymentProcessManager {
         // Stream stderr → log file + real-time UI callback
         stderrPipe.fileHandleForReading.readabilityHandler = { handle in
             let data = handle.availableData
-            guard !data.isEmpty else { return }
+            guard !data.isEmpty else {
+                handle.readabilityHandler = nil
+                return
+            }
             logHandle.write(data)
             if let text = String(data: data, encoding: .utf8) {
                 DispatchQueue.main.async { onOutput(text) }

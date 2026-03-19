@@ -14,6 +14,9 @@ final class GhosttyAppManager {
     private var paneSurfaceMap: [UUID: ghostty_surface_t] = [:]
     private var paneViewMap: [UUID: WeakTerminalView] = [:]
     private var paneScrollViewMap: [UUID: WeakScrollView] = [:]
+    /// Strong references to TerminalNSViews so they survive SwiftUI view dismantling.
+    /// Removed only when a pane is explicitly closed via destroyPane(_:).
+    private var retainedTerminalViews: [UUID: TerminalNSView] = [:]
 
     private(set) var launchProfile = GhosttyLaunchProfile(
         configCommand: nil,
@@ -28,6 +31,7 @@ final class GhosttyAppManager {
     /// Stores a reference to the active surface so clipboard callbacks can reach it.
     /// Updated when a TerminalNSView creates its surface.
     var activeSurface: ghostty_surface_t?
+
 
     init() {
         initializeGhostty()
@@ -170,6 +174,26 @@ final class GhosttyAppManager {
         ghostty_app_tick(app)
     }
 
+    // MARK: - Background tick timer
+
+    private var backgroundTickTimer: Timer?
+
+    /// Ensure ghostty events (bell, title changes) are processed even when the app
+    /// is inactive. macOS may delay DispatchQueue.main.async for background apps,
+    /// so we run a low-frequency timer to call tick() while backgrounded.
+    func startBackgroundTick() {
+        guard backgroundTickTimer == nil else { return }
+        backgroundTickTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
+            self?.tick()
+        }
+        RunLoop.main.add(backgroundTickTimer!, forMode: .common)
+    }
+
+    func stopBackgroundTick() {
+        backgroundTickTimer?.invalidate()
+        backgroundTickTimer = nil
+    }
+
     var configSnapshot: GhosttyConfigSnapshot? {
         config?.snapshot
     }
@@ -177,6 +201,7 @@ final class GhosttyAppManager {
     func register(surface: ghostty_surface_t, for paneID: UUID, view: TerminalNSView) {
         paneSurfaceMap[paneID] = surface
         paneViewMap[paneID] = WeakTerminalView(view)
+        retainedTerminalViews[paneID] = view
         activeSurface = surface
     }
 
@@ -190,6 +215,15 @@ final class GhosttyAppManager {
         }
         paneViewMap.removeValue(forKey: paneID)
         paneScrollViewMap.removeValue(forKey: paneID)
+    }
+
+    /// Explicitly destroy a pane's terminal surface and release the retained view.
+    /// Called when a pane is actually closed (not just hidden by SwiftUI lifecycle).
+    func destroyPane(_ paneID: UUID) {
+        if let view = retainedTerminalViews.removeValue(forKey: paneID) {
+            view.destroySurface()
+        }
+        unregisterPane(paneID)
     }
 
     func terminalView(for paneID: UUID) -> TerminalNSView? {
@@ -211,39 +245,33 @@ final class GhosttyAppManager {
     }
 
     private func handleAction(target: ghostty_target_s, action: ghostty_action_s) -> Bool {
+        // All callbacks are called synchronously — tick() already runs on the main
+        // thread (via Timer or wakeup_cb). Using DispatchQueue.main.async would cause
+        // macOS to delay delivery for backgrounded apps, breaking notifications.
         switch action.tag {
         case GHOSTTY_ACTION_SET_TITLE, GHOSTTY_ACTION_SET_TAB_TITLE:
             guard let title = titleFromAction(action) else { return false }
             guard let paneID = paneID(for: target) else { return false }
-
-            DispatchQueue.main.async { [weak self] in
-                self?.onPaneTitleChanged?(paneID, title)
-            }
+            onPaneTitleChanged?(paneID, title)
             return false
 
         case GHOSTTY_ACTION_SCROLLBAR:
             guard let paneID = paneID(for: target) else { return false }
             let v = action.action.scrollbar
             let state = TerminalScrollbarState(total: v.total, offset: v.offset, len: v.len)
-            DispatchQueue.main.async { [weak self] in
-                self?.paneScrollViewMap[paneID]?.value?.updateScrollbar(state)
-            }
+            paneScrollViewMap[paneID]?.value?.updateScrollbar(state)
             return true
 
         case GHOSTTY_ACTION_CELL_SIZE:
             guard let paneID = paneID(for: target) else { return false }
             let v = action.action.cell_size
             let size = CGSize(width: CGFloat(v.width), height: CGFloat(v.height))
-            DispatchQueue.main.async { [weak self] in
-                self?.paneScrollViewMap[paneID]?.value?.updateCellSize(size)
-            }
+            paneScrollViewMap[paneID]?.value?.updateCellSize(size)
             return true
 
         case GHOSTTY_ACTION_RING_BELL:
             guard let paneID = paneID(for: target) else { return false }
-            DispatchQueue.main.async { [weak self] in
-                self?.onPaneBell?(paneID)
-            }
+            onPaneBell?(paneID)
             return true
 
         case GHOSTTY_ACTION_START_SEARCH:
@@ -253,27 +281,21 @@ final class GhosttyAppManager {
 
         case GHOSTTY_ACTION_END_SEARCH:
             guard let paneID = paneID(for: target) else { return false }
-            DispatchQueue.main.async { [weak self] in
-                self?.onSearchEnd?(paneID)
-            }
+            onSearchEnd?(paneID)
             return true
 
         case GHOSTTY_ACTION_SEARCH_TOTAL:
             guard let paneID = paneID(for: target) else { return false }
             let raw = action.action.search_total.total
             let total: UInt? = raw >= 0 ? UInt(raw) : nil
-            DispatchQueue.main.async { [weak self] in
-                self?.onSearchTotal?(paneID, total)
-            }
+            onSearchTotal?(paneID, total)
             return true
 
         case GHOSTTY_ACTION_SEARCH_SELECTED:
             guard let paneID = paneID(for: target) else { return false }
             let raw = action.action.search_selected.selected
             let selected: UInt? = raw >= 0 ? UInt(raw) : nil
-            DispatchQueue.main.async { [weak self] in
-                self?.onSearchSelected?(paneID, selected)
-            }
+            onSearchSelected?(paneID, selected)
             return true
 
         default:

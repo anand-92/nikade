@@ -415,9 +415,7 @@ private struct DeploymentDetailView: View {
                 }
                 .background(Color(nsColor: .init(white: 0.1, alpha: 1)))
                 .onChange(of: deploymentStore.logContent) { _, _ in
-                    withAnimation {
-                        proxy.scrollTo("logBottom", anchor: .bottom)
-                    }
+                    proxy.scrollTo("logBottom", anchor: .bottom)
                 }
             }
         }

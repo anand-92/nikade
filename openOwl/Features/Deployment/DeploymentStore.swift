@@ -129,6 +129,9 @@ final class DeploymentStore {
     private var logPollTimer: Timer?
     private var logPollURL: URL?
     private var logLastSize: UInt64 = 0
+    var logBuffer = ""
+    private var logFlushTimer: Timer?
+    var activeStreamIDs = Set<String>()
 
     init() {
         load()
@@ -303,6 +306,7 @@ final class DeploymentStore {
 
     func stop(id: String) async {
         processManager.terminate(id: id)
+        activeStreamIDs.remove(id)
         updateDeployment(id: id) {
             $0.status = .stopped
             $0.pid = nil
@@ -373,6 +377,10 @@ final class DeploymentStore {
         // Read existing content
         readFullLog(logURL)
 
+        // Only poll the file when there's no active real-time stream
+        // (real-time onOutput already pushes updates directly)
+        guard !activeStreamIDs.contains(id) else { return }
+
         // Poll for new content every 0.5s
         logPollTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
             Task { @MainActor [weak self] in
@@ -396,6 +404,8 @@ final class DeploymentStore {
             env["PORT"] = "\(port)"
         }
 
+        activeStreamIDs.insert(id)
+
         let pid = try processManager.launch(
             id: id,
             command: command,
@@ -409,6 +419,7 @@ final class DeploymentStore {
         ) { [weak self] exitCode in
             Task { @MainActor [weak self] in
                 guard let self else { return }
+                self.activeStreamIDs.remove(id)
                 let newStatus: DeploymentStatus = exitCode == 0 ? .stopped : .error
                 self.updateDeployment(id: id) {
                     $0.status = newStatus
@@ -513,7 +524,10 @@ final class DeploymentStore {
 
                 stdoutPipe.fileHandleForReading.readabilityHandler = { handle in
                     let data = handle.availableData
-                    guard !data.isEmpty else { return }
+                    guard !data.isEmpty else {
+                        handle.readabilityHandler = nil
+                        return
+                    }
                     logHandle?.write(data)
                     if let text = String(data: data, encoding: .utf8) {
                         streamToUI(text)
@@ -521,7 +535,10 @@ final class DeploymentStore {
                 }
                 stderrPipe.fileHandleForReading.readabilityHandler = { handle in
                     let data = handle.availableData
-                    guard !data.isEmpty else { return }
+                    guard !data.isEmpty else {
+                        handle.readabilityHandler = nil
+                        return
+                    }
                     logHandle?.write(data)
                     if let text = String(data: data, encoding: .utf8) {
                         streamToUI(text)
@@ -714,12 +731,27 @@ final class DeploymentStore {
         logPollTimer = nil
         logPollURL = nil
         logLastSize = 0
+        flushLogBuffer()
     }
 
-    // MARK: - Private: Log Append (real-time)
+    // MARK: - Log Append (real-time)
 
-    private func appendLog(_ text: String) {
-        logContent.append(text)
+    func appendLog(_ text: String) {
+        logBuffer.append(text)
+        guard logFlushTimer == nil else { return }
+        logFlushTimer = Timer.scheduledTimer(withTimeInterval: 0.2, repeats: false) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.flushLogBuffer()
+            }
+        }
+    }
+
+    func flushLogBuffer() {
+        logFlushTimer?.invalidate()
+        logFlushTimer = nil
+        guard !logBuffer.isEmpty else { return }
+        logContent.append(logBuffer)
+        logBuffer = ""
         if logContent.count > 100_000 {
             logContent = String(logContent.suffix(80_000))
         }

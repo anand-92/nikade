@@ -25,9 +25,18 @@ final class GhosttyConfig {
         config = ghostty_config_new()
         guard config != nil else { return }
 
-        // Load user's default config files (~/.config/ghostty/config)
-        ghostty_config_load_default_files(config)
-        ghostty_config_load_recursive_files(config)
+        // Load openOwl defaults first (user config can override these).
+        // Zero padding since openOwl manages its own split pane layout.
+        Self.loadDefaults(into: config!)
+
+        // Only load openOwl's own config — NOT ~/.config/ghostty/config.
+        // Users who also have Ghostty installed should not be affected.
+        if let configPath = Self.appConfigPath() {
+            configPath.withCString { cPath in
+                ghostty_config_load_file(config, cPath)
+            }
+        }
+
         ghostty_config_finalize(config)
 
         diagnostics = Self.collectDiagnostics(from: config)
@@ -53,6 +62,76 @@ final class GhosttyConfig {
     deinit {
         if let config {
             ghostty_config_free(config)
+        }
+    }
+}
+
+extension GhosttyConfig {
+    /// Path to openOwl's terminal config override file.
+    static func appConfigPath() -> String? {
+        guard let appSupport = FileManager.default.urls(
+            for: .applicationSupportDirectory, in: .userDomainMask
+        ).first else { return nil }
+        let dir = appSupport.appendingPathComponent("com.openowl.app")
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir.appendingPathComponent("config").path
+    }
+
+    /// Write a key-value pair to the openOwl config override file.
+    /// Existing keys are updated in-place; new keys are appended.
+    static func setOverride(key: String, value: String?) {
+        guard let path = appConfigPath() else { return }
+        let url = URL(fileURLWithPath: path)
+        var lines: [String] = (try? String(contentsOf: url, encoding: .utf8))?.components(separatedBy: "\n") ?? []
+
+        // Remove existing entry for this key
+        lines.removeAll { $0.hasPrefix("\(key) =") || $0.hasPrefix("\(key)=") }
+
+        // Append new value (if not nil)
+        if let value {
+            lines.append("\(key) = \(value)")
+        }
+
+        // Remove trailing empty lines
+        while lines.last?.isEmpty == true { lines.removeLast() }
+
+        let content = lines.joined(separator: "\n") + (lines.isEmpty ? "" : "\n")
+        try? content.write(to: url, atomically: true, encoding: .utf8)
+    }
+
+    /// Read a key from the openOwl config override file.
+    static func readOverride(key: String) -> String? {
+        guard let path = appConfigPath(),
+              let content = try? String(contentsOfFile: path, encoding: .utf8) else { return nil }
+        for line in content.components(separatedBy: "\n") {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            if trimmed.hasPrefix("\(key) =") || trimmed.hasPrefix("\(key)=") {
+                let value = trimmed.drop(while: { $0 != "=" }).dropFirst().trimmingCharacters(in: .whitespaces)
+                return value.isEmpty ? nil : value
+            }
+        }
+        return nil
+    }
+}
+
+extension GhosttyConfig {
+    /// Load openOwl-specific defaults via a temp config file (ghostty has no set API).
+    /// Loaded BEFORE the user config so users can still override these values.
+    static func loadDefaults(into config: ghostty_config_t) {
+        let defaults = """
+        window-padding-x = 0
+        window-padding-y = 0
+        window-padding-balance = true
+        notify-on-command-finish = unfocused
+        notify-on-command-finish-action = bell
+        notify-on-command-finish-after = 5
+        """
+        let tempURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("openowl-defaults.conf")
+        try? defaults.write(to: tempURL, atomically: true, encoding: .utf8)
+        defer { try? FileManager.default.removeItem(at: tempURL) }
+        tempURL.path.withCString { path in
+            ghostty_config_load_file(config, path)
         }
     }
 }

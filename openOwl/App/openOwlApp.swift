@@ -1,4 +1,5 @@
 import SwiftUI
+import UserNotifications
 
 @main
 struct openOwlApp: App {
@@ -37,18 +38,49 @@ struct openOwlApp: App {
                 .environment(deploymentStore)
                 .environment(claudeStatusStore)
                 .onAppear {
+                    // Apply saved appearance preference (system/light/dark)
+                    NSApp.appearance = AppAppearance.current.nsAppearance
+
                     appDelegate.workspaceStore = workspaceStore
                     appDelegate.ghosttyManager = ghosttyManager
                     appDelegate.navigationStore = navigationStore
                     appDelegate.deploymentStore = deploymentStore
                     appDelegate.projectStore = projectStore
                     deploymentStore.recoverRunningDeployments()
+                    workspaceStore.destroyPaneHandler = { [weak ghosttyManager] paneID in
+                        ghosttyManager?.destroyPane(paneID)
+                    }
                     ghosttyManager.onPaneTitleChanged = { paneID, title in
                         workspaceStore.updateTitle(for: paneID, title: title)
                     }
                     ghosttyManager.onPaneBell = { paneID in
                         let isTerminalVisible = navigationStore.activeTab == .terminal
                         workspaceStore.handleBell(paneID: paneID, isTerminalVisible: isTerminalVisible)
+
+                        // System-level feedback: sound, dock bounce, notification
+                        let isPaneFocused = isTerminalVisible
+                            && workspaceStore.activeTabID != nil
+                            && workspaceStore.tabs.first(where: { $0.id == workspaceStore.activeTabID })?
+                                .focusedPaneID == paneID
+
+                        if !isPaneFocused {
+                            NotificationSound.current.play()
+                        }
+
+                        if !NSApp.isActive {
+                            NSApp.requestUserAttention(.informationalRequest)
+
+                            let content = UNMutableNotificationContent()
+                            content.title = "openOwl"
+                            content.body = workspaceStore.paneTitles[paneID] ?? "Terminal task completed"
+                            content.sound = .default
+                            let request = UNNotificationRequest(
+                                identifier: "bell-\(paneID.uuidString)",
+                                content: content,
+                                trigger: nil
+                            )
+                            UNUserNotificationCenter.current().add(request)
+                        }
                     }
                     syncActiveProjectContext()
                     UpdateChecker.shared.checkOnLaunchIfNeeded()
@@ -56,6 +88,13 @@ struct openOwlApp: App {
                 }
                 .onDisappear {
                     claudeStatusStore.stopPolling()
+                    ghosttyManager.stopBackgroundTick()
+                }
+                .onReceive(NotificationCenter.default.publisher(for: NSApplication.didResignActiveNotification)) { _ in
+                    ghosttyManager.startBackgroundTick()
+                }
+                .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+                    ghosttyManager.stopBackgroundTick()
                 }
                 .onChange(of: projectStore.activeProjectID) { _, _ in
                     syncActiveProjectContext()
@@ -93,6 +132,10 @@ struct openOwlApp: App {
                 .environment(projectStore)
         }
         .menuBarExtraStyle(.menu)
+
+        Settings {
+            SettingsView()
+        }
 
         Window("Update Available", id: "update") {
             UpdateAlertView()
