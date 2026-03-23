@@ -122,4 +122,17 @@ struct DeploymentRecoveryTests {
         let evil = home.appendingPathComponent(".openowl/deployments-evil/payload")
         #expect(DeploymentStore.isSafeDeploymentPath(evil) == false)
     }
+
+    @Test func isSafeDeploymentPath_pathTraversal_returnsFalse() {
+        // ../../../ traversal should be resolved by standardizedFileURL and rejected
+        let home = FileManager.default.homeDirectoryForCurrentUser
+        let traversal = home.appendingPathComponent(".openowl/deployments/my-app/../../../Documents")
+        #expect(DeploymentStore.isSafeDeploymentPath(traversal) == false)
+    }
+
+    @Test func isSafeDeploymentPath_emptyPath_returnsFalse() {
+        // Empty clonePath was the original bug trigger
+        let empty = URL(fileURLWithPath: "")
+        #expect(DeploymentStore.isSafeDeploymentPath(empty) == false)
+    }
 }

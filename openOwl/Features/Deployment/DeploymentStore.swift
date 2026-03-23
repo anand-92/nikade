@@ -330,7 +330,12 @@ final class DeploymentStore {
             // Clean up clone directory — only if within ~/.openowl/deployments/
             let deployDir = dep.cloneURL.deletingLastPathComponent()
             if Self.isSafeDeploymentPath(deployDir) {
-                try? FileManager.default.removeItem(at: deployDir)
+                do {
+                    try FileManager.default.removeItem(at: deployDir)
+                } catch {
+                    NSLog("openOwl: [Deployment] Failed to delete %@: %@",
+                          deployDir.path, error.localizedDescription)
+                }
             } else {
                 NSLog("openOwl: [Deployment] REFUSED to delete unsafe path: %@", deployDir.path)
             }
