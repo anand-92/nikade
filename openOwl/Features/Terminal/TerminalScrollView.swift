@@ -140,10 +140,21 @@ class TerminalScrollView: NSView {
         if state.total > state.len {
             scrollView.flashScrollers()
         }
+        #if DEBUG
+        let docH = documentView.frame.height
+        let visH = scrollView.contentSize.height
+        let hasScroller = scrollView.verticalScroller != nil
+        let scrollerHidden = scrollView.verticalScroller?.isHidden ?? true
+        NSLog("openOwl: [Scroll] total=%llu offset=%llu len=%llu docH=%.0f visH=%.0f hasScroller=%d scrollerHidden=%d",
+              state.total, state.offset, state.len, docH, visH, hasScroller ? 1 : 0, scrollerHidden ? 1 : 0)
+        #endif
     }
 
     /// Called when ghostty sends GHOSTTY_ACTION_CELL_SIZE
     func updateCellSize(_ size: CGSize) {
+        #if DEBUG
+        NSLog("openOwl: [Scroll] cellSize updated: %.1f x %.1f", size.width, size.height)
+        #endif
         cellSize = size
         synchronizeScrollView()
     }
@@ -159,26 +170,29 @@ class TerminalScrollView: NSView {
     private func synchronizeScrollView() {
         documentView.frame.size.height = documentHeight()
 
-        if !isLiveScrolling {
-            let ch = cellSize.height
-            if ch > 0, let sb = scrollbarState {
-                let isAtBottom = sb.offset + sb.len >= sb.total
+        if !isLiveScrolling, let sb = scrollbarState, sb.len > 0 {
+            // Prefer cellSize from CELL_SIZE action; fall back to deriving from viewport
+            let ch = cellSize.height > 0
+                ? cellSize.height
+                : scrollView.contentSize.height / CGFloat(sb.len)
+            guard ch > 0 else { return }
 
-                // Track whether the user has scrolled away from the bottom.
-                // Reset when ghostty reports we're at the bottom (user scrolled
-                // back down, or terminal was reset).
-                if isAtBottom {
-                    userScrolledUp = false
-                }
+            let isAtBottom = sb.offset + sb.len >= sb.total
 
-                // Don't auto-scroll when the user is viewing scrollback —
-                // let them read without the view jumping to the bottom on
-                // every new line of output.
-                if !userScrolledUp {
-                    let offsetY = CGFloat(sb.total - sb.offset - sb.len) * ch
-                    scrollView.contentView.scroll(to: CGPoint(x: 0, y: offsetY))
-                    lastSentRow = Int(sb.offset)
-                }
+            // Track whether the user has scrolled away from the bottom.
+            // Reset when ghostty reports we're at the bottom (user scrolled
+            // back down, or terminal was reset).
+            if isAtBottom {
+                userScrolledUp = false
+            }
+
+            // Don't auto-scroll when the user is viewing scrollback —
+            // let them read without the view jumping to the bottom on
+            // every new line of output.
+            if !userScrolledUp {
+                let offsetY = CGFloat(sb.total - sb.offset - sb.len) * ch
+                scrollView.contentView.scroll(to: CGPoint(x: 0, y: offsetY))
+                lastSentRow = Int(sb.offset)
             }
         }
 
@@ -193,7 +207,10 @@ class TerminalScrollView: NSView {
 
     /// User is dragging the scrollbar → tell ghostty core which row to show
     private func handleLiveScroll() {
-        let ch = cellSize.height
+        guard let sb = scrollbarState, sb.len > 0 else { return }
+        let ch = cellSize.height > 0
+            ? cellSize.height
+            : scrollView.contentSize.height / CGFloat(sb.len)
         guard ch > 0 else { return }
 
         let visibleRect = scrollView.contentView.documentVisibleRect
@@ -217,13 +234,17 @@ class TerminalScrollView: NSView {
     /// Calculate document view height from scrollbar state
     private func documentHeight() -> CGFloat {
         let contentHeight = scrollView.contentSize.height
-        let ch = cellSize.height
-        if ch > 0, let sb = scrollbarState {
-            let documentGridHeight = CGFloat(sb.total) * ch
-            let padding = contentHeight - (CGFloat(sb.len) * ch)
-            return documentGridHeight + padding
-        }
-        return contentHeight
+        guard let sb = scrollbarState, sb.len > 0 else { return contentHeight }
+
+        // Prefer cellSize from CELL_SIZE action; fall back to deriving from viewport
+        let ch = cellSize.height > 0
+            ? cellSize.height
+            : contentHeight / CGFloat(sb.len)
+        guard ch > 0 else { return contentHeight }
+
+        let documentGridHeight = CGFloat(sb.total) * ch
+        let padding = contentHeight - (CGFloat(sb.len) * ch)
+        return documentGridHeight + padding
     }
 
     // MARK: - Drag & Drop (forwarded to terminalView)
