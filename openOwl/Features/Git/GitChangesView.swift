@@ -78,6 +78,7 @@ struct GitChangesView: View {
                 }
             }
         }
+        .frame(maxWidth: .infinity)
     }
 
     // MARK: - Changes Panel Toolbar
