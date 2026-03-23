@@ -17,9 +17,14 @@ struct openOwlApp: App {
         Self.setupEnvironment()
 
         // Set cwd to active project BEFORE ghostty starts, so the first shell
-        // opens in the project directory instead of ~
+        // opens in the project directory instead of ~.
+        // Only change cwd if we have an active security-scoped bookmark —
+        // otherwise the raw path access triggers a TCC prompt on every dev build
+        // (macOS treats re-signed apps as new apps and revokes authorization).
         let store = ProjectStore()
-        if let url = store.activeProjectURL {
+        if let activeID = store.activeProjectID,
+           let url = store.activeProjectURL,
+           store.bookmarkStore.hasBookmark(for: activeID) {
             FileManager.default.changeCurrentDirectoryPath(url.path)
         }
         _projectStore = State(wrappedValue: store)
@@ -196,8 +201,10 @@ struct openOwlApp: App {
         guard let projectURL = projectStore.activeProjectURL,
               let activeID = projectStore.activeProjectID else { return }
 
-        // Always update cwd (needed for new terminal surfaces)
-        FileManager.default.changeCurrentDirectoryPath(projectURL.path)
+        // Update cwd only if we have bookmark access (avoids TCC prompt in dev builds)
+        if projectStore.bookmarkStore.hasBookmark(for: activeID) {
+            FileManager.default.changeCurrentDirectoryPath(projectURL.path)
+        }
 
         // Only refresh the currently visible tab's store
         switch navigationStore.activeTab {
