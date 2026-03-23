@@ -62,16 +62,56 @@ enum AppColors {
 }
 
 enum AppFonts {
-    static let title         = Font.system(size: 16, weight: .semibold)
-    static let sectionHeader = Font.system(size: 10, weight: .semibold)
+    // MARK: - Semantic fonts (macOS 26+ scales with Dynamic Type, older macOS keeps fixed size)
+
+    static var title: Font {
+        if #available(macOS 26, *) { return .headline }
+        return .system(size: 16, weight: .semibold)
+    }
+    static var sectionHeader: Font {
+        if #available(macOS 26, *) { return .caption.weight(.semibold) }
+        return .system(size: 10, weight: .semibold)
+    }
     static let sectionTracking: CGFloat = 1.5
-    static let primaryLabel  = Font.system(size: 12, weight: .medium)
-    static let secondaryLabel = Font.system(size: 11)
-    static let body          = Font.system(size: 12)
-    static let mono          = Font.system(size: 11, design: .monospaced)
-    static let badge         = Font.system(size: 9, weight: .medium)
-    static let caption       = Font.system(size: 10)
-    static let statusBar     = Font.system(size: 11)
+    static var primaryLabel: Font {
+        if #available(macOS 26, *) { return .callout.weight(.medium) }
+        return .system(size: 12, weight: .medium)
+    }
+    static var secondaryLabel: Font {
+        if #available(macOS 26, *) { return .subheadline }
+        return .system(size: 11)
+    }
+    static var body: Font {
+        if #available(macOS 26, *) { return .callout }
+        return .system(size: 12)
+    }
+    static var mono: Font {
+        if #available(macOS 26, *) { return .system(.subheadline, design: .monospaced) }
+        return .system(size: 11, design: .monospaced)
+    }
+    static var caption: Font {
+        if #available(macOS 26, *) { return .caption }
+        return .system(size: 10)
+    }
+    static var statusBar: Font {
+        if #available(macOS 26, *) { return .subheadline }
+        return .system(size: 11)
+    }
+
+    // Intentionally fixed: 9pt badge is too small for any semantic font
+    static let badge = Font.system(size: 9, weight: .medium)
+
+    // MARK: - Fixed-size fonts (alignment-critical, always monospaced)
+
+    static let diffCode   = Font.system(size: 11, design: .monospaced)
+    static let diffLineNo = Font.system(size: 11, design: .monospaced)
+    static let diffMeta   = Font.system(size: 9, weight: .bold, design: .monospaced)
+
+    // MARK: - Icon sizing (used for SF Symbol sizing in toolbars/buttons)
+
+    static let toolbarIcon = Font.system(size: 10)
+    static let smallIcon   = Font.system(size: 9)
+    static let tinyIcon    = Font.system(size: 8)
 }
 
 enum AppSpacing {

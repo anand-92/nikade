@@ -125,7 +125,7 @@ private struct ClaudeIncidentSidebarCard: View {
                 Image(systemName: "exclamationmark.triangle")
                     .foregroundStyle(Color.yellow)
                 Text(title)
-                    .font(.system(size: 14, weight: .semibold))
+                    .font(AppFonts.title)
                     .lineLimit(2)
                     .multilineTextAlignment(.leading)
                     .foregroundStyle(Color.yellow)

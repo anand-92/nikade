@@ -40,7 +40,10 @@ class TerminalScrollView: NSView {
         scrollView.hasHorizontalScroller = false
         scrollView.autohidesScrollers = false
         scrollView.usesPredominantAxisScrolling = true
+        // Always use overlay style — matches Ghostty. Legacy style takes horizontal
+        // space which conflicts with the Metal layer filling the full bounds.
         scrollView.scrollerStyle = .overlay
+        scrollView.appearance = NSAppearance(named: .darkAqua)
         scrollView.drawsBackground = false
         scrollView.contentView.clipsToBounds = false
 
@@ -93,14 +96,13 @@ class TerminalScrollView: NSView {
             self?.handleLiveScroll()
         })
 
-        // Re-evaluate scroller style when system preference changes
+        // Keep overlay style even if system preference changes
         observers.append(NotificationCenter.default.addObserver(
             forName: NSScroller.preferredScrollerStyleDidChangeNotification,
             object: nil,
             queue: nil
         ) { [weak self] _ in
-            guard let self, let state = self.scrollbarState else { return }
-            self.updateScrollerVisibility(state)
+            self?.scrollView.scrollerStyle = .overlay
         })
     }
 
@@ -118,6 +120,8 @@ class TerminalScrollView: NSView {
     override func layout() {
         super.layout()
         scrollView.frame = bounds
+        // Use bounds.size for the view frames — Metal layer fills the entire area.
+        // Ghostty renders text within contentSize.width (set via ghostty_surface_set_size).
         terminalView.frame.size = scrollView.bounds.size
         documentView.frame.size.width = scrollView.bounds.width
         synchronizeScrollView()
@@ -130,19 +134,11 @@ class TerminalScrollView: NSView {
     func updateScrollbar(_ state: TerminalScrollbarState) {
         scrollbarState = state
         synchronizeScrollView()
-        updateScrollerVisibility(state)
-    }
-
-    /// Show scrollbar when there is scrollback content.
-    /// Overlay scrollers auto-fade and never appear because scrollWheel events
-    /// bypass the NSScrollView entirely. Switch to legacy style (always visible)
-    /// when the terminal has scrollback, revert to overlay when there's none.
-    private func updateScrollerVisibility(_ state: TerminalScrollbarState) {
-        let hasScrollback = state.total > state.len
-        let wantLegacy = hasScrollback
-        let currentlyLegacy = scrollView.scrollerStyle == .legacy
-        if wantLegacy != currentlyLegacy {
-            scrollView.scrollerStyle = wantLegacy ? .legacy : .overlay
+        // Flash overlay scrollers so the user sees their scroll position.
+        // Overlay scrollers auto-fade, but since scrollWheel events bypass
+        // the NSScrollView (going to ghostty instead), we flash manually.
+        if state.total > state.len {
+            scrollView.flashScrollers()
         }
     }
 
