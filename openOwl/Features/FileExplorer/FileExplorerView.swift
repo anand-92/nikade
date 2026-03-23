@@ -274,6 +274,7 @@ struct FileExplorerView: View {
                     )
                     .id(url)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .clipped()
                 }
             } else {
                 Spacer()
