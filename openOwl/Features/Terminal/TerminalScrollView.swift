@@ -21,6 +21,7 @@ class TerminalScrollView: NSView {
     let terminalView: TerminalNSView
 
     private var isLiveScrolling = false
+    private var userScrolledUp = false
     private var lastSentRow: Int?
     private var observers: [NSObjectProtocol] = []
     private var terminalShouldBeVisible = true
@@ -49,6 +50,10 @@ class TerminalScrollView: NSView {
 
         super.init(frame: .zero)
         addSubview(scrollView)
+
+        terminalView.onUserScroll = { [weak self] in
+            self?.userScrolledUp = true
+        }
 
         // Accept file/URL/text drops on this top-level view (SwiftUI hosts this directly)
         registerForDraggedTypes([.fileURL, .URL, .string])
@@ -124,6 +129,12 @@ class TerminalScrollView: NSView {
     func updateScrollbar(_ state: TerminalScrollbarState) {
         scrollbarState = state
         synchronizeScrollView()
+        // Overlay scrollers only appear when the scroll view detects activity.
+        // Since scrollWheel events go to TerminalNSView (not the NSScrollView),
+        // we must flash manually so the user sees the scrollbar.
+        if state.total > state.len {
+            scrollView.flashScrollers()
+        }
     }
 
     /// Called when ghostty sends GHOSTTY_ACTION_CELL_SIZE
@@ -146,10 +157,23 @@ class TerminalScrollView: NSView {
         if !isLiveScrolling {
             let ch = cellSize.height
             if ch > 0, let sb = scrollbarState {
-                // Invert: terminal offset from top → AppKit offset from bottom
-                let offsetY = CGFloat(sb.total - sb.offset - sb.len) * ch
-                scrollView.contentView.scroll(to: CGPoint(x: 0, y: offsetY))
-                lastSentRow = Int(sb.offset)
+                let isAtBottom = sb.offset + sb.len >= sb.total
+
+                // Track whether the user has scrolled away from the bottom.
+                // Reset when ghostty reports we're at the bottom (user scrolled
+                // back down, or terminal was reset).
+                if isAtBottom {
+                    userScrolledUp = false
+                }
+
+                // Don't auto-scroll when the user is viewing scrollback —
+                // let them read without the view jumping to the bottom on
+                // every new line of output.
+                if !userScrolledUp {
+                    let offsetY = CGFloat(sb.total - sb.offset - sb.len) * ch
+                    scrollView.contentView.scroll(to: CGPoint(x: 0, y: offsetY))
+                    lastSentRow = Int(sb.offset)
+                }
             }
         }
 
@@ -171,6 +195,12 @@ class TerminalScrollView: NSView {
         let docHeight = documentView.frame.height
         let scrollOffset = docHeight - visibleRect.origin.y - visibleRect.height
         let row = Int(scrollOffset / ch)
+
+        // Detect if the user scrolled away from the bottom
+        let nearBottom = visibleRect.origin.y <= ch
+        if !nearBottom {
+            userScrolledUp = true
+        }
 
         guard row != lastSentRow else { return }
         lastSentRow = row

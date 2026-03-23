@@ -20,6 +20,7 @@ class TerminalNSView: NSView {
 
     weak var appManager: GhosttyAppManager?
     var onFocus: (() -> Void)?
+    var onUserScroll: (() -> Void)?
     var paneIdentifier: UUID { paneID }
     /// Whether Metal is currently rendering (layer not hidden).
     var isRenderingActive: Bool { !(metalLayer?.isHidden ?? true) }
@@ -385,6 +386,14 @@ class TerminalNSView: NSView {
         // doesn't have focus.
         guard window?.firstResponder === self else { return false }
 
+        // Intercept Escape — NavigationSplitView consumes ESC in performKeyEquivalent
+        // (to collapse the sidebar) before keyDown reaches this view. Claim it here so
+        // ghostty receives it via keyDown.
+        if event.keyCode == 53, flags.isEmpty || flags == .shift {
+            keyDown(with: event)
+            return true
+        }
+
         // Intercept Cmd+V (paste)
         if flags == .command, event.charactersIgnoringModifiers == "v" {
             pasteFromClipboard()
@@ -475,6 +484,12 @@ class TerminalNSView: NSView {
 
     override func scrollWheel(with event: NSEvent) {
         guard let surface else { return }
+
+        // Notify scroll view that the user is scrolling (for auto-scroll suppression)
+        if event.scrollingDeltaY > 0 {
+            onUserScroll?()
+        }
+
         var scrollMods: Int32 = 0
         if event.hasPreciseScrollingDeltas {
             scrollMods |= 1

@@ -16,6 +16,7 @@
 - [x] 361972c — Pane 拖拽稳定性修复、TerminalSearchOverlay 位置修复、搜索快捷键修复
 - [x] v1.0.2 — Deployment 100% CPU 修复 + 侧边栏分支空白页修复 + 终端拖拽 opacity(0) 修复
 - [x] v1.0.3 — surface 泄漏修复 + 项目 Tab 关闭/拖拽 + Worktree 自动发现 + Debug 诊断系统
+- [x] v1.0.4 — Deployment removeItem 误删用户目录修复
 
 ## Done
 
