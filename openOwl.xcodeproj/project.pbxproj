@@ -24,6 +24,7 @@
 		38A6E6284838785F9ABDE4C2 /* SidebarExpandCollapseTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0A3DEDA992E14DF88D81FA8 /* SidebarExpandCollapseTests.swift */; };
 		39924ACBD4042767ACC60C32 /* DeploymentProcessManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 522BDF7CC3D6AA1A7276585D /* DeploymentProcessManager.swift */; };
 		3D99003D3AD31CD33007EFFC /* IconButtonStyle.swift in Sources */ = {isa = PBXBuildFile; fileRef = 552C03468C64C29EEA14DE99 /* IconButtonStyle.swift */; };
+		41E4776698BAC82FD3216908 /* DeploymentRecoveryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F24C6950453024B0CD1362DE /* DeploymentRecoveryTests.swift */; };
 		4637838D393C5D4F441A50E0 /* FileExplorerParsingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC6E1BF43BA95A17177F2788 /* FileExplorerParsingTests.swift */; };
 		465C4C06EEE907C3154E2329 /* StatusBarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4F692AB2575EE0D90EDAE529 /* StatusBarView.swift */; };
 		467A828AC1805D834ABAFF66 /* OrderedProjectTabsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00642698655A3329F3C67DB7 /* OrderedProjectTabsTests.swift */; };
@@ -49,6 +50,7 @@
 		788F25C370B576583C54F299 /* WindowAccessor.swift in Sources */ = {isa = PBXBuildFile; fileRef = E8DDBDFCC91E18EF5D1F8EA3 /* WindowAccessor.swift */; };
 		78E88DA5D9EE3022602988FB /* TerminalSplitNodeExtraTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 46C97B681433B80851C4C8B2 /* TerminalSplitNodeExtraTests.swift */; };
 		844E903C02CBCD3540C8A3A9 /* DeploymentStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6E6805352D222E6C3AA08960 /* DeploymentStore.swift */; };
+		882EAAE1592A1A4FCB1A169A /* ScrollIndicatorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE6FF0B33095CC35D7533713 /* ScrollIndicatorTests.swift */; };
 		8A11FA4EFF26B2E2418120DE /* FileExplorerErrorHandlingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 10A99EEE47269D739DF84C40 /* FileExplorerErrorHandlingTests.swift */; };
 		9121D7764A3A9AB908307340 /* ghostty-resources in Resources */ = {isa = PBXBuildFile; fileRef = 35BDC16C9BB8A7EF4C33FEE8 /* ghostty-resources */; };
 		91805BC493C9702D6C283FB3 /* NilIfEmptyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 265610AFA8DF22D2D552B28A /* NilIfEmptyTests.swift */; };
@@ -76,7 +78,6 @@
 		E3A2575D11E17CF509A2CA38 /* FileExplorerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C85221AB69D1FBEA8FB4B809 /* FileExplorerView.swift */; };
 		E41F0715FF1A9ACFD20554F2 /* ProjectStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6D5539E778AB8B17DC618C39 /* ProjectStore.swift */; };
 		EC8DF83DFD73AE2330E7E2E5 /* FileWatcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5BAFE9E75DAA3DB62ECD73CB /* FileWatcher.swift */; };
-		ED67FB072148DF07CAFAB667 /* ScrollIndicatorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A8D9188189BB0DFB2A368662 /* ScrollIndicatorTests.swift */; };
 		EF85B8825B0F808FE105D731 /* EmptyStateView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB19182518A4ECF2CB2EFE7D /* EmptyStateView.swift */; };
 		F00CD343673CE3309A16B710 /* UpdateAlertView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E6BFB8B2686ECAE673F0ACA6 /* UpdateAlertView.swift */; };
 		F043F631A3AD286B260541AB /* SectionTitle.swift in Sources */ = {isa = PBXBuildFile; fileRef = D3F88A4C649AE808F422E1D1 /* SectionTitle.swift */; };
@@ -150,7 +151,6 @@
 		98E3B22B024A5CF89AEF09F0 /* QuickOpenSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuickOpenSheet.swift; sourceTree = "<group>"; };
 		9F84090706181BCE2FB1AF47 /* FileIconsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileIconsTests.swift; sourceTree = "<group>"; };
 		A7453D913EA60163D2B5E6D2 /* FileIcons.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileIcons.swift; sourceTree = "<group>"; };
-		A8D9188189BB0DFB2A368662 /* ScrollIndicatorTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ScrollIndicatorTests.swift; sourceTree = "<group>"; };
 		AAF45F9E4541BB9F66DC113E /* PanelDivider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PanelDivider.swift; sourceTree = "<group>"; };
 		AB19182518A4ECF2CB2EFE7D /* EmptyStateView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmptyStateView.swift; sourceTree = "<group>"; };
 		AC6E1BF43BA95A17177F2788 /* FileExplorerParsingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileExplorerParsingTests.swift; sourceTree = "<group>"; };
@@ -173,11 +173,13 @@
 		E6BFB8B2686ECAE673F0ACA6 /* UpdateAlertView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UpdateAlertView.swift; sourceTree = "<group>"; };
 		E712E0676CA92A36194A3A3E /* OutlineTreeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OutlineTreeView.swift; sourceTree = "<group>"; };
 		E8DDBDFCC91E18EF5D1F8EA3 /* WindowAccessor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowAccessor.swift; sourceTree = "<group>"; };
+		F24C6950453024B0CD1362DE /* DeploymentRecoveryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeploymentRecoveryTests.swift; sourceTree = "<group>"; };
 		F55B1F7B1BFEBE824E839A54 /* ProjectStorePersistenceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProjectStorePersistenceTests.swift; sourceTree = "<group>"; };
 		F5BCF2DFA7863BDF0B13FA97 /* BranchNameGeneratorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BranchNameGeneratorTests.swift; sourceTree = "<group>"; };
 		F6C7B0DBA130E23B413EA3A8 /* GitChangesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GitChangesView.swift; sourceTree = "<group>"; };
 		F733F678544F126652F6B93E /* TerminalWorkspaceView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalWorkspaceView.swift; sourceTree = "<group>"; };
 		F82D68EDEACC74717AAF913C /* MaximizePaneTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MaximizePaneTests.swift; sourceTree = "<group>"; };
+		FE6FF0B33095CC35D7533713 /* ScrollIndicatorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScrollIndicatorTests.swift; sourceTree = "<group>"; };
 		FEDADFD1990F2C7EC7EDDC78 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -201,6 +203,7 @@
 				F5BCF2DFA7863BDF0B13FA97 /* BranchNameGeneratorTests.swift */,
 				7CDAEC5FEAD4C9A90634C404 /* DeploymentCodableTests.swift */,
 				7CBAAA7E39A6465BC2C9F051 /* DeploymentLogThrottleTests.swift */,
+				F24C6950453024B0CD1362DE /* DeploymentRecoveryTests.swift */,
 				10A99EEE47269D739DF84C40 /* FileExplorerErrorHandlingTests.swift */,
 				AC7E472A3BF6DAE6E5623511 /* FileExplorerGitPropagationTests.swift */,
 				AC6E1BF43BA95A17177F2788 /* FileExplorerParsingTests.swift */,
@@ -213,13 +216,13 @@
 				00642698655A3329F3C67DB7 /* OrderedProjectTabsTests.swift */,
 				7275948704BB7EA41DA98E21 /* ProjectStoreHelpersTests.swift */,
 				F55B1F7B1BFEBE824E839A54 /* ProjectStorePersistenceTests.swift */,
+				FE6FF0B33095CC35D7533713 /* ScrollIndicatorTests.swift */,
 				D0A3DEDA992E14DF88D81FA8 /* SidebarExpandCollapseTests.swift */,
 				C39D7120D769F3D4DF10E3C6 /* SplitDiffByFileTests.swift */,
 				C041C1F34801BF486A888B46 /* TerminalSearchTests.swift */,
 				46C97B681433B80851C4C8B2 /* TerminalSplitNodeExtraTests.swift */,
 				C1ACD5DC9423F0D31646990E /* TerminalSplitNodeTests.swift */,
 				21DD4CFA52278B0DEC5F0003 /* TerminalSurfaceRetentionTests.swift */,
-				A8D9188189BB0DFB2A368662 /* ScrollIndicatorTests.swift */,
 			);
 			path = openOwlTests;
 			sourceTree = "<group>";
@@ -435,6 +438,8 @@
 				5E6007E437D4D5AE53793AE1 /* PBXTargetDependency */,
 			);
 			name = openOwlTests;
+			packageProductDependencies = (
+			);
 			productName = openOwlTests;
 			productReference = AD76AB4DCC030B2D4E99057E /* openOwlTests.xctest */;
 			productType = "com.apple.product-type.bundle.unit-test";
@@ -472,7 +477,6 @@
 				D9D81D1D8CE40E1D3BD6662C /* XCRemoteSwiftPackageReference "CodeEditSourceEditor" */,
 			);
 			preferredProjectObjectVersion = 77;
-			productRefGroup = AE2615A57603A7238B6BE4D3 /* Products */;
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
@@ -505,6 +509,7 @@
 				E2858524718C2F8850AE2DE9 /* BranchNameGeneratorTests.swift in Sources */,
 				6FF30150D03FB6446E61B860 /* DeploymentCodableTests.swift in Sources */,
 				94DC6B1630DEF2A5CC9D4B7B /* DeploymentLogThrottleTests.swift in Sources */,
+				41E4776698BAC82FD3216908 /* DeploymentRecoveryTests.swift in Sources */,
 				8A11FA4EFF26B2E2418120DE /* FileExplorerErrorHandlingTests.swift in Sources */,
 				3140A88752300CC5AE03A433 /* FileExplorerGitPropagationTests.swift in Sources */,
 				4637838D393C5D4F441A50E0 /* FileExplorerParsingTests.swift in Sources */,
@@ -517,13 +522,13 @@
 				467A828AC1805D834ABAFF66 /* OrderedProjectTabsTests.swift in Sources */,
 				02119EE617DF093C5AC6E1BA /* ProjectStoreHelpersTests.swift in Sources */,
 				A2747B4F72892C3434D61AFD /* ProjectStorePersistenceTests.swift in Sources */,
+				882EAAE1592A1A4FCB1A169A /* ScrollIndicatorTests.swift in Sources */,
 				38A6E6284838785F9ABDE4C2 /* SidebarExpandCollapseTests.swift in Sources */,
 				58B0B6ED8636B72C527AE508 /* SplitDiffByFileTests.swift in Sources */,
 				1BD4F2C33F69F3A58B4049E9 /* TerminalSearchTests.swift in Sources */,
 				78E88DA5D9EE3022602988FB /* TerminalSplitNodeExtraTests.swift in Sources */,
 				B6BB3580C221F10DBB012FCA /* TerminalSplitNodeTests.swift in Sources */,
 				06EF6FC70AE06D5D9FB2EE60 /* TerminalSurfaceRetentionTests.swift in Sources */,
-				ED67FB072148DF07CAFAB667 /* ScrollIndicatorTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -601,7 +606,9 @@
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				COMBINE_HIDPI_IMAGES = YES;
 				GENERATE_INFOPLIST_FILE = YES;
-				HEADER_SEARCH_PATHS = "$(PROJECT_DIR)/GhosttyKit.xcframework/macos-arm64_x86_64/Headers";
+				HEADER_SEARCH_PATHS = (
+					"$(PROJECT_DIR)/GhosttyKit.xcframework/macos-arm64_x86_64/Headers",
+				);
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
@@ -691,9 +698,13 @@
 				CODE_SIGN_ENTITLEMENTS = openOwl/Resources/openOwl.entitlements;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
-				FRAMEWORK_SEARCH_PATHS = "$(PROJECT_DIR)";
+				FRAMEWORK_SEARCH_PATHS = (
+					"$(PROJECT_DIR)",
+				);
 				GENERATE_INFOPLIST_FILE = YES;
-				HEADER_SEARCH_PATHS = "$(PROJECT_DIR)/GhosttyKit.xcframework/macos-arm64_x86_64/Headers";
+				HEADER_SEARCH_PATHS = (
+					"$(PROJECT_DIR)/GhosttyKit.xcframework/macos-arm64_x86_64/Headers",
+				);
 				INFOPLIST_FILE = openOwl/Resources/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = OpenOwl;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.developer-tools";
@@ -701,7 +712,9 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				LIBRARY_SEARCH_PATHS = "$(PROJECT_DIR)/GhosttyKit.xcframework/macos-arm64_x86_64";
+				LIBRARY_SEARCH_PATHS = (
+					"$(PROJECT_DIR)/GhosttyKit.xcframework/macos-arm64_x86_64",
+				);
 				MARKETING_VERSION = 1.0.4;
 				OTHER_LDFLAGS = (
 					"-lghostty",
@@ -732,9 +745,13 @@
 				CODE_SIGN_ENTITLEMENTS = openOwl/Resources/openOwl.entitlements;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
-				FRAMEWORK_SEARCH_PATHS = "$(PROJECT_DIR)";
+				FRAMEWORK_SEARCH_PATHS = (
+					"$(PROJECT_DIR)",
+				);
 				GENERATE_INFOPLIST_FILE = YES;
-				HEADER_SEARCH_PATHS = "$(PROJECT_DIR)/GhosttyKit.xcframework/macos-arm64_x86_64/Headers";
+				HEADER_SEARCH_PATHS = (
+					"$(PROJECT_DIR)/GhosttyKit.xcframework/macos-arm64_x86_64/Headers",
+				);
 				INFOPLIST_FILE = openOwl/Resources/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = OpenOwl;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.developer-tools";
@@ -742,7 +759,9 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				LIBRARY_SEARCH_PATHS = "$(PROJECT_DIR)/GhosttyKit.xcframework/macos-arm64_x86_64";
+				LIBRARY_SEARCH_PATHS = (
+					"$(PROJECT_DIR)/GhosttyKit.xcframework/macos-arm64_x86_64",
+				);
 				MARKETING_VERSION = 1.0.4;
 				OTHER_LDFLAGS = (
 					"-lghostty",
@@ -835,7 +854,9 @@
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				COMBINE_HIDPI_IMAGES = YES;
 				GENERATE_INFOPLIST_FILE = YES;
-				HEADER_SEARCH_PATHS = "$(PROJECT_DIR)/GhosttyKit.xcframework/macos-arm64_x86_64/Headers";
+				HEADER_SEARCH_PATHS = (
+					"$(PROJECT_DIR)/GhosttyKit.xcframework/macos-arm64_x86_64/Headers",
+				);
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
