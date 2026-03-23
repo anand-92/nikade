@@ -90,9 +90,11 @@ class TerminalScrollView: NSView {
         scroller.alphaValue = 0.7
         scrollerFadeTimer?.invalidate()
         scrollerFadeTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: false) { [weak self] _ in
-            NSAnimationContext.runAnimationGroup { ctx in
-                ctx.duration = 0.3
-                self?.scroller.animator().alphaValue = 0
+            DispatchQueue.main.async {
+                NSAnimationContext.runAnimationGroup { ctx in
+                    ctx.duration = 0.3
+                    self?.scroller.animator().alphaValue = 0
+                }
             }
         }
     }
@@ -179,7 +181,7 @@ class ScrollIndicatorView: NSView {
             width: bounds.width - 2, height: knobHeight
         )
         let path = NSBezierPath(roundedRect: knobRect, xRadius: 3, yRadius: 3)
-        NSColor.white.withAlphaComponent(0.35).setFill()
+        NSColor.labelColor.withAlphaComponent(0.35).setFill()
         path.fill()
     }
 }

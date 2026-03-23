@@ -115,4 +115,11 @@ struct DeploymentRecoveryTests {
         let nested = home.appendingPathComponent(".openowl/deployments/my-app/repo")
         #expect(DeploymentStore.isSafeDeploymentPath(nested) == true)
     }
+
+    @Test func isSafeDeploymentPath_siblingDirectoryName_returnsFalse() {
+        // "deployments-evil" starts with "deployments" but is NOT a child
+        let home = FileManager.default.homeDirectoryForCurrentUser
+        let evil = home.appendingPathComponent(".openowl/deployments-evil/payload")
+        #expect(DeploymentStore.isSafeDeploymentPath(evil) == false)
+    }
 }

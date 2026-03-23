@@ -473,9 +473,10 @@ final class DeploymentStore {
     /// Only allow deletion of paths within ~/.openowl/deployments/
     static func isSafeDeploymentPath(_ url: URL) -> Bool {
         let home = FileManager.default.homeDirectoryForCurrentUser
-        let safePrefix = home.appendingPathComponent(".openowl/deployments").standardizedFileURL.path
+        // Trailing "/" ensures ".openowl/deployments-evil" doesn't match
+        let safePrefix = home.appendingPathComponent(".openowl/deployments").standardizedFileURL.path + "/"
         let targetPath = url.standardizedFileURL.path
-        return targetPath.hasPrefix(safePrefix) && targetPath.count > safePrefix.count
+        return targetPath.hasPrefix(safePrefix)
     }
 
     // MARK: - Private: Git Operations
