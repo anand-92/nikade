@@ -115,7 +115,8 @@ struct Deployment: Identifiable, Codable, Hashable {
 @MainActor
 @Observable
 final class DeploymentStore {
-    var deployments: [Deployment] = []
+    // internal setter for @testable import test access
+    private(set) var deployments: [Deployment] = []
     var selectedDeploymentID: String?
     private(set) var logContent: String = ""
     private(set) var healthStatus: [String: Bool] = [:]  // id → healthy
@@ -366,6 +367,8 @@ final class DeploymentStore {
                 if let pid = updated[i].pid, DeploymentProcessManager.isProcessAlive(pid: pid) {
                     pollIDs.append(updated[i].id)
                 } else {
+                    NSLog("openOwl: [Deployment] '%@' (pid=%d) process dead, marking error",
+                          updated[i].name, updated[i].pid ?? -1)
                     updated[i].status = .error
                     updated[i].pid = nil
                     changed = true

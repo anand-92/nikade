@@ -20,7 +20,6 @@ class TerminalNSView: NSView {
 
     weak var appManager: GhosttyAppManager?
     var onFocus: (() -> Void)?
-    var onUserScroll: (() -> Void)?
     /// Working directory for the shell. Set before the view is added to a window.
     /// Passed directly to ghostty_surface_config — avoids changing the app's process cwd
     /// which triggers macOS TCC prompts in dev builds.
@@ -118,7 +117,14 @@ class TerminalNSView: NSView {
         surfaceConfig.font_size = 0
 
         // Set working directory — prefer explicit path, fall back to process cwd
-        let cwd = initialWorkingDirectory ?? FileManager.default.currentDirectoryPath
+        let cwd: String
+        if let dir = initialWorkingDirectory {
+            cwd = dir
+        } else {
+            cwd = FileManager.default.currentDirectoryPath
+            NSLog("openOwl: [Terminal] initialWorkingDirectory nil for pane %@, falling back to: %@",
+                  paneID.uuidString, cwd)
+        }
         var cwdPtr = strdup(cwd)
         surfaceConfig.working_directory = UnsafePointer(cwdPtr)
 
@@ -488,12 +494,6 @@ class TerminalNSView: NSView {
 
     override func scrollWheel(with event: NSEvent) {
         guard let surface else { return }
-
-        // Notify scroll view that the user is scrolling (for auto-scroll suppression)
-        if event.scrollingDeltaY > 0 {
-            onUserScroll?()
-        }
-
         var scrollMods: Int32 = 0
         if event.hasPreciseScrollingDeltas {
             scrollMods |= 1

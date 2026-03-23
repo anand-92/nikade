@@ -104,7 +104,7 @@ enum AppFonts {
     // MARK: - Fixed-size fonts (alignment-critical, always monospaced)
 
     static let diffCode   = Font.system(size: 11, design: .monospaced)
-    static let diffLineNo = Font.system(size: 11, design: .monospaced)
+    static let diffLineNo = diffCode
     static let diffMeta   = Font.system(size: 9, weight: .bold, design: .monospaced)
 
     // MARK: - Icon sizing (used for SF Symbol sizing in toolbars/buttons)
@@ -135,9 +135,9 @@ enum AppEditorTheme {
     static let attribute  = NSColor(calibratedRed: 0.7, green: 0.6, blue: 0.4, alpha: 1.0)
     static let variable   = NSColor(calibratedRed: 0.5, green: 0.7, blue: 0.9, alpha: 1.0)
     static let value      = NSColor(calibratedRed: 0.9, green: 0.7, blue: 0.4, alpha: 1.0)
-    static let number     = NSColor(calibratedRed: 0.9, green: 0.7, blue: 0.4, alpha: 1.0)
+    static let number     = value
     static let string     = NSColor(calibratedRed: 0.9, green: 0.5, blue: 0.5, alpha: 1.0)
-    static let character  = NSColor(calibratedRed: 0.9, green: 0.5, blue: 0.5, alpha: 1.0)
+    static let character  = string
     static let comment    = NSColor(calibratedRed: 0.5, green: 0.6, blue: 0.5, alpha: 1.0)
     static let invisibles = NSColor(white: 0.5, alpha: 0.3)
 }

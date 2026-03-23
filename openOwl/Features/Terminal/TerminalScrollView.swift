@@ -7,25 +7,17 @@ struct TerminalScrollbarState {
     let len: UInt64
 }
 
-/// Wraps a TerminalNSView in an NSScrollView to provide native macOS scrollbar support.
+/// Hosts a TerminalNSView with a custom scroll indicator overlay.
 ///
-/// Architecture mirrors Ghostty's SurfaceScrollView:
-/// - `scrollView`: NSScrollView with overlay scrollers
-/// - `documentView`: Blank NSView whose height = total scrollback in pixels
-/// - `terminalView`: The actual Metal renderer, positioned to fill the visible rect
-///
-/// Coordinate system: AppKit is +Y-up (origin bottom-left), terminal is +Y-down (row 0 at top).
+/// No NSScrollView is used — scrollWheel events go directly to TerminalNSView → ghostty.
+/// A standalone ScrollIndicatorView shows scroll position from ghostty's SCROLLBAR action.
 class TerminalScrollView: NSView {
     let terminalView: TerminalNSView
     private let scroller: ScrollIndicatorView
-    private var userScrolledUp = false
     private var terminalShouldBeVisible = true
 
     /// Current scrollbar state from ghostty core
     var scrollbarState: TerminalScrollbarState?
-
-    /// Current cell size from ghostty core (pixels per character cell)
-    var cellSize: CGSize = .zero
 
     init(terminalView: TerminalNSView) {
         self.terminalView = terminalView
@@ -39,10 +31,6 @@ class TerminalScrollView: NSView {
         addSubview(terminalView)
         addSubview(scroller)
 
-        terminalView.onUserScroll = { [weak self] in
-            self?.userScrolledUp = true
-        }
-
         // Accept file/URL/text drops on this top-level view (SwiftUI hosts this directly)
         registerForDraggedTypes([.fileURL, .URL, .string])
     }
@@ -50,6 +38,10 @@ class TerminalScrollView: NSView {
     @available(*, unavailable)
     required init?(coder: NSCoder) {
         fatalError("init(coder:) not implemented")
+    }
+
+    deinit {
+        scrollerFadeTimer?.invalidate()
     }
 
     // MARK: - Layout
@@ -77,8 +69,6 @@ class TerminalScrollView: NSView {
         guard state.total > 0, state.len > 0 else { return }
 
         let hasScrollback = state.total > state.len
-        let isAtBottom = state.offset + state.len >= state.total
-        if isAtBottom { userScrolledUp = false }
 
         if hasScrollback {
             let maxOffset = state.total - state.len
@@ -107,11 +97,6 @@ class TerminalScrollView: NSView {
         }
     }
 
-    /// Called when ghostty sends GHOSTTY_ACTION_CELL_SIZE
-    func updateCellSize(_ size: CGSize) {
-        cellSize = size
-    }
-
     func setTerminalVisibility(_ isVisible: Bool) {
         terminalShouldBeVisible = isVisible
         terminalView.setSurfaceVisibility(isVisible)
@@ -133,24 +118,23 @@ class TerminalScrollView: NSView {
         return true
     }
 
+    private func canAcceptDrag(_ sender: NSDraggingInfo) -> Bool {
+        guard isEffectivelyVisible,
+              let types = sender.draggingPasteboard.types,
+              !Set(types).isDisjoint(with: Self.acceptedDropTypes) else { return false }
+        return true
+    }
+
     override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
-        guard isEffectivelyVisible else { return [] }
-        guard let pbTypes = sender.draggingPasteboard.types,
-              !Set(pbTypes).isDisjoint(with: Self.acceptedDropTypes) else { return [] }
-        return .copy
+        canAcceptDrag(sender) ? .copy : []
     }
 
     override func draggingUpdated(_ sender: NSDraggingInfo) -> NSDragOperation {
-        guard isEffectivelyVisible else { return [] }
-        guard let types = sender.draggingPasteboard.types,
-              !Set(types).isDisjoint(with: Self.acceptedDropTypes) else { return [] }
-        return .copy
+        canAcceptDrag(sender) ? .copy : []
     }
 
     override func prepareForDragOperation(_ sender: NSDraggingInfo) -> Bool {
-        guard isEffectivelyVisible else { return false }
-        guard let types = sender.draggingPasteboard.types else { return false }
-        return !Set(types).isDisjoint(with: Self.acceptedDropTypes)
+        canAcceptDrag(sender)
     }
 
     override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
