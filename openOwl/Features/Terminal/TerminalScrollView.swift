@@ -16,7 +16,7 @@ struct TerminalScrollbarState {
 ///
 /// Coordinate system: AppKit is +Y-up (origin bottom-left), terminal is +Y-down (row 0 at top).
 class TerminalScrollView: NSView {
-    private let scrollView: NSScrollView
+    private let scrollView: TerminalNSScrollView
     private let documentView: NSView
     let terminalView: TerminalNSView
 
@@ -35,7 +35,7 @@ class TerminalScrollView: NSView {
     init(terminalView: TerminalNSView) {
         self.terminalView = terminalView
 
-        scrollView = NSScrollView()
+        scrollView = TerminalNSScrollView()
         scrollView.hasVerticalScroller = true
         scrollView.hasHorizontalScroller = false
         scrollView.autohidesScrollers = false
@@ -306,5 +306,19 @@ class TerminalScrollView: NSView {
             owner: self,
             userInfo: nil
         ))
+    }
+}
+
+// MARK: - NSScrollView subclass
+
+/// Forwards scrollWheel events to the terminal instead of handling them.
+/// Without this, NSScrollView consumes scroll events to move its clip view,
+/// which fights with ghostty's internal scroll handling.
+private class TerminalNSScrollView: NSScrollView {
+    override func scrollWheel(with event: NSEvent) {
+        // Forward to the terminal view inside the document view
+        if let terminalView = documentView?.subviews.first as? TerminalNSView {
+            terminalView.scrollWheel(with: event)
+        }
     }
 }
