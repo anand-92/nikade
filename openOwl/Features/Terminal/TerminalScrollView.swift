@@ -17,7 +17,7 @@ struct TerminalScrollbarState {
 /// Coordinate system: AppKit is +Y-up (origin bottom-left), terminal is +Y-down (row 0 at top).
 class TerminalScrollView: NSView {
     let terminalView: TerminalNSView
-    private let scroller: NSScroller
+    private let scroller: ScrollIndicatorView
     private var userScrolledUp = false
     private var terminalShouldBeVisible = true
 
@@ -30,12 +30,10 @@ class TerminalScrollView: NSView {
     init(terminalView: TerminalNSView) {
         self.terminalView = terminalView
 
-        // Standalone scroller — not part of any NSScrollView.
-        // This avoids NSScrollView consuming scrollWheel events
-        // while still providing a native macOS scrollbar visual.
-        scroller = NSScroller()
-        scroller.scrollerStyle = .overlay
-        scroller.alphaValue = 0 // hidden until scrollback exists
+        // Custom scroll indicator — a simple rounded bar drawn manually.
+        // NSScroller (both overlay and legacy) doesn't render the knob
+        // correctly without an NSScrollView parent.
+        scroller = ScrollIndicatorView()
 
         super.init(frame: .zero)
         addSubview(terminalView)
@@ -59,13 +57,13 @@ class TerminalScrollView: NSView {
     override func layout() {
         super.layout()
         terminalView.frame = bounds
-        // Position scroller on the right edge, overlay style
-        let scrollerWidth: CGFloat = NSScroller.scrollerWidth(for: .regular, scrollerStyle: .overlay)
+        let indicatorWidth: CGFloat = 8
+        let margin: CGFloat = 2
         scroller.frame = CGRect(
-            x: bounds.width - scrollerWidth,
-            y: 0,
-            width: scrollerWidth,
-            height: bounds.height
+            x: bounds.width - indicatorWidth - margin,
+            y: margin,
+            width: indicatorWidth,
+            height: bounds.height - margin * 2
         )
     }
 
@@ -82,21 +80,16 @@ class TerminalScrollView: NSView {
         let isAtBottom = state.offset + state.len >= state.total
         if isAtBottom { userScrolledUp = false }
 
-        // Update scroller knob
         if hasScrollback {
             let maxOffset = state.total - state.len
-            scroller.knobProportion = CGFloat(state.len) / CGFloat(state.total)
-            scroller.doubleValue = maxOffset > 0 ? Double(state.offset) / Double(maxOffset) : 0
-            scroller.isEnabled = true
+            let proportion = CGFloat(state.len) / CGFloat(state.total)
+            let position = maxOffset > 0 ? CGFloat(state.offset) / CGFloat(maxOffset) : 0
+            scroller.update(proportion: proportion, position: position)
 
-            // Show scroller when user scrolls (offset changed), fade after delay
             if state.offset != previousOffset {
                 showScrollerTemporarily()
             }
-        }
-
-        // Hide scroller when there's no scrollback
-        if !hasScrollback && scroller.alphaValue > 0 {
+        } else if scroller.alphaValue > 0 {
             scroller.alphaValue = 0
         }
     }
@@ -164,6 +157,46 @@ class TerminalScrollView: NSView {
         guard isEffectivelyVisible else { return false }
         return terminalView.performDragOperation(sender)
     }
+}
 
+// MARK: - Scroll Indicator
+
+/// Custom scroll indicator that draws a rounded bar.
+/// NSScroller doesn't render its knob correctly without an NSScrollView parent,
+/// so we draw our own minimal indicator.
+class ScrollIndicatorView: NSView {
+    private var proportion: CGFloat = 1
+    private var position: CGFloat = 0
+
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        wantsLayer = true
+        alphaValue = 0
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError() }
+
+    func update(proportion: CGFloat, position: CGFloat) {
+        self.proportion = proportion
+        self.position = position
+        needsDisplay = true
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        guard proportion < 1 else { return }
+        let knobHeight = max(bounds.height * proportion, 24)
+        let trackSpace = bounds.height - knobHeight
+        // AppKit is +Y up, but position 0 = top of scrollback.
+        // position=0 → knob at top, position=1 → knob at bottom.
+        let knobY = bounds.height - knobHeight - (trackSpace * position)
+        let knobRect = NSRect(
+            x: 1, y: knobY,
+            width: bounds.width - 2, height: knobHeight
+        )
+        let path = NSBezierPath(roundedRect: knobRect, xRadius: 3, yRadius: 3)
+        NSColor.white.withAlphaComponent(0.35).setFill()
+        path.fill()
+    }
 }
 
