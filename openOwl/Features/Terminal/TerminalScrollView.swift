@@ -16,7 +16,7 @@ struct TerminalScrollbarState {
 ///
 /// Coordinate system: AppKit is +Y-up (origin bottom-left), terminal is +Y-down (row 0 at top).
 class TerminalScrollView: NSView {
-    private let scrollView: TerminalNSScrollView
+    private let scrollView: NSScrollView
     private let documentView: NSView
     let terminalView: TerminalNSView
 
@@ -35,7 +35,7 @@ class TerminalScrollView: NSView {
     init(terminalView: TerminalNSView) {
         self.terminalView = terminalView
 
-        scrollView = TerminalNSScrollView()
+        scrollView = NSScrollView()
         scrollView.hasVerticalScroller = true
         scrollView.hasHorizontalScroller = false
         scrollView.autohidesScrollers = false
@@ -167,37 +167,26 @@ class TerminalScrollView: NSView {
 
     // MARK: - Scrolling Sync
 
-    /// Updates document height and scroll position from ghostty state
+    /// Updates scroller knob position/size from ghostty state.
+    /// We do NOT set a tall documentView height — that would make NSScrollView
+    /// consume scrollWheel events, fighting with ghostty's scroll handling.
+    /// Instead, we manually control the scroller's doubleValue and knobProportion.
     private func synchronizeScrollView() {
-        documentView.frame.size.height = documentHeight()
+        // Keep document height == content height so NSScrollView has nothing to scroll.
+        // Scroll events pass through to TerminalNSView → ghostty.
+        documentView.frame.size.height = scrollView.contentSize.height
 
-        if !isLiveScrolling, let sb = scrollbarState, sb.len > 0 {
-            // Prefer cellSize from CELL_SIZE action; fall back to deriving from viewport
-            let ch = cellSize.height > 0
-                ? cellSize.height
-                : scrollView.contentSize.height / CGFloat(sb.len)
-            guard ch > 0 else { return }
+        guard let sb = scrollbarState, sb.total > 0, sb.len > 0 else { return }
 
-            let isAtBottom = sb.offset + sb.len >= sb.total
+        let isAtBottom = sb.offset + sb.len >= sb.total
+        if isAtBottom { userScrolledUp = false }
 
-            // Track whether the user has scrolled away from the bottom.
-            // Reset when ghostty reports we're at the bottom (user scrolled
-            // back down, or terminal was reset).
-            if isAtBottom {
-                userScrolledUp = false
-            }
-
-            // Don't auto-scroll when the user is viewing scrollback —
-            // let them read without the view jumping to the bottom on
-            // every new line of output.
-            if !userScrolledUp {
-                let offsetY = CGFloat(sb.total - sb.offset - sb.len) * ch
-                scrollView.contentView.scroll(to: CGPoint(x: 0, y: offsetY))
-                lastSentRow = Int(sb.offset)
-            }
+        // Manually set scroller knob position and size
+        if let scroller = scrollView.verticalScroller {
+            let maxOffset = sb.total - sb.len
+            scroller.knobProportion = CGFloat(sb.len) / CGFloat(sb.total)
+            scroller.doubleValue = maxOffset > 0 ? Double(sb.offset) / Double(maxOffset) : 0
         }
-
-        scrollView.reflectScrolledClipView(scrollView.contentView)
     }
 
     /// Keeps the terminal surface positioned at the visible rect
@@ -232,21 +221,8 @@ class TerminalScrollView: NSView {
         terminalView.performBindingAction(action)
     }
 
-    /// Calculate document view height from scrollbar state
-    private func documentHeight() -> CGFloat {
-        let contentHeight = scrollView.contentSize.height
-        guard let sb = scrollbarState, sb.len > 0 else { return contentHeight }
-
-        // Prefer cellSize from CELL_SIZE action; fall back to deriving from viewport
-        let ch = cellSize.height > 0
-            ? cellSize.height
-            : contentHeight / CGFloat(sb.len)
-        guard ch > 0 else { return contentHeight }
-
-        let documentGridHeight = CGFloat(sb.total) * ch
-        let padding = contentHeight - (CGFloat(sb.len) * ch)
-        return documentGridHeight + padding
-    }
+    // documentHeight() removed — we keep docH == visH to prevent NSScrollView
+    // from consuming scrollWheel events. Scroller position is set manually.
 
     // MARK: - Drag & Drop (forwarded to terminalView)
 
@@ -309,16 +285,3 @@ class TerminalScrollView: NSView {
     }
 }
 
-// MARK: - NSScrollView subclass
-
-/// Forwards scrollWheel events to the terminal instead of handling them.
-/// Without this, NSScrollView consumes scroll events to move its clip view,
-/// which fights with ghostty's internal scroll handling.
-private class TerminalNSScrollView: NSScrollView {
-    override func scrollWheel(with event: NSEvent) {
-        // Forward to the terminal view inside the document view
-        if let terminalView = documentView?.subviews.first as? TerminalNSView {
-            terminalView.scrollWheel(with: event)
-        }
-    }
-}
