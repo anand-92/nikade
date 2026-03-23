@@ -93,13 +93,14 @@ class TerminalScrollView: NSView {
             self?.handleLiveScroll()
         })
 
-        // Keep overlay style even if system preference changes
+        // Re-evaluate scroller style when system preference changes
         observers.append(NotificationCenter.default.addObserver(
             forName: NSScroller.preferredScrollerStyleDidChangeNotification,
             object: nil,
             queue: nil
         ) { [weak self] _ in
-            self?.scrollView.scrollerStyle = .overlay
+            guard let self, let state = self.scrollbarState else { return }
+            self.updateScrollerVisibility(state)
         })
     }
 
@@ -129,11 +130,19 @@ class TerminalScrollView: NSView {
     func updateScrollbar(_ state: TerminalScrollbarState) {
         scrollbarState = state
         synchronizeScrollView()
-        // Overlay scrollers only appear when the scroll view detects activity.
-        // Since scrollWheel events go to TerminalNSView (not the NSScrollView),
-        // we must flash manually so the user sees the scrollbar.
-        if state.total > state.len {
-            scrollView.flashScrollers()
+        updateScrollerVisibility(state)
+    }
+
+    /// Show scrollbar when there is scrollback content.
+    /// Overlay scrollers auto-fade and never appear because scrollWheel events
+    /// bypass the NSScrollView entirely. Switch to legacy style (always visible)
+    /// when the terminal has scrollback, revert to overlay when there's none.
+    private func updateScrollerVisibility(_ state: TerminalScrollbarState) {
+        let hasScrollback = state.total > state.len
+        let wantLegacy = hasScrollback
+        let currentlyLegacy = scrollView.scrollerStyle == .legacy
+        if wantLegacy != currentlyLegacy {
+            scrollView.scrollerStyle = wantLegacy ? .legacy : .overlay
         }
     }
 
