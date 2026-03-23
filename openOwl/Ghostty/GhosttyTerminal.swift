@@ -21,6 +21,10 @@ class TerminalNSView: NSView {
     weak var appManager: GhosttyAppManager?
     var onFocus: (() -> Void)?
     var onUserScroll: (() -> Void)?
+    /// Working directory for the shell. Set before the view is added to a window.
+    /// Passed directly to ghostty_surface_config — avoids changing the app's process cwd
+    /// which triggers macOS TCC prompts in dev builds.
+    var initialWorkingDirectory: String?
     var paneIdentifier: UUID { paneID }
     /// Whether Metal is currently rendering (layer not hidden).
     var isRenderingActive: Bool { !(metalLayer?.isHidden ?? true) }
@@ -113,8 +117,8 @@ class TerminalNSView: NSView {
         surfaceConfig.scale_factor = Double(window.backingScaleFactor)
         surfaceConfig.font_size = 0
 
-        // Set working directory from process cwd (set by syncActiveProjectContext)
-        let cwd = FileManager.default.currentDirectoryPath
+        // Set working directory — prefer explicit path, fall back to process cwd
+        let cwd = initialWorkingDirectory ?? FileManager.default.currentDirectoryPath
         var cwdPtr = strdup(cwd)
         surfaceConfig.working_directory = UnsafePointer(cwdPtr)
 

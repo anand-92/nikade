@@ -14,6 +14,7 @@ struct TerminalWorkspaceView: View {
 
     @Environment(TerminalWorkspaceStore.self) private var workspace
     @Environment(GhosttyAppManager.self) private var ghosttyManager
+    @Environment(ProjectStore.self) private var projectStore
 
     var body: some View {
         VStack(spacing: 0) {
@@ -24,7 +25,8 @@ struct TerminalWorkspaceView: View {
                     TerminalTabContentView(
                         ghosttyApp: ghosttyApp,
                         tab: tab,
-                        isWorkspaceVisible: isVisible
+                        isWorkspaceVisible: isVisible,
+                        projectPath: projectStore.activeProjectURL?.path
                     )
                 }
             }
@@ -307,6 +309,7 @@ private struct TerminalTabContentView: View {
     let ghosttyApp: ghostty_app_t
     let tab: TerminalTabState
     let isWorkspaceVisible: Bool
+    let projectPath: String?
 
     @Environment(TerminalWorkspaceStore.self) private var workspace
     @Environment(GhosttyAppManager.self) private var ghosttyManager
@@ -341,6 +344,7 @@ private struct TerminalTabContentView: View {
                             ghosttyApp: ghosttyApp,
                             paneID: paneID,
                             isVisible: isPaneVisible,
+                            workingDirectory: projectPath,
                             onFocus: {
                                 DispatchQueue.main.async {
                                     workspace.focusPane(paneID)

@@ -6,6 +6,7 @@ struct TerminalPanel: NSViewRepresentable {
     let ghosttyApp: ghostty_app_t
     let paneID: UUID
     let isVisible: Bool
+    var workingDirectory: String? = nil
     var onFocus: (() -> Void)? = nil
     @Environment(GhosttyAppManager.self) var appManager
 
@@ -28,6 +29,7 @@ struct TerminalPanel: NSViewRepresentable {
             terminalView = TerminalNSView(ghosttyApp: ghosttyApp, paneID: paneID)
             terminalView.appManager = appManager
             terminalView.onFocus = onFocus
+            terminalView.initialWorkingDirectory = workingDirectory
         }
 
         let scrollView = TerminalScrollView(terminalView: terminalView)

@@ -16,16 +16,11 @@ struct openOwlApp: App {
     init() {
         Self.setupEnvironment()
 
-        // Set cwd to active project BEFORE ghostty starts, so the first shell
-        // opens in the project directory instead of ~.
-        // Check isReadableFile first — it uses access() which does NOT trigger
-        // TCC prompts. If the check fails (e.g., dev build re-signed, TCC revoked),
-        // skip silently instead of popping a system authorization dialog.
+        // ProjectStore loads projects and restores security-scoped bookmarks.
+        // Working directory is passed directly to ghostty surface config via
+        // TerminalPanel.workingDirectory — no need to change the app's process cwd
+        // (which triggers macOS TCC prompts in dev builds).
         let store = ProjectStore()
-        if let url = store.activeProjectURL,
-           FileManager.default.isReadableFile(atPath: url.path) {
-            FileManager.default.changeCurrentDirectoryPath(url.path)
-        }
         _projectStore = State(wrappedValue: store)
         _ghosttyManager = State(wrappedValue: GhosttyAppManager())
     }
@@ -199,11 +194,6 @@ struct openOwlApp: App {
     private func syncActiveProjectContext() {
         guard let projectURL = projectStore.activeProjectURL,
               let activeID = projectStore.activeProjectID else { return }
-
-        // Update cwd if accessible (avoids TCC prompt in dev builds)
-        if FileManager.default.isReadableFile(atPath: projectURL.path) {
-            FileManager.default.changeCurrentDirectoryPath(projectURL.path)
-        }
 
         // Only refresh the currently visible tab's store
         switch navigationStore.activeTab {
