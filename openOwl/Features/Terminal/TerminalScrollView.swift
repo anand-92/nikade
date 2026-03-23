@@ -132,12 +132,13 @@ class TerminalScrollView: NSView {
 
     /// Called when ghostty sends GHOSTTY_ACTION_SCROLLBAR
     func updateScrollbar(_ state: TerminalScrollbarState) {
+        let previousOffset = scrollbarState?.offset
         scrollbarState = state
         synchronizeScrollView()
-        // Flash overlay scrollers so the user sees their scroll position.
-        // Overlay scrollers auto-fade, but since scrollWheel events bypass
-        // the NSScrollView (going to ghostty instead), we flash manually.
-        if state.total > state.len {
+        // Only flash when the user is scrolling (offset changed),
+        // not on every new line of output (total changed).
+        // This lets the overlay scroller auto-fade when idle.
+        if state.total > state.len, state.offset != previousOffset {
             scrollView.flashScrollers()
         }
         #if DEBUG
