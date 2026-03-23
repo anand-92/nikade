@@ -104,7 +104,6 @@ enum AppFonts {
     // MARK: - Fixed-size fonts (alignment-critical, always monospaced)
 
     static let diffCode   = Font.system(size: 11, design: .monospaced)
-    static let diffLineNo = diffCode
     static let diffMeta   = Font.system(size: 9, weight: .bold, design: .monospaced)
 
     // MARK: - Icon sizing (used for SF Symbol sizing in toolbars/buttons)

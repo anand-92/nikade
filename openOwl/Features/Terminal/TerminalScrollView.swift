@@ -66,14 +66,15 @@ class TerminalScrollView: NSView {
         let previousOffset = scrollbarState?.offset
         scrollbarState = state
 
-        guard state.total > 0, state.len > 0 else { return }
+        guard state.total > 0, state.len > 0, state.total >= state.len else { return }
 
         let hasScrollback = state.total > state.len
 
         if hasScrollback {
             let maxOffset = state.total - state.len
             let proportion = CGFloat(state.len) / CGFloat(state.total)
-            let position = maxOffset > 0 ? CGFloat(state.offset) / CGFloat(maxOffset) : 0
+            // Clamp: ghostty values are async and offset can transiently exceed maxOffset
+            let position = maxOffset > 0 ? min(CGFloat(state.offset) / CGFloat(maxOffset), 1.0) : 0
             scroller.update(proportion: proportion, position: position)
 
             if state.offset != previousOffset {
@@ -90,11 +91,9 @@ class TerminalScrollView: NSView {
         scroller.alphaValue = 0.7
         scrollerFadeTimer?.invalidate()
         scrollerFadeTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: false) { [weak self] _ in
-            DispatchQueue.main.async {
-                NSAnimationContext.runAnimationGroup { ctx in
-                    ctx.duration = 0.3
-                    self?.scroller.animator().alphaValue = 0
-                }
+            NSAnimationContext.runAnimationGroup { ctx in
+                ctx.duration = 0.3
+                self?.scroller.animator().alphaValue = 0
             }
         }
     }
