@@ -39,7 +39,7 @@ struct UpdateAlertView: View {
                 if let notes = checker.releaseNotes, !notes.isEmpty {
                     ScrollView {
                         Text(notes)
-                            .font(.system(size: 12))
+                            .font(AppFonts.body)
                             .frame(maxWidth: .infinity, alignment: .leading)
                     }
                     .frame(maxHeight: 120)

@@ -65,6 +65,7 @@ struct GitChangesView: View {
                     changesSection
                 }
             }
+            .scrollEdgeEffectIfAvailable(for: .top)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
 
             // Error/Info banners
@@ -91,11 +92,12 @@ struct GitChangesView: View {
 
             Button { store.refreshNow() } label: {
                 SpinningIcon(systemName: "arrow.clockwise", isSpinning: store.isRefreshing)
-                    .font(.system(size: 10))
+                    .font(AppFonts.toolbarIcon)
             }
             .buttonStyle(.plain)
             .foregroundStyle(.secondary)
             .help("Refresh")
+            .accessibilityLabel("Refresh")
             .disabled(store.isRefreshing || store.isRunningCommand)
         }
         .padding(.horizontal, AppSpacing.panelPadding)
@@ -110,7 +112,7 @@ struct GitChangesView: View {
             // Commit message with inline AI generate button
             ZStack(alignment: .topTrailing) {
                 TextEditor(text: $store.commitMessage)
-                    .font(.system(size: 11))
+                    .font(AppFonts.secondaryLabel)
                     .scrollContentBackground(.hidden)
                     .scrollDisabled(true)
                     .frame(height: store.commitMessage.contains("\n") ? 52 : 28)
@@ -127,7 +129,7 @@ struct GitChangesView: View {
                     .overlay(alignment: .topLeading) {
                         if store.commitMessage.isEmpty {
                             Text("Commit message")
-                                .font(.system(size: 11))
+                                .font(AppFonts.secondaryLabel)
                                 .foregroundStyle(AppPalette.textTertiary)
                                 .padding(.horizontal, 10)
                                 .padding(.vertical, 6)
@@ -140,19 +142,20 @@ struct GitChangesView: View {
                         store.cancelGenerateCommitMessage()
                     } label: {
                         Image(systemName: "stop.fill")
-                            .font(.system(size: 9))
+                            .font(AppFonts.smallIcon)
                             .foregroundStyle(.secondary)
                     }
                     .buttonStyle(.plain)
                     .frame(width: 24, height: 24)
                     .padding(2)
                     .help("Stop generating")
+                    .accessibilityLabel("Stop generating")
                 } else if store.commitMessage.isEmpty {
                     Button {
                         store.generateCommitMessage()
                     } label: {
                         Image(systemName: "sparkles")
-                            .font(.system(size: 10))
+                            .font(AppFonts.toolbarIcon)
                             .foregroundStyle(.secondary)
                     }
                     .buttonStyle(.plain)
@@ -160,6 +163,7 @@ struct GitChangesView: View {
                     .padding(2)
                     .disabled(store.isRunningCommand || !hasAnyChanges)
                     .help("Generate commit message (AI)")
+                    .accessibilityLabel("Generate commit message (AI)")
                 }
             }
 
@@ -168,9 +172,9 @@ struct GitChangesView: View {
             } label: {
                 HStack(spacing: 4) {
                     Image(systemName: "checkmark")
-                        .font(.system(size: 9, weight: .semibold))
+                        .font(AppFonts.badge.weight(.semibold))
                     Text(store.isRunningCommand ? "Committing..." : "Commit")
-                        .font(.system(size: 11, weight: .medium))
+                        .font(AppFonts.secondaryLabel.weight(.medium))
                 }
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 4)
@@ -205,10 +209,11 @@ struct GitChangesView: View {
                     AnyView(
                         Button { store.unstageAll() } label: {
                             Image(systemName: "minus")
-                                .font(.system(size: 10, weight: .semibold))
+                                .font(AppFonts.toolbarIcon.weight(.semibold))
                         }
                         .buttonStyle(.plain)
                         .help("Unstage All")
+                        .accessibilityLabel("Unstage All")
                     )
                 }
             ) {
@@ -251,17 +256,19 @@ struct GitChangesView: View {
                                 requestDiscard(changes: changes)
                             } label: {
                                 Image(systemName: "arrow.uturn.backward")
-                                    .font(.system(size: 9, weight: .semibold))
+                                    .font(AppFonts.badge.weight(.semibold))
                             }
                             .buttonStyle(.plain)
                             .help("Discard All")
+                            .accessibilityLabel("Discard All")
 
                             Button { store.stageAll() } label: {
                                 Image(systemName: "plus")
-                                    .font(.system(size: 10, weight: .semibold))
+                                    .font(AppFonts.toolbarIcon.weight(.semibold))
                             }
                             .buttonStyle(.plain)
                             .help("Stage All")
+                            .accessibilityLabel("Stage All")
                         }
                     )
                 }
@@ -293,7 +300,7 @@ struct GitChangesView: View {
         if store.statusSnapshot?.untrackedTruncated == true {
             HStack(spacing: 4) {
                 Image(systemName: "exclamationmark.triangle")
-                    .font(.system(size: 9))
+                    .font(AppFonts.smallIcon)
                 Text("Showing first 500 untracked files. Consider updating .gitignore.")
                     .font(AppFonts.caption)
             }
@@ -304,7 +311,7 @@ struct GitChangesView: View {
         if !hasAnyChanges {
             VStack(spacing: 8) {
                 Image(systemName: "checkmark.circle")
-                    .font(.system(size: 16))
+                    .font(AppFonts.title)
                     .foregroundStyle(AppPalette.textTertiary)
                 Text("No changes detected")
                     .font(AppFonts.secondaryLabel)
@@ -322,10 +329,10 @@ struct GitChangesView: View {
             // Toolbar: branch + remote actions
             HStack(spacing: 6) {
                 Image(systemName: "arrow.triangle.branch")
-                    .font(.system(size: 10))
+                    .font(AppFonts.toolbarIcon)
                     .foregroundStyle(.secondary)
                 Text(store.statusSnapshot?.branch ?? "—")
-                    .font(.system(size: 11, weight: .medium))
+                    .font(AppFonts.secondaryLabel.weight(.medium))
                     .lineLimit(1)
 
                 Spacer(minLength: 4)
@@ -334,7 +341,7 @@ struct GitChangesView: View {
                 if let snapshot = store.statusSnapshot {
                     if snapshot.behindCount > 0 {
                         HStack(spacing: 2) {
-                            Image(systemName: "arrow.down").font(.system(size: 8))
+                            Image(systemName: "arrow.down").font(AppFonts.tinyIcon)
                             Text("\(snapshot.behindCount)").font(AppFonts.badge)
                         }
                         .foregroundStyle(.secondary)
@@ -345,7 +352,7 @@ struct GitChangesView: View {
                     }
                     if snapshot.aheadCount > 0 {
                         HStack(spacing: 2) {
-                            Image(systemName: "arrow.up").font(.system(size: 8))
+                            Image(systemName: "arrow.up").font(AppFonts.tinyIcon)
                             Text("\(snapshot.aheadCount)").font(AppFonts.badge)
                         }
                         .foregroundStyle(.secondary)
@@ -357,20 +364,20 @@ struct GitChangesView: View {
                 }
 
                 Button { store.pull() } label: {
-                    Image(systemName: "arrow.down").font(.system(size: 10))
+                    Image(systemName: "arrow.down").font(AppFonts.toolbarIcon)
                 }
-                .buttonStyle(.plain).help("Pull").disabled(store.isRunningCommand)
+                .buttonStyle(.plain).help("Pull").accessibilityLabel("Pull").disabled(store.isRunningCommand)
 
                 Button { store.push() } label: {
-                    Image(systemName: "arrow.up").font(.system(size: 10))
+                    Image(systemName: "arrow.up").font(AppFonts.toolbarIcon)
                 }
-                .buttonStyle(.plain).help("Push").disabled(store.isRunningCommand)
+                .buttonStyle(.plain).help("Push").accessibilityLabel("Push").disabled(store.isRunningCommand)
 
                 Button { store.refreshNow() } label: {
                     SpinningIcon(systemName: "arrow.clockwise", isSpinning: store.isRefreshing)
-                        .font(.system(size: 10))
+                        .font(AppFonts.toolbarIcon)
                 }
-                .buttonStyle(.plain).help("Refresh").disabled(store.isRefreshing || store.isRunningCommand)
+                .buttonStyle(.plain).help("Refresh").accessibilityLabel("Refresh").disabled(store.isRefreshing || store.isRunningCommand)
             }
             .padding(.horizontal, AppSpacing.panelPadding)
             .frame(height: AppSpacing.headerHeight)
@@ -406,13 +413,13 @@ struct GitChangesView: View {
                     let short = String(hash.prefix(7))
                     let count = store.commitFiles.count
                     Text("\(count) file\(count == 1 ? "" : "s") changed")
-                        .font(.system(size: 11, weight: .medium, design: .monospaced))
+                        .font(AppFonts.diffCode.weight(.medium))
                     Text("(\(short))")
                         .font(AppFonts.caption)
                         .foregroundStyle(.tertiary)
                 } else if let change = store.selectedChange {
                     Text(change.path)
-                        .font(.system(size: 11, weight: .medium, design: .monospaced))
+                        .font(AppFonts.diffCode.weight(.medium))
                         .lineLimit(1)
                     Text(change.section == .staged ? "(staged)" : "(working tree)")
                         .font(AppFonts.caption)
@@ -431,11 +438,12 @@ struct GitChangesView: View {
                         }
                     } label: {
                         Image(systemName: "sidebar.left")
-                            .font(.system(size: 11))
+                            .font(AppFonts.secondaryLabel)
                             .foregroundStyle(showCommitFileList ? .primary : .secondary)
                     }
                     .buttonStyle(.plain)
                     .help("Toggle file list")
+                    .accessibilityLabel("Toggle file list")
                 }
             }
             .padding(.horizontal, AppSpacing.panelPadding)
@@ -495,18 +503,18 @@ struct GitChangesView: View {
                     HStack(spacing: 4) {
                         if isImage {
                             Image(systemName: "photo")
-                                .font(.system(size: 9))
+                                .font(AppFonts.smallIcon)
                                 .foregroundStyle(.secondary)
                                 .frame(width: 12)
                         } else {
                             Text(String(section.status.rawValue))
-                                .font(.system(size: 9, weight: .bold, design: .monospaced))
+                                .font(AppFonts.diffMeta)
                                 .foregroundStyle(commitStatusColor(section.status))
                                 .frame(width: 12)
                         }
 
                         Text(URL(fileURLWithPath: section.path).lastPathComponent)
-                            .font(.system(size: 11))
+                            .font(AppFonts.secondaryLabel)
                             .lineLimit(1)
                             .truncationMode(.middle)
                     }
@@ -524,7 +532,7 @@ struct GitChangesView: View {
             }
         }
         .frame(width: 160)
-        .background(EffectView(material: .sidebar, blendingMode: .behindWindow))
+        .background(.regularMaterial)
     }
 
     private func commitDiffByFile(sections: [FileDiffSection]) -> some View {
@@ -563,16 +571,16 @@ struct GitChangesView: View {
             // File header bar
             HStack(spacing: 6) {
                 Image(systemName: isCollapsed ? "chevron.right" : "chevron.down")
-                    .font(.system(size: 9, weight: .semibold))
+                    .font(AppFonts.badge.weight(.semibold))
                     .foregroundStyle(.tertiary)
                     .frame(width: 10)
 
                 Text(commitStatusString(section.status))
-                    .font(.system(size: 9, weight: .bold, design: .monospaced))
+                    .font(AppFonts.diffMeta)
                     .foregroundStyle(commitStatusColor(section.status))
 
                 Text(section.path)
-                    .font(.system(size: 11, weight: .medium, design: .monospaced))
+                    .font(AppFonts.diffCode.weight(.medium))
                     .lineLimit(1)
                     .truncationMode(.head)
 
@@ -580,15 +588,15 @@ struct GitChangesView: View {
 
                 if isImage {
                     Text("image")
-                        .font(.system(size: 9))
+                        .font(AppFonts.badge)
                         .foregroundStyle(.tertiary)
                 } else if isBinary {
                     Text("binary")
-                        .font(.system(size: 9))
+                        .font(AppFonts.badge)
                         .foregroundStyle(.tertiary)
                 } else if !isCollapsed {
                     Text("\(rows.count) lines")
-                        .font(.system(size: 9))
+                        .font(AppFonts.badge)
                         .foregroundStyle(.tertiary)
                 }
             }
@@ -612,7 +620,7 @@ struct GitChangesView: View {
                     commitImageView(section: section)
                 } else if isBinary {
                     Text("Binary file changed")
-                        .font(.system(size: 11))
+                        .font(AppFonts.secondaryLabel)
                         .foregroundStyle(.secondary)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 12)
@@ -724,13 +732,13 @@ struct GitChangesView: View {
         } label: {
             HStack(spacing: 8) {
                 Image(systemName: "chevron.down")
-                    .font(.system(size: 8))
+                    .font(AppFonts.tinyIcon)
                     .foregroundStyle(.secondary.opacity(0.6))
                 Text("\(skippedLines) unmodified lines")
-                    .font(.system(size: 11))
+                    .font(AppFonts.secondaryLabel)
                     .foregroundStyle(.secondary)
                 Image(systemName: "chevron.down")
-                    .font(.system(size: 8))
+                    .font(AppFonts.tinyIcon)
                     .foregroundStyle(.secondary.opacity(0.6))
             }
             .frame(maxWidth: .infinity)
@@ -771,7 +779,7 @@ struct GitChangesView: View {
             gutterBar(kind: kind, side: side)
 
             Text(lineNo.map { String($0) } ?? "")
-                .font(.system(size: 11, weight: .regular, design: .monospaced))
+                .font(AppFonts.diffCode)
                 .foregroundStyle(.secondary.opacity(0.5))
                 .frame(width: 36, alignment: .trailing)
                 .padding(.trailing, 6)
@@ -779,7 +787,7 @@ struct GitChangesView: View {
 
             if let content {
                 Text(highlightCode(content))
-                    .font(.system(size: 11, weight: .regular, design: .monospaced))
+                    .font(AppFonts.diffCode)
                     .padding(.leading, 4)
                     .padding(.vertical, 1)
                     .frame(width: textWidth, alignment: .leading)
@@ -900,10 +908,10 @@ struct GitChangesView: View {
         var attr = AttributedString(text)
         attr.foregroundColor = diffTextColor
         guard let ext = selectedFileExtension else { return attr }
-        if let cp = commentPattern(for: ext) { applyHL(cp, Color(nsColor: NSColor(calibratedRed: 0.5, green: 0.6, blue: 0.5, alpha: 1.0)), &attr, text) }
-        applyHL(#"\"([^\"\\]|\\.)*\"|'([^'\\]|\\.)*'"#, Color(nsColor: NSColor(calibratedRed: 0.9, green: 0.5, blue: 0.5, alpha: 1.0)), &attr, text)
-        if let kp = keywordPattern(for: ext) { applyHL(kp, Color(nsColor: NSColor(calibratedRed: 0.8, green: 0.4, blue: 0.8, alpha: 1.0)), &attr, text) }
-        applyHL(#"\b\d+(\.\d+)?\b"#, Color(nsColor: NSColor(calibratedRed: 0.9, green: 0.7, blue: 0.4, alpha: 1.0)), &attr, text)
+        if let cp = commentPattern(for: ext) { applyHL(cp, Color(nsColor: AppEditorTheme.comment), &attr, text) }
+        applyHL(#"\"([^\"\\]|\\.)*\"|'([^'\\]|\\.)*'"#, Color(nsColor: AppEditorTheme.string), &attr, text)
+        if let kp = keywordPattern(for: ext) { applyHL(kp, Color(nsColor: AppEditorTheme.keyword), &attr, text) }
+        applyHL(#"\b\d+(\.\d+)?\b"#, Color(nsColor: AppEditorTheme.number), &attr, text)
         return attr
     }
 
@@ -993,11 +1001,12 @@ struct GitChangesView: View {
 
     private func statusBanner(text: String, color: Color, onDismiss: @escaping () -> Void) -> some View {
         HStack {
-            Text(text).font(.system(size: 10)).lineLimit(2)
+            Text(text).font(AppFonts.caption).lineLimit(2)
             Spacer(minLength: 4)
             Button { onDismiss() } label: {
-                Image(systemName: "xmark").font(.system(size: 8))
+                Image(systemName: "xmark").font(AppFonts.tinyIcon)
             }.buttonStyle(.plain)
+            .accessibilityLabel("Dismiss")
         }
         .padding(.horizontal, 8).padding(.vertical, 4)
         .background(color.opacity(0.12))
@@ -1086,7 +1095,7 @@ private struct WorkingTreeImageDiffView: View {
                 VStack(spacing: 4) {
                     if let label {
                         Text(label)
-                            .font(.system(size: 9, weight: .bold))
+                            .font(AppFonts.badge.weight(.bold))
                             .foregroundStyle(color)
                     }
                     Image(nsImage: image)
@@ -1188,7 +1197,7 @@ private struct CommitImageDiffView: View {
                 VStack(spacing: 4) {
                     if let label {
                         Text(label)
-                            .font(.system(size: 9, weight: .bold))
+                            .font(AppFonts.badge.weight(.bold))
                             .foregroundStyle(color)
                     }
                     Image(nsImage: image)
@@ -1203,13 +1212,13 @@ private struct CommitImageDiffView: View {
                 .padding(8)
             } else if let placeholder {
                 Text(placeholder)
-                    .font(.system(size: 10))
+                    .font(AppFonts.caption)
                     .foregroundStyle(.tertiary)
             } else if !loaded {
                 ProgressView().controlSize(.small)
             } else {
                 Text(loadError ?? "Image unavailable")
-                    .font(.system(size: 10))
+                    .font(AppFonts.caption)
                     .foregroundStyle(.secondary)
             }
         }
@@ -1307,18 +1316,7 @@ private let graphColWidth: CGFloat = 14
 private let graphLeftPad: CGFloat = 8
 private let graphCircleR: CGFloat = 4
 
-private let laneColors: [Color] = [
-    Color(red: 0.31, green: 0.79, blue: 0.69),  // teal
-    Color(red: 0.81, green: 0.57, blue: 0.47),  // salmon
-    Color(red: 0.34, green: 0.61, blue: 0.84),  // blue
-    Color(red: 0.86, green: 0.86, blue: 0.67),  // yellow
-    Color(red: 0.77, green: 0.52, blue: 0.75),  // magenta
-    Color(red: 0.61, green: 0.86, blue: 0.99),  // light blue
-    Color(red: 0.84, green: 0.73, blue: 0.49),  // gold
-    Color(red: 0.71, green: 0.81, blue: 0.66),  // green
-    Color(red: 0.82, green: 0.41, blue: 0.41),  // red
-    Color(red: 0.38, green: 0.55, blue: 0.31),  // dark green
-]
+private let laneColors = AppGraphColors.lanes
 
 struct GraphNode {
     let hash: String
@@ -1475,7 +1473,7 @@ private struct GitGraphContentView: View {
 
                 if hasMore {
                     Text("Loading more...")
-                        .font(.system(size: 10))
+                        .font(AppFonts.caption)
                         .foregroundStyle(.secondary)
                         .frame(height: graphRowHeight)
                         .frame(maxWidth: .infinity, alignment: .center)
@@ -1505,7 +1503,7 @@ private struct CommitRow: View {
             if !entry.refs.isEmpty {
                 ForEach(parseBadges(), id: \.label) { badge in
                     Text(badge.label)
-                        .font(.system(size: 9))
+                        .font(AppFonts.badge)
                         .padding(.horizontal, 3)
                         .padding(.vertical, 1)
                         .background(badge.color.opacity(0.15))
@@ -1516,7 +1514,7 @@ private struct CommitRow: View {
 
             // Message
             Text(entry.message)
-                .font(.system(size: 11))
+                .font(AppFonts.secondaryLabel)
                 .lineLimit(1)
                 .foregroundStyle(isSelected ? Color.primary : Color.primary.opacity(0.8))
 
@@ -1524,7 +1522,7 @@ private struct CommitRow: View {
 
             // Relative date
             Text(relativeDate)
-                .font(.system(size: 10))
+                .font(AppFonts.caption)
                 .foregroundStyle(.tertiary)
                 .frame(width: 42, alignment: .trailing)
         }
@@ -1585,7 +1583,7 @@ private struct CollapsibleSection<Content: View>: View {
                 } label: {
                     HStack(spacing: 4) {
                         Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
-                            .font(.system(size: 8, weight: .bold)).frame(width: 10)
+                            .font(AppFonts.tinyIcon.weight(.bold)).frame(width: 10)
                         SectionTitle(title)
                     }
                 }
@@ -1598,7 +1596,7 @@ private struct CollapsibleSection<Content: View>: View {
                 Text("\(count)")
                     .font(AppFonts.badge).foregroundStyle(AppPalette.textSecondary)
                     .padding(.horizontal, 4).padding(.vertical, 1)
-                    .background(Color.white.opacity(0.08))
+                    .background(Color.secondary.opacity(0.1))
                     .clipShape(RoundedRectangle(cornerRadius: 3))
             }
             .padding(.horizontal, 8).padding(.vertical, 5)
@@ -1633,22 +1631,22 @@ private struct FileStatusRow: View {
     var body: some View {
         HStack(spacing: 4) {
             HStack(spacing: 0) {
-                Text(fileName).font(.system(size: 11)).foregroundStyle(.primary.opacity(0.85)).lineLimit(1)
+                Text(fileName).font(AppFonts.secondaryLabel).foregroundStyle(.primary.opacity(0.85)).lineLimit(1)
                 if !dirPath.isEmpty {
-                    Text("  \(dirPath)").font(.system(size: 11)).foregroundStyle(.tertiary).lineLimit(1)
+                    Text("  \(dirPath)").font(AppFonts.secondaryLabel).foregroundStyle(.tertiary).lineLimit(1)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
 
             if hovering {
                 if discardable, let onDiscard {
-                    Image(systemName: "arrow.uturn.backward").font(.system(size: 9))
+                    Image(systemName: "arrow.uturn.backward").font(AppFonts.smallIcon)
                         .foregroundStyle(.secondary)
                         .onTapGesture { onDiscard() }
                         .help("Discard")
                 }
                 if let onAction {
-                    Image(systemName: actionIcon).font(.system(size: 10, weight: .semibold))
+                    Image(systemName: actionIcon).font(AppFonts.toolbarIcon.weight(.semibold))
                         .foregroundStyle(.secondary)
                         .onTapGesture { onAction() }
                         .help(actionHelp)
@@ -1656,7 +1654,7 @@ private struct FileStatusRow: View {
             }
 
             Text(statusLetter)
-                .font(.system(size: 10, weight: .medium, design: .monospaced))
+                .font(AppFonts.diffCode.weight(.medium))
                 .foregroundStyle(statusColor)
                 .frame(width: 12, alignment: .trailing)
         }

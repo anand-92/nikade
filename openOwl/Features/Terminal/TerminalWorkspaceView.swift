@@ -139,30 +139,33 @@ private struct TerminalTabBarView: View {
                         workspace.toggleMaximizeCurrentPane()
                     } label: {
                         Image(systemName: "arrow.down.right.and.arrow.up.left")
-                            .font(.system(size: 10))
+                            .font(AppFonts.toolbarIcon)
                             .foregroundStyle(.orange)
                     }
                     .buttonStyle(.plain)
                     .help("Restore pane (⇧⌘↩)")
+                    .accessibilityLabel("Restore pane (⇧⌘↩)")
                 }
 
                 Button {
                     workspace.splitCurrent(axis: .horizontal)
                 } label: {
                     Image(systemName: "rectangle.split.1x2")
-                        .font(.system(size: 11))
+                        .font(AppFonts.secondaryLabel)
                 }
                 .buttonStyle(.plain)
                 .help("Split horizontally (⌘D)")
+                .accessibilityLabel("Split horizontally (⌘D)")
 
                 Button {
                     workspace.splitCurrent(axis: .vertical)
                 } label: {
                     Image(systemName: "rectangle.split.2x1")
-                        .font(.system(size: 11))
+                        .font(AppFonts.secondaryLabel)
                 }
                 .buttonStyle(.plain)
                 .help("Split vertically (⇧⌘D)")
+                .accessibilityLabel("Split vertically (⇧⌘D)")
 
                 // Pane 数量标签
                 if let tab = workspace.tabs.first(where: { $0.id == workspace.activeTabID }),
@@ -191,11 +194,7 @@ private struct TerminalTabDivider: View {
         Rectangle()
             .frame(width: 1)
             .padding(.vertical, 8)
-            .foregroundColor(
-                colorScheme == .dark
-                    ? Color.white.opacity(0.12)
-                    : Color.black.opacity(0.12)
-            )
+            .foregroundColor(AppPalette.border)
     }
 }
 
@@ -252,12 +251,12 @@ private struct ProjectTabButton: View {
         HStack(spacing: 3) {
             if project.isWorktree {
                 Image(systemName: "arrow.triangle.branch")
-                    .font(.system(size: 9))
+                    .font(AppFonts.smallIcon)
                     .foregroundStyle(.tertiary)
             }
 
             Text(project.isWorktree ? (project.worktreeBranch ?? project.name) : project.displayName)
-                .font(.system(size: 11, weight: isActive ? .semibold : .medium))
+                .font(AppFonts.secondaryLabel.weight(isActive ? .semibold : .medium))
                 .lineLimit(1)
 
             if index < 9, !isHovered {
@@ -269,7 +268,7 @@ private struct ProjectTabButton: View {
             // Close button (on hover, replaces shortcut label)
             if isHovered {
                 Image(systemName: "xmark")
-                    .font(.system(size: 8, weight: .semibold))
+                    .font(AppFonts.tinyIcon.weight(.semibold))
                     .foregroundStyle(.tertiary)
                     .onTapGesture { closeProject() }
                     .help("Close project")
@@ -365,7 +364,7 @@ private struct TerminalTabContentView: View {
                     .overlay {
                         // 非聚焦 pane 遮罩（轻柔）
                         if isMultiPane && !isMaximized, !workspace.isFocusedPane(paneID, in: tab.id) {
-                            Color.black.opacity(0.06)
+                            Color.primary.opacity(0.04)
                                 .allowsHitTesting(false)
                         }
                     }

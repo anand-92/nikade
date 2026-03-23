@@ -124,3 +124,37 @@ enum AppSpacing {
     static let editorTabBarHeight: CGFloat = 28
     static let listRowHeight: CGFloat = 26
 }
+
+// MARK: - Editor Theme Colors (syntax highlighting — precise values, not semantic)
+
+enum AppEditorTheme {
+    static let selection  = NSColor(calibratedRed: 0.25, green: 0.35, blue: 0.5, alpha: 0.4)
+    static let keyword    = NSColor(calibratedRed: 0.8, green: 0.4, blue: 0.8, alpha: 1.0)
+    static let command    = NSColor(calibratedRed: 0.4, green: 0.7, blue: 0.9, alpha: 1.0)
+    static let type       = NSColor(calibratedRed: 0.4, green: 0.8, blue: 0.7, alpha: 1.0)
+    static let attribute  = NSColor(calibratedRed: 0.7, green: 0.6, blue: 0.4, alpha: 1.0)
+    static let variable   = NSColor(calibratedRed: 0.5, green: 0.7, blue: 0.9, alpha: 1.0)
+    static let value      = NSColor(calibratedRed: 0.9, green: 0.7, blue: 0.4, alpha: 1.0)
+    static let number     = NSColor(calibratedRed: 0.9, green: 0.7, blue: 0.4, alpha: 1.0)
+    static let string     = NSColor(calibratedRed: 0.9, green: 0.5, blue: 0.5, alpha: 1.0)
+    static let character  = NSColor(calibratedRed: 0.9, green: 0.5, blue: 0.5, alpha: 1.0)
+    static let comment    = NSColor(calibratedRed: 0.5, green: 0.6, blue: 0.5, alpha: 1.0)
+    static let invisibles = NSColor(white: 0.5, alpha: 0.3)
+}
+
+// MARK: - Git Graph Lane Colors (data visualization palette)
+
+enum AppGraphColors {
+    static let lanes: [Color] = [
+        Color(red: 0.31, green: 0.79, blue: 0.69),  // teal
+        Color(red: 0.81, green: 0.57, blue: 0.47),  // salmon
+        Color(red: 0.34, green: 0.61, blue: 0.84),  // blue
+        Color(red: 0.86, green: 0.86, blue: 0.67),  // yellow
+        Color(red: 0.77, green: 0.52, blue: 0.75),  // magenta
+        Color(red: 0.61, green: 0.86, blue: 0.99),  // light blue
+        Color(red: 0.84, green: 0.73, blue: 0.49),  // gold
+        Color(red: 0.71, green: 0.81, blue: 0.66),  // green
+        Color(red: 0.82, green: 0.41, blue: 0.41),  // red
+        Color(red: 0.38, green: 0.55, blue: 0.31),  // dark green
+    ]
+}

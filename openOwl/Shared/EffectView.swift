@@ -2,7 +2,8 @@ import AppKit
 import SwiftUI
 
 /// NSVisualEffectView 包装，参照 CodeEdit 的 EffectView 实现。
-/// 用于 sidebar 磨砂背景、status bar 等原生材质区域。
+/// 已迁移到 `.background(.regularMaterial)`，macOS Tahoe 会自动升级为 Liquid Glass。
+@available(*, deprecated, message: "Use .background(.regularMaterial) instead")
 struct EffectView: NSViewRepresentable {
     let material: NSVisualEffectView.Material
     var blendingMode: NSVisualEffectView.BlendingMode = .withinWindow

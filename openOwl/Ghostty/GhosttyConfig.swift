@@ -122,6 +122,7 @@ extension GhosttyConfig {
         window-padding-x = 0
         window-padding-y = 0
         window-padding-balance = true
+        scrollbar-visible = always
         notify-on-command-finish = unfocused
         notify-on-command-finish-action = bell
         notify-on-command-finish-after = 5

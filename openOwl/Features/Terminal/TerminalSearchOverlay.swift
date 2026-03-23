@@ -62,36 +62,44 @@ struct TerminalSearchOverlay: View {
             // Navigation buttons
             Button { navigatePrevious() } label: {
                 Image(systemName: "chevron.up")
-                    .font(.system(size: 10, weight: .medium))
+                    .font(AppFonts.caption.weight(.medium))
             }
             .buttonStyle(.plain)
             .help("Previous match (Shift+Return)")
+            .accessibilityLabel("Previous match (Shift+Return)")
 
             Button { navigateNext() } label: {
                 Image(systemName: "chevron.down")
-                    .font(.system(size: 10, weight: .medium))
+                    .font(AppFonts.caption.weight(.medium))
             }
             .buttonStyle(.plain)
             .help("Next match (Return)")
+            .accessibilityLabel("Next match (Return)")
 
             Button { closeSearch() } label: {
                 Image(systemName: "xmark")
-                    .font(.system(size: 10, weight: .medium))
+                    .font(AppFonts.caption.weight(.medium))
             }
             .buttonStyle(.plain)
             .help("Close (Esc)")
+            .accessibilityLabel("Close (Esc)")
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 6)
-        .background(
-            RoundedRectangle(cornerRadius: AppSpacing.cornerRadius)
-                .fill(AppPalette.overlay)
-                .shadow(color: .black.opacity(0.2), radius: 4, y: 2)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: AppSpacing.cornerRadius)
-                .strokeBorder(AppPalette.border, lineWidth: 0.5)
-        )
+        .glassEffectIfAvailable(in: RoundedRectangle(cornerRadius: AppSpacing.cornerRadius))
+        .background {
+            if #unavailable(macOS 26) {
+                RoundedRectangle(cornerRadius: AppSpacing.cornerRadius)
+                    .fill(AppPalette.overlay)
+                    .shadow(color: .black.opacity(0.2), radius: 4, y: 2)
+            }
+        }
+        .overlay {
+            if #unavailable(macOS 26) {
+                RoundedRectangle(cornerRadius: AppSpacing.cornerRadius)
+                    .strokeBorder(AppPalette.border, lineWidth: 0.5)
+            }
+        }
         .padding(.horizontal, 12)
         .padding(.vertical, 4)
         .onAppear { isTextFieldFocused = true }
