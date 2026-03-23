@@ -54,7 +54,7 @@ private struct StatusBarBranchLabel: View {
     var body: some View {
         HStack(spacing: 4) {
             Image(systemName: "arrow.triangle.branch")
-                .font(.system(size: 10))
+                .font(AppFonts.toolbarIcon)
                 .foregroundStyle(.secondary)
 
             Text(branch ?? "—")
@@ -87,7 +87,7 @@ private struct StatusBarContextInfo: View {
             switch activeTab {
             case .terminal:
                 Image(systemName: "terminal")
-                    .font(.system(size: 10))
+                    .font(AppFonts.toolbarIcon)
                     .foregroundStyle(.tertiary)
                 Text("Terminal")
                     .font(AppFonts.statusBar)
@@ -95,7 +95,7 @@ private struct StatusBarContextInfo: View {
 
             case .gitChanges:
                 Image(systemName: "arrow.triangle.pull")
-                    .font(.system(size: 10))
+                    .font(AppFonts.toolbarIcon)
                     .foregroundStyle(.tertiary)
                 Text("Git")
                     .font(AppFonts.statusBar)
@@ -104,7 +104,7 @@ private struct StatusBarContextInfo: View {
             case .fileExplorer:
                 if let name = selectedFileName {
                     Image(systemName: "doc")
-                        .font(.system(size: 10))
+                        .font(AppFonts.toolbarIcon)
                         .foregroundStyle(.tertiary)
                     Text(name)
                         .font(AppFonts.statusBar)
@@ -114,7 +114,7 @@ private struct StatusBarContextInfo: View {
 
             case .deployments:
                 Image(systemName: "shippingbox")
-                    .font(.system(size: 10))
+                    .font(AppFonts.toolbarIcon)
                     .foregroundStyle(.tertiary)
                 Text("Deploy")
                     .font(AppFonts.statusBar)
@@ -138,7 +138,7 @@ private struct MetalStatsView: View {
                 .fill(active <= 1 ? Color.green : Color.orange)
                 .frame(width: 6, height: 6)
             Text("Metal \(active)/\(total)")
-                .font(.system(size: 10, design: .monospaced))
+                .font(Font.system(.caption, design: .monospaced))
         }
         .foregroundStyle(.tertiary)
         .help("Active/Total Metal surfaces (ideal: 1 active)")

@@ -20,6 +20,10 @@ class TerminalNSView: NSView {
 
     weak var appManager: GhosttyAppManager?
     var onFocus: (() -> Void)?
+    /// Working directory for the shell. Set before the view is added to a window.
+    /// Passed directly to ghostty_surface_config — avoids changing the app's process cwd
+    /// which triggers macOS TCC prompts in dev builds.
+    var initialWorkingDirectory: String?
     var paneIdentifier: UUID { paneID }
     /// Whether Metal is currently rendering (layer not hidden).
     var isRenderingActive: Bool { !(metalLayer?.isHidden ?? true) }
@@ -112,8 +116,15 @@ class TerminalNSView: NSView {
         surfaceConfig.scale_factor = Double(window.backingScaleFactor)
         surfaceConfig.font_size = 0
 
-        // Set working directory from process cwd (set by syncActiveProjectContext)
-        let cwd = FileManager.default.currentDirectoryPath
+        // Set working directory — prefer explicit path, fall back to process cwd
+        let cwd: String
+        if let dir = initialWorkingDirectory {
+            cwd = dir
+        } else {
+            cwd = FileManager.default.currentDirectoryPath
+            NSLog("openOwl: [Terminal] initialWorkingDirectory nil for pane %@, falling back to: %@",
+                  paneID.uuidString, cwd)
+        }
         var cwdPtr = strdup(cwd)
         surfaceConfig.working_directory = UnsafePointer(cwdPtr)
 
@@ -384,6 +395,14 @@ class TerminalNSView: NSView {
         // (QuickOpen, commit message, etc.) even when the terminal
         // doesn't have focus.
         guard window?.firstResponder === self else { return false }
+
+        // Intercept Escape — NavigationSplitView consumes ESC in performKeyEquivalent
+        // (to collapse the sidebar) before keyDown reaches this view. Claim it here so
+        // ghostty receives it via keyDown.
+        if event.keyCode == 53, flags.isEmpty || flags == .shift {
+            keyDown(with: event)
+            return true
+        }
 
         // Intercept Cmd+V (paste)
         if flags == .command, event.charactersIgnoringModifiers == "v" {

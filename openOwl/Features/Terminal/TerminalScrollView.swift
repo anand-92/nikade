@@ -7,95 +7,32 @@ struct TerminalScrollbarState {
     let len: UInt64
 }
 
-/// Wraps a TerminalNSView in an NSScrollView to provide native macOS scrollbar support.
+/// Hosts a TerminalNSView with a custom scroll indicator overlay.
 ///
-/// Architecture mirrors Ghostty's SurfaceScrollView:
-/// - `scrollView`: NSScrollView with overlay scrollers
-/// - `documentView`: Blank NSView whose height = total scrollback in pixels
-/// - `terminalView`: The actual Metal renderer, positioned to fill the visible rect
-///
-/// Coordinate system: AppKit is +Y-up (origin bottom-left), terminal is +Y-down (row 0 at top).
+/// No NSScrollView is used — scrollWheel events go directly to TerminalNSView → ghostty.
+/// A standalone ScrollIndicatorView shows scroll position from ghostty's SCROLLBAR action.
 class TerminalScrollView: NSView {
-    private let scrollView: NSScrollView
-    private let documentView: NSView
     let terminalView: TerminalNSView
-
-    private var isLiveScrolling = false
-    private var lastSentRow: Int?
-    private var observers: [NSObjectProtocol] = []
+    private let scroller: ScrollIndicatorView
     private var terminalShouldBeVisible = true
 
     /// Current scrollbar state from ghostty core
     var scrollbarState: TerminalScrollbarState?
 
-    /// Current cell size from ghostty core (pixels per character cell)
-    var cellSize: CGSize = .zero
-
     init(terminalView: TerminalNSView) {
         self.terminalView = terminalView
 
-        scrollView = NSScrollView()
-        scrollView.hasVerticalScroller = true
-        scrollView.hasHorizontalScroller = false
-        scrollView.autohidesScrollers = false
-        scrollView.usesPredominantAxisScrolling = true
-        scrollView.scrollerStyle = .overlay
-        scrollView.drawsBackground = false
-        scrollView.contentView.clipsToBounds = false
-
-        documentView = NSView(frame: .zero)
-        scrollView.documentView = documentView
-        documentView.addSubview(terminalView)
+        // Custom scroll indicator — a simple rounded bar drawn manually.
+        // NSScroller (both overlay and legacy) doesn't render the knob
+        // correctly without an NSScrollView parent.
+        scroller = ScrollIndicatorView()
 
         super.init(frame: .zero)
-        addSubview(scrollView)
+        addSubview(terminalView)
+        addSubview(scroller)
 
         // Accept file/URL/text drops on this top-level view (SwiftUI hosts this directly)
         registerForDraggedTypes([.fileURL, .URL, .string])
-
-        // Listen for scroll position changes
-        scrollView.contentView.postsBoundsChangedNotifications = true
-        observers.append(NotificationCenter.default.addObserver(
-            forName: NSView.boundsDidChangeNotification,
-            object: scrollView.contentView,
-            queue: .main
-        ) { [weak self] _ in
-            self?.synchronizeSurfaceView()
-        })
-
-        // Live scroll tracking
-        observers.append(NotificationCenter.default.addObserver(
-            forName: NSScrollView.willStartLiveScrollNotification,
-            object: scrollView,
-            queue: .main
-        ) { [weak self] _ in
-            self?.isLiveScrolling = true
-        })
-
-        observers.append(NotificationCenter.default.addObserver(
-            forName: NSScrollView.didEndLiveScrollNotification,
-            object: scrollView,
-            queue: .main
-        ) { [weak self] _ in
-            self?.isLiveScrolling = false
-        })
-
-        observers.append(NotificationCenter.default.addObserver(
-            forName: NSScrollView.didLiveScrollNotification,
-            object: scrollView,
-            queue: .main
-        ) { [weak self] _ in
-            self?.handleLiveScroll()
-        })
-
-        // Keep overlay style even if system preference changes
-        observers.append(NotificationCenter.default.addObserver(
-            forName: NSScroller.preferredScrollerStyleDidChangeNotification,
-            object: nil,
-            queue: nil
-        ) { [weak self] _ in
-            self?.scrollView.scrollerStyle = .overlay
-        })
     }
 
     @available(*, unavailable)
@@ -104,91 +41,66 @@ class TerminalScrollView: NSView {
     }
 
     deinit {
-        observers.forEach { NotificationCenter.default.removeObserver($0) }
+        scrollerFadeTimer?.invalidate()
     }
 
     // MARK: - Layout
 
     override func layout() {
         super.layout()
-        scrollView.frame = bounds
-        terminalView.frame.size = scrollView.bounds.size
-        documentView.frame.size.width = scrollView.bounds.width
-        synchronizeScrollView()
-        synchronizeSurfaceView()
+        terminalView.frame = bounds
+        let indicatorWidth: CGFloat = 8
+        let margin: CGFloat = 2
+        scroller.frame = CGRect(
+            x: bounds.width - indicatorWidth - margin,
+            y: margin,
+            width: indicatorWidth,
+            height: bounds.height - margin * 2
+        )
     }
 
     // MARK: - Public API
 
     /// Called when ghostty sends GHOSTTY_ACTION_SCROLLBAR
     func updateScrollbar(_ state: TerminalScrollbarState) {
+        let previousOffset = scrollbarState?.offset
         scrollbarState = state
-        synchronizeScrollView()
+
+        guard state.total > 0, state.len > 0, state.total >= state.len else { return }
+
+        let hasScrollback = state.total > state.len
+
+        if hasScrollback {
+            let maxOffset = state.total - state.len
+            let proportion = CGFloat(state.len) / CGFloat(state.total)
+            // Clamp: ghostty values are async and offset can transiently exceed maxOffset
+            let position = maxOffset > 0 ? min(CGFloat(state.offset) / CGFloat(maxOffset), 1.0) : 0
+            scroller.update(proportion: proportion, position: position)
+
+            if state.offset != previousOffset {
+                showScrollerTemporarily()
+            }
+        } else if scroller.alphaValue > 0 {
+            scroller.alphaValue = 0
+        }
     }
 
-    /// Called when ghostty sends GHOSTTY_ACTION_CELL_SIZE
-    func updateCellSize(_ size: CGSize) {
-        cellSize = size
-        synchronizeScrollView()
+    private var scrollerFadeTimer: Timer?
+
+    private func showScrollerTemporarily() {
+        scroller.alphaValue = 0.7
+        scrollerFadeTimer?.invalidate()
+        scrollerFadeTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: false) { [weak self] _ in
+            NSAnimationContext.runAnimationGroup { ctx in
+                ctx.duration = 0.3
+                self?.scroller.animator().alphaValue = 0
+            }
+        }
     }
 
     func setTerminalVisibility(_ isVisible: Bool) {
         terminalShouldBeVisible = isVisible
         terminalView.setSurfaceVisibility(isVisible)
-    }
-
-    // MARK: - Scrolling Sync
-
-    /// Updates document height and scroll position from ghostty state
-    private func synchronizeScrollView() {
-        documentView.frame.size.height = documentHeight()
-
-        if !isLiveScrolling {
-            let ch = cellSize.height
-            if ch > 0, let sb = scrollbarState {
-                // Invert: terminal offset from top → AppKit offset from bottom
-                let offsetY = CGFloat(sb.total - sb.offset - sb.len) * ch
-                scrollView.contentView.scroll(to: CGPoint(x: 0, y: offsetY))
-                lastSentRow = Int(sb.offset)
-            }
-        }
-
-        scrollView.reflectScrolledClipView(scrollView.contentView)
-    }
-
-    /// Keeps the terminal surface positioned at the visible rect
-    private func synchronizeSurfaceView() {
-        let visibleRect = scrollView.contentView.documentVisibleRect
-        terminalView.frame.origin = visibleRect.origin
-    }
-
-    /// User is dragging the scrollbar → tell ghostty core which row to show
-    private func handleLiveScroll() {
-        let ch = cellSize.height
-        guard ch > 0 else { return }
-
-        let visibleRect = scrollView.contentView.documentVisibleRect
-        let docHeight = documentView.frame.height
-        let scrollOffset = docHeight - visibleRect.origin.y - visibleRect.height
-        let row = Int(scrollOffset / ch)
-
-        guard row != lastSentRow else { return }
-        lastSentRow = row
-
-        let action = "scroll_to_row:\(row)"
-        terminalView.performBindingAction(action)
-    }
-
-    /// Calculate document view height from scrollbar state
-    private func documentHeight() -> CGFloat {
-        let contentHeight = scrollView.contentSize.height
-        let ch = cellSize.height
-        if ch > 0, let sb = scrollbarState {
-            let documentGridHeight = CGFloat(sb.total) * ch
-            let padding = contentHeight - (CGFloat(sb.len) * ch)
-            return documentGridHeight + padding
-        }
-        return contentHeight
     }
 
     // MARK: - Drag & Drop (forwarded to terminalView)
@@ -207,47 +119,69 @@ class TerminalScrollView: NSView {
         return true
     }
 
+    private func canAcceptDrag(_ sender: NSDraggingInfo) -> Bool {
+        guard isEffectivelyVisible,
+              let types = sender.draggingPasteboard.types,
+              !Set(types).isDisjoint(with: Self.acceptedDropTypes) else { return false }
+        return true
+    }
+
     override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
-        guard isEffectivelyVisible else { return [] }
-        guard let pbTypes = sender.draggingPasteboard.types,
-              !Set(pbTypes).isDisjoint(with: Self.acceptedDropTypes) else { return [] }
-        return .copy
+        canAcceptDrag(sender) ? .copy : []
     }
 
     override func draggingUpdated(_ sender: NSDraggingInfo) -> NSDragOperation {
-        guard isEffectivelyVisible else { return [] }
-        guard let types = sender.draggingPasteboard.types,
-              !Set(types).isDisjoint(with: Self.acceptedDropTypes) else { return [] }
-        return .copy
+        canAcceptDrag(sender) ? .copy : []
     }
 
     override func prepareForDragOperation(_ sender: NSDraggingInfo) -> Bool {
-        guard isEffectivelyVisible else { return false }
-        guard let types = sender.draggingPasteboard.types else { return false }
-        return !Set(types).isDisjoint(with: Self.acceptedDropTypes)
+        canAcceptDrag(sender)
     }
 
     override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
         guard isEffectivelyVisible else { return false }
         return terminalView.performDragOperation(sender)
     }
+}
 
-    // MARK: - Mouse (legacy scroller support)
+// MARK: - Scroll Indicator
 
-    override func mouseMoved(with event: NSEvent) {
-        guard NSScroller.preferredScrollerStyle == .legacy else { return }
-        scrollView.flashScrollers()
+/// Custom scroll indicator that draws a rounded bar.
+/// NSScroller doesn't render its knob correctly without an NSScrollView parent,
+/// so we draw our own minimal indicator.
+class ScrollIndicatorView: NSView {
+    private var proportion: CGFloat = 1
+    private var position: CGFloat = 0
+
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        wantsLayer = true
+        alphaValue = 0
     }
 
-    override func updateTrackingAreas() {
-        trackingAreas.forEach { removeTrackingArea($0) }
-        super.updateTrackingAreas()
-        guard let scroller = scrollView.verticalScroller else { return }
-        addTrackingArea(NSTrackingArea(
-            rect: convert(scroller.bounds, from: scroller),
-            options: [.mouseMoved, .activeInKeyWindow],
-            owner: self,
-            userInfo: nil
-        ))
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError() }
+
+    func update(proportion: CGFloat, position: CGFloat) {
+        self.proportion = proportion
+        self.position = position
+        needsDisplay = true
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        guard proportion < 1 else { return }
+        let knobHeight = max(bounds.height * proportion, 24)
+        let trackSpace = bounds.height - knobHeight
+        // AppKit is +Y up, but position 0 = top of scrollback.
+        // position=0 → knob at top, position=1 → knob at bottom.
+        let knobY = bounds.height - knobHeight - (trackSpace * position)
+        let knobRect = NSRect(
+            x: 1, y: knobY,
+            width: bounds.width - 2, height: knobHeight
+        )
+        let path = NSBezierPath(roundedRect: knobRect, xRadius: 3, yRadius: 3)
+        NSColor.labelColor.withAlphaComponent(0.35).setFill()
+        path.fill()
     }
 }
+

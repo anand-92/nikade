@@ -137,9 +137,9 @@ private struct ViewTabBar: View {
         if #available(macOS 26, *) {
             HStack(spacing: 4) {
                 Image(systemName: tab.systemImage)
-                    .font(.system(size: 10))
+                    .font(AppFonts.toolbarIcon)
                 Text(tab.title)
-                    .font(.system(size: 12, weight: isActive ? .semibold : .regular))
+                    .font(AppFonts.body.weight(isActive ? .semibold : .regular))
             }
             .foregroundStyle(isActive ? .primary : .secondary)
             .padding(.horizontal, 10)
@@ -149,9 +149,9 @@ private struct ViewTabBar: View {
             VStack(spacing: 4) {
                 HStack(spacing: 4) {
                     Image(systemName: tab.systemImage)
-                        .font(.system(size: 10))
+                        .font(AppFonts.toolbarIcon)
                     Text(tab.title)
-                        .font(.system(size: 12, weight: isActive ? .semibold : .regular))
+                        .font(AppFonts.body.weight(isActive ? .semibold : .regular))
                 }
                 .foregroundStyle(isActive ? .primary : .secondary)
 

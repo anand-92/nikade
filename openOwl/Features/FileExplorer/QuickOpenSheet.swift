@@ -46,7 +46,7 @@ struct QuickOpenPanel: View {
 
             if matches.isEmpty && !store.quickOpenQuery.isEmpty {
                 Text("No matching files")
-                    .font(.system(size: 12))
+                    .font(AppFonts.body)
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 20)
@@ -143,7 +143,7 @@ private struct QuickOpenRow: View {
     var body: some View {
         HStack(spacing: 8) {
             Image(systemName: iconName)
-                .font(.system(size: 12))
+                .font(AppFonts.body)
                 .foregroundStyle(iconColor)
                 .frame(width: 16)
 
@@ -153,7 +153,7 @@ private struct QuickOpenRow: View {
             Spacer(minLength: 4)
 
             Text(relativePath)
-                .font(.system(size: 11))
+                .font(AppFonts.secondaryLabel)
                 .foregroundStyle(.tertiary)
                 .lineLimit(1)
                 .truncationMode(.head)

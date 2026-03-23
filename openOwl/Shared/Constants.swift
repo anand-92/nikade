@@ -62,16 +62,55 @@ enum AppColors {
 }
 
 enum AppFonts {
-    static let title         = Font.system(size: 16, weight: .semibold)
-    static let sectionHeader = Font.system(size: 10, weight: .semibold)
+    // MARK: - Semantic fonts (macOS 26+ scales with Dynamic Type, older macOS keeps fixed size)
+
+    static var title: Font {
+        if #available(macOS 26, *) { return .headline }
+        return .system(size: 16, weight: .semibold)
+    }
+    static var sectionHeader: Font {
+        if #available(macOS 26, *) { return .caption.weight(.semibold) }
+        return .system(size: 10, weight: .semibold)
+    }
     static let sectionTracking: CGFloat = 1.5
-    static let primaryLabel  = Font.system(size: 12, weight: .medium)
-    static let secondaryLabel = Font.system(size: 11)
-    static let body          = Font.system(size: 12)
-    static let mono          = Font.system(size: 11, design: .monospaced)
-    static let badge         = Font.system(size: 9, weight: .medium)
-    static let caption       = Font.system(size: 10)
-    static let statusBar     = Font.system(size: 11)
+    static var primaryLabel: Font {
+        if #available(macOS 26, *) { return .callout.weight(.medium) }
+        return .system(size: 12, weight: .medium)
+    }
+    static var secondaryLabel: Font {
+        if #available(macOS 26, *) { return .subheadline }
+        return .system(size: 11)
+    }
+    static var body: Font {
+        if #available(macOS 26, *) { return .callout }
+        return .system(size: 12)
+    }
+    static var mono: Font {
+        if #available(macOS 26, *) { return .system(.subheadline, design: .monospaced) }
+        return .system(size: 11, design: .monospaced)
+    }
+    static var caption: Font {
+        if #available(macOS 26, *) { return .caption }
+        return .system(size: 10)
+    }
+    static var statusBar: Font {
+        if #available(macOS 26, *) { return .subheadline }
+        return .system(size: 11)
+    }
+
+    // Intentionally fixed: 9pt badge is too small for any semantic font
+    static let badge = Font.system(size: 9, weight: .medium)
+
+    // MARK: - Fixed-size fonts (alignment-critical, always monospaced)
+
+    static let diffCode   = Font.system(size: 11, design: .monospaced)
+    static let diffMeta   = Font.system(size: 9, weight: .bold, design: .monospaced)
+
+    // MARK: - Icon sizing (used for SF Symbol sizing in toolbars/buttons)
+
+    static let toolbarIcon = Font.system(size: 10)
+    static let smallIcon   = Font.system(size: 9)
+    static let tinyIcon    = Font.system(size: 8)
 }
 
 enum AppSpacing {
@@ -83,4 +122,38 @@ enum AppSpacing {
     static let statusBarHeight: CGFloat = 28
     static let editorTabBarHeight: CGFloat = 28
     static let listRowHeight: CGFloat = 26
+}
+
+// MARK: - Editor Theme Colors (syntax highlighting — precise values, not semantic)
+
+enum AppEditorTheme {
+    static let selection  = NSColor(calibratedRed: 0.25, green: 0.35, blue: 0.5, alpha: 0.4)
+    static let keyword    = NSColor(calibratedRed: 0.8, green: 0.4, blue: 0.8, alpha: 1.0)
+    static let command    = NSColor(calibratedRed: 0.4, green: 0.7, blue: 0.9, alpha: 1.0)
+    static let type       = NSColor(calibratedRed: 0.4, green: 0.8, blue: 0.7, alpha: 1.0)
+    static let attribute  = NSColor(calibratedRed: 0.7, green: 0.6, blue: 0.4, alpha: 1.0)
+    static let variable   = NSColor(calibratedRed: 0.5, green: 0.7, blue: 0.9, alpha: 1.0)
+    static let value      = NSColor(calibratedRed: 0.9, green: 0.7, blue: 0.4, alpha: 1.0)
+    static let number     = value
+    static let string     = NSColor(calibratedRed: 0.9, green: 0.5, blue: 0.5, alpha: 1.0)
+    static let character  = string
+    static let comment    = NSColor(calibratedRed: 0.5, green: 0.6, blue: 0.5, alpha: 1.0)
+    static let invisibles = NSColor(white: 0.5, alpha: 0.3)
+}
+
+// MARK: - Git Graph Lane Colors (data visualization palette)
+
+enum AppGraphColors {
+    static let lanes: [Color] = [
+        Color(red: 0.31, green: 0.79, blue: 0.69),  // teal
+        Color(red: 0.81, green: 0.57, blue: 0.47),  // salmon
+        Color(red: 0.34, green: 0.61, blue: 0.84),  // blue
+        Color(red: 0.86, green: 0.86, blue: 0.67),  // yellow
+        Color(red: 0.77, green: 0.52, blue: 0.75),  // magenta
+        Color(red: 0.61, green: 0.86, blue: 0.99),  // light blue
+        Color(red: 0.84, green: 0.73, blue: 0.49),  // gold
+        Color(red: 0.71, green: 0.81, blue: 0.66),  // green
+        Color(red: 0.82, green: 0.41, blue: 0.41),  // red
+        Color(red: 0.38, green: 0.55, blue: 0.31),  // dark green
+    ]
 }

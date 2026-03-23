@@ -30,4 +30,14 @@ extension View {
             self.background { fallback }
         }
     }
+
+    /// Apply `.scrollEdgeEffectStyle(.soft)` on macOS 26+, no-op on older versions.
+    @ViewBuilder
+    func scrollEdgeEffectIfAvailable(for edges: Edge.Set = .all) -> some View {
+        if #available(macOS 26, *) {
+            self.scrollEdgeEffectStyle(.soft, for: edges)
+        } else {
+            self
+        }
+    }
 }

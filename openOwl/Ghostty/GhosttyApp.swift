@@ -316,10 +316,8 @@ final class GhosttyAppManager {
             return true
 
         case GHOSTTY_ACTION_CELL_SIZE:
-            guard let paneID = paneID(for: target) else { return false }
-            let v = action.action.cell_size
-            let size = CGSize(width: CGFloat(v.width), height: CGFloat(v.height))
-            retainedScrollViews[paneID]?.updateCellSize(size)
+            // Cell size is handled by ghostty internally. Previously used for
+            // NSScrollView document height calculation, no longer needed.
             return true
 
         case GHOSTTY_ACTION_RING_BELL:

@@ -16,12 +16,11 @@ struct openOwlApp: App {
     init() {
         Self.setupEnvironment()
 
-        // Set cwd to active project BEFORE ghostty starts, so the first shell
-        // opens in the project directory instead of ~
+        // ProjectStore loads projects and restores security-scoped bookmarks.
+        // Working directory is passed directly to ghostty surface config via
+        // TerminalPanel.workingDirectory — no need to change the app's process cwd
+        // (which triggers macOS TCC prompts in dev builds).
         let store = ProjectStore()
-        if let url = store.activeProjectURL {
-            FileManager.default.changeCurrentDirectoryPath(url.path)
-        }
         _projectStore = State(wrappedValue: store)
         _ghosttyManager = State(wrappedValue: GhosttyAppManager())
     }
@@ -195,9 +194,6 @@ struct openOwlApp: App {
     private func syncActiveProjectContext() {
         guard let projectURL = projectStore.activeProjectURL,
               let activeID = projectStore.activeProjectID else { return }
-
-        // Always update cwd (needed for new terminal surfaces)
-        FileManager.default.changeCurrentDirectoryPath(projectURL.path)
 
         // Only refresh the currently visible tab's store
         switch navigationStore.activeTab {

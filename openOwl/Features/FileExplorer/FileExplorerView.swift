@@ -8,20 +8,20 @@ let editorConfiguration = SourceEditorConfiguration(
         theme: EditorTheme(
             text: .init(color: AppPalette.ns.textPrimary),
             insertionPoint: AppPalette.ns.accent,
-            invisibles: .init(color: NSColor(white: 0.5, alpha: 0.3)),
+            invisibles: .init(color: AppEditorTheme.invisibles),
             background: AppPalette.ns.surface,
             lineHighlight: AppPalette.ns.elevated,
-            selection: NSColor(calibratedRed: 0.25, green: 0.35, blue: 0.5, alpha: 0.4),
-            keywords: .init(color: NSColor(calibratedRed: 0.8, green: 0.4, blue: 0.8, alpha: 1.0)),
-            commands: .init(color: NSColor(calibratedRed: 0.4, green: 0.7, blue: 0.9, alpha: 1.0)),
-            types: .init(color: NSColor(calibratedRed: 0.4, green: 0.8, blue: 0.7, alpha: 1.0)),
-            attributes: .init(color: NSColor(calibratedRed: 0.7, green: 0.6, blue: 0.4, alpha: 1.0)),
-            variables: .init(color: NSColor(calibratedRed: 0.5, green: 0.7, blue: 0.9, alpha: 1.0)),
-            values: .init(color: NSColor(calibratedRed: 0.9, green: 0.7, blue: 0.4, alpha: 1.0)),
-            numbers: .init(color: NSColor(calibratedRed: 0.9, green: 0.7, blue: 0.4, alpha: 1.0)),
-            strings: .init(color: NSColor(calibratedRed: 0.9, green: 0.5, blue: 0.5, alpha: 1.0)),
-            characters: .init(color: NSColor(calibratedRed: 0.9, green: 0.5, blue: 0.5, alpha: 1.0)),
-            comments: .init(color: NSColor(calibratedRed: 0.5, green: 0.6, blue: 0.5, alpha: 1.0))
+            selection: AppEditorTheme.selection,
+            keywords: .init(color: AppEditorTheme.keyword),
+            commands: .init(color: AppEditorTheme.command),
+            types: .init(color: AppEditorTheme.type),
+            attributes: .init(color: AppEditorTheme.attribute),
+            variables: .init(color: AppEditorTheme.variable),
+            values: .init(color: AppEditorTheme.value),
+            numbers: .init(color: AppEditorTheme.number),
+            strings: .init(color: AppEditorTheme.string),
+            characters: .init(color: AppEditorTheme.character),
+            comments: .init(color: AppEditorTheme.comment)
         ),
         font: .monospacedSystemFont(ofSize: 12, weight: .regular),
         wrapLines: true
@@ -171,16 +171,18 @@ struct FileExplorerView: View {
                 Spacer()
 
                 Button { store.presentQuickOpen() } label: {
-                    Image(systemName: "magnifyingglass").font(.system(size: 11))
+                    Image(systemName: "magnifyingglass").font(AppFonts.secondaryLabel)
                 }
                 .buttonStyle(.plain).help("Quick Open (⌘P)")
+                .accessibilityLabel("Quick Open (⌘P)")
                 .keyboardShortcut("p", modifiers: [.command])
                 .disabled(store.rootNodes.isEmpty)
 
                 Button { store.refreshNow() } label: {
-                    Image(systemName: "arrow.clockwise").font(.system(size: 11))
+                    Image(systemName: "arrow.clockwise").font(AppFonts.secondaryLabel)
                 }
                 .buttonStyle(.plain).help("Refresh")
+                .accessibilityLabel("Refresh")
                 .disabled(store.isRefreshing)
             }
             .padding(.horizontal, AppSpacing.panelPadding)
@@ -191,12 +193,13 @@ struct FileExplorerView: View {
             if let errorMessage = store.errorMessage {
                 HStack(spacing: 6) {
                     Image(systemName: "exclamationmark.triangle")
-                        .font(.system(size: 10))
+                        .font(AppFonts.toolbarIcon)
                     Text(errorMessage).font(AppFonts.caption).lineLimit(1)
                     Spacer()
                     Button { store.errorMessage = nil } label: {
-                        Image(systemName: "xmark").font(.system(size: 8))
+                        Image(systemName: "xmark").font(AppFonts.tinyIcon)
                     }.buttonStyle(.plain)
+                    .accessibilityLabel("Dismiss")
                 }
                 .foregroundStyle(.red)
                 .padding(.horizontal, 8).padding(.vertical, 4)
@@ -234,7 +237,7 @@ struct FileExplorerView: View {
                 )
             }
         }
-        .background(EffectView(material: .sidebar, blendingMode: .behindWindow))
+        .background(.regularMaterial)
     }
 
     // MARK: - Editor Panel
@@ -271,6 +274,7 @@ struct FileExplorerView: View {
                     )
                     .id(url)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .clipped()
                 }
             } else {
                 Spacer()
@@ -560,11 +564,11 @@ private struct EditorTabButton: View {
             Button(action: onSelect) {
                 HStack(spacing: 4) {
                     Image(systemName: FileExplorerView.fileIconName(for: tab.url))
-                        .font(.system(size: 10))
+                        .font(AppFonts.toolbarIcon)
                         .foregroundStyle(FileExplorerView.fileIconColor(for: tab.url))
 
                     Text(tab.name)
-                        .font(.system(size: 11))
+                        .font(AppFonts.secondaryLabel)
                         .lineLimit(1)
                 }
                 .padding(.leading, 8)
@@ -605,12 +609,13 @@ private struct EditorTabButton: View {
         } else if isHovering || isActive {
             Button(action: onClose) {
                 Image(systemName: "xmark")
-                    .font(.system(size: 8, weight: .bold))
+                    .font(AppFonts.tinyIcon.weight(.bold))
                     .foregroundStyle(.tertiary)
                     .frame(width: 16, height: 16)
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            .accessibilityLabel("Close tab")
         } else {
             Color.clear.frame(width: 16, height: 16)
         }

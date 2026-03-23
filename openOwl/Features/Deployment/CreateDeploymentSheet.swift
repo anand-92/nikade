@@ -30,7 +30,7 @@ struct CreateDeploymentSheet: View {
     var body: some View {
         VStack(spacing: 0) {
             Text("New Deployment")
-                .font(.system(size: 14, weight: .semibold))
+                .font(AppFonts.title)
                 .padding(.top, 16)
                 .padding(.bottom, 12)
 
@@ -53,12 +53,12 @@ struct CreateDeploymentSheet: View {
                     VStack(alignment: .leading, spacing: 4) {
                         Text("Environment Variables")
                         TextEditor(text: $envVars)
-                            .font(.system(size: 11, design: .monospaced))
+                            .font(AppFonts.mono)
                             .frame(height: 60)
                             .overlay(alignment: .topLeading) {
                                 if envVars.isEmpty {
                                     Text("KEY=VALUE (one per line)")
-                                        .font(.system(size: 11, design: .monospaced))
+                                        .font(AppFonts.mono)
                                         .foregroundStyle(.quaternary)
                                         .padding(.top, 8)
                                         .padding(.leading, 5)

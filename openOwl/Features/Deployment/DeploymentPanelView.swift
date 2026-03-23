@@ -230,7 +230,7 @@ private struct DeploymentDetailView: View {
 
                 if let commit = deployment.lastCommit {
                     Text(String(commit.prefix(7)))
-                        .font(.system(size: 11, design: .monospaced))
+                        .font(AppFonts.mono)
                         .foregroundStyle(.secondary)
                 }
 
@@ -264,22 +264,24 @@ private struct DeploymentDetailView: View {
                         NSPasteboard.general.setString(deployment.clonePath, forType: .string)
                     } label: {
                         Image(systemName: "doc.on.doc")
-                            .font(.system(size: 12))
+                            .font(AppFonts.body)
                     }
                     .buttonStyle(.plain)
                     .foregroundStyle(.secondary)
                     .help("Copy clone path")
+                    .accessibilityLabel("Copy clone path")
                 }
 
                 Button(role: .destructive) {
                     performAction { await deploymentStore.removeDeployment(id: deployment.id) }
                 } label: {
                     Image(systemName: "trash")
-                        .font(.system(size: 12))
+                        .font(AppFonts.body)
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(.secondary)
                 .help("Delete deployment")
+                .accessibilityLabel("Delete deployment")
             }
 
             Divider()
@@ -336,13 +338,13 @@ private struct DeploymentDetailView: View {
                 GridRow(alignment: .top) {
                     Text("Env").foregroundStyle(.secondary).frame(width: 80, alignment: .trailing)
                     TextEditor(text: $editEnvVars)
-                        .font(.system(size: 11, design: .monospaced))
+                        .font(AppFonts.mono)
                         .frame(height: 50)
                         .border(Color.secondary.opacity(0.2))
                         .overlay(alignment: .topLeading) {
                             if editEnvVars.isEmpty {
                                 Text("KEY=VALUE")
-                                    .font(.system(size: 11, design: .monospaced))
+                                    .font(AppFonts.mono)
                                     .foregroundStyle(.quaternary)
                                     .padding(.top, 4)
                                     .padding(.leading, 5)
@@ -392,11 +394,12 @@ private struct DeploymentDetailView: View {
                     deploymentStore.loadLog(for: deployment.id)
                 } label: {
                     Image(systemName: "arrow.clockwise")
-                        .font(.system(size: 10))
+                        .font(AppFonts.toolbarIcon)
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(.secondary)
                 .help("Refresh logs")
+                .accessibilityLabel("Refresh logs")
             }
             .padding(.horizontal, AppSpacing.panelPadding)
             .frame(height: AppSpacing.headerHeight)
@@ -406,14 +409,14 @@ private struct DeploymentDetailView: View {
             ScrollViewReader { proxy in
                 ScrollView {
                     Text(deploymentStore.logContent.isEmpty ? "No logs yet." : deploymentStore.logContent)
-                        .font(.system(size: 11, design: .monospaced))
-                        .foregroundStyle(deploymentStore.logContent.isEmpty ? Color.gray : Color(nsColor: .init(white: 0.85, alpha: 1)))
+                        .font(AppFonts.mono)
+                        .foregroundStyle(deploymentStore.logContent.isEmpty ? Color.secondary : AppPalette.textPrimary)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(12)
                         .textSelection(.enabled)
                         .id("logBottom")
                 }
-                .background(Color(nsColor: .init(white: 0.1, alpha: 1)))
+                .background(AppPalette.base)
                 .onChange(of: deploymentStore.logContent) { _, _ in
                     proxy.scrollTo("logBottom", anchor: .bottom)
                 }

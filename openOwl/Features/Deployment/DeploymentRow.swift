@@ -15,7 +15,7 @@ struct DeploymentRow: View {
                 .frame(width: 14, alignment: .center)
 
             Text(deployment.name)
-                .font(.system(size: 12))
+                .font(AppFonts.body)
                 .lineLimit(1)
 
             Spacer(minLength: 4)
@@ -25,11 +25,12 @@ struct DeploymentRow: View {
                     toggleDeployment()
                 } label: {
                     Image(systemName: deployment.status == .running ? "stop.fill" : "play.fill")
-                        .font(.system(size: 8))
+                        .font(AppFonts.tinyIcon)
                         .foregroundStyle(.secondary)
                 }
                 .buttonStyle(.plain)
                 .help(deployment.status == .running ? "Stop" : "Start")
+                .accessibilityLabel(deployment.status == .running ? "Stop" : "Start")
             }
         }
         .padding(.leading, 16)

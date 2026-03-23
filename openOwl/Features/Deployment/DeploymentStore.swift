@@ -115,6 +115,7 @@ struct Deployment: Identifiable, Codable, Hashable {
 @MainActor
 @Observable
 final class DeploymentStore {
+    // internal setter for @testable import test access
     private(set) var deployments: [Deployment] = []
     var selectedDeploymentID: String?
     private(set) var logContent: String = ""
@@ -329,7 +330,12 @@ final class DeploymentStore {
             // Clean up clone directory — only if within ~/.openowl/deployments/
             let deployDir = dep.cloneURL.deletingLastPathComponent()
             if Self.isSafeDeploymentPath(deployDir) {
-                try? FileManager.default.removeItem(at: deployDir)
+                do {
+                    try FileManager.default.removeItem(at: deployDir)
+                } catch {
+                    NSLog("openOwl: [Deployment] Failed to delete %@: %@",
+                          deployDir.path, error.localizedDescription)
+                }
             } else {
                 NSLog("openOwl: [Deployment] REFUSED to delete unsafe path: %@", deployDir.path)
             }
@@ -348,25 +354,47 @@ final class DeploymentStore {
     // MARK: - Recovery
 
     func recoverRunningDeployments() {
-        for i in deployments.indices {
-            // Remote monitors: resume polling + immediate check
-            if deployments[i].isRemote {
-                startBranchPoll(id: deployments[i].id)
-                let dep = deployments[i]
-                Task { await checkHealth(dep: dep) }
+        // Batch all status changes into a single array mutation to avoid
+        // N separate @Observable notifications that each trigger SwiftUI re-renders.
+        var updated = deployments
+        var pollIDs: [String] = []
+        var healthCheckDeps: [Deployment] = []
+        var changed = false
+
+        for i in updated.indices {
+            if updated[i].isRemote {
+                pollIDs.append(updated[i].id)
+                healthCheckDeps.append(updated[i])
                 continue
             }
 
-            if deployments[i].status == .running || deployments[i].status == .building {
-                if let pid = deployments[i].pid, DeploymentProcessManager.isProcessAlive(pid: pid) {
-                    startBranchPoll(id: deployments[i].id)
+            if updated[i].status == .running || updated[i].status == .building {
+                if let pid = updated[i].pid, DeploymentProcessManager.isProcessAlive(pid: pid) {
+                    pollIDs.append(updated[i].id)
                 } else {
-                    deployments[i].status = .error
-                    deployments[i].pid = nil
+                    NSLog("openOwl: [Deployment] '%@' (pid=%d) process dead, marking error",
+                          updated[i].name, updated[i].pid ?? -1)
+                    updated[i].status = .error
+                    updated[i].pid = nil
+                    changed = true
                 }
             }
         }
-        persist()
+
+        if changed {
+            deployments = updated
+            persist()
+        }
+
+        // Start polling after the batch update (timers are cheap)
+        for id in pollIDs {
+            startBranchPoll(id: id)
+        }
+
+        // Fire health checks in background, not blocking app launch
+        for dep in healthCheckDeps {
+            Task { await checkHealth(dep: dep) }
+        }
     }
 
     // MARK: - Logs
@@ -448,11 +476,12 @@ final class DeploymentStore {
     // MARK: - Path Safety
 
     /// Only allow deletion of paths within ~/.openowl/deployments/
-    private static func isSafeDeploymentPath(_ url: URL) -> Bool {
+    static func isSafeDeploymentPath(_ url: URL) -> Bool {
         let home = FileManager.default.homeDirectoryForCurrentUser
-        let safePrefix = home.appendingPathComponent(".openowl/deployments").standardizedFileURL.path
+        // Trailing "/" ensures ".openowl/deployments-evil" doesn't match
+        let safePrefix = home.appendingPathComponent(".openowl/deployments").standardizedFileURL.path + "/"
         let targetPath = url.standardizedFileURL.path
-        return targetPath.hasPrefix(safePrefix) && targetPath.count > safePrefix.count
+        return targetPath.hasPrefix(safePrefix)
     }
 
     // MARK: - Private: Git Operations

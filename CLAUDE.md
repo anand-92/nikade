@@ -68,3 +68,13 @@ openOwl/
 - 功能文档 → docs/features/
 - 需求文档 → docs/requirements/
 - 里程碑 → docs/milestones/
+
+## 设计规范
+
+macOS 原生设计遵循全局规范：`~/.openowl/workspace/docs/strategy/macos-design-guide.md`
+
+## 验收测试
+
+门禁流程见全局 `~/.claude/CLAUDE.md`。本项目 E2E 验收方式：
+- 单元测试：XCTest（`xcodebuild -scheme openOwl -configuration Debug test`）
+- E2E 验收：XCUITest

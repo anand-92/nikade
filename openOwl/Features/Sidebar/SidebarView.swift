@@ -72,6 +72,7 @@ struct SidebarView: View {
             }
         }
         .listStyle(.sidebar)
+        .scrollEdgeEffectIfAvailable(for: .top)
         .navigationTitle("Projects")
         .safeAreaInset(edge: .bottom, spacing: 0) {
             if claudeStatusStore.shouldShowIncidentBanner {
@@ -109,6 +110,7 @@ struct SidebarView: View {
                     Image(systemName: "plus")
                 }
                 .help("Open project folder")
+                .accessibilityLabel("Open project folder")
             }
         }
     }
@@ -125,7 +127,7 @@ private struct ClaudeIncidentSidebarCard: View {
                 Image(systemName: "exclamationmark.triangle")
                     .foregroundStyle(Color.yellow)
                 Text(title)
-                    .font(.system(size: 14, weight: .semibold))
+                    .font(AppFonts.title)
                     .lineLimit(2)
                     .multilineTextAlignment(.leading)
                     .foregroundStyle(Color.yellow)
@@ -134,14 +136,15 @@ private struct ClaudeIncidentSidebarCard: View {
 
                 Button(action: onDismiss) {
                     Image(systemName: "xmark")
-                        .font(.system(size: 10, weight: .semibold))
+                        .font(AppFonts.sectionHeader)
                         .foregroundStyle(Color.yellow.opacity(0.9))
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel("Dismiss")
             }
 
             Text("Anthropic is reporting an active incident.")
-                .font(.system(size: 12))
+                .font(AppFonts.body)
                 .foregroundStyle(.primary)
                 .lineLimit(2)
 
@@ -149,9 +152,9 @@ private struct ClaudeIncidentSidebarCard: View {
                 HStack(spacing: 4) {
                     Text("Open status page")
                     Image(systemName: "arrow.up.right")
-                        .font(.system(size: 10, weight: .semibold))
+                        .font(AppFonts.sectionHeader)
                 }
-                .font(.system(size: 12, weight: .semibold))
+                .font(AppFonts.body.weight(.semibold))
                 .foregroundStyle(Color.yellow)
             }
             .buttonStyle(.plain)
@@ -183,22 +186,22 @@ private struct ProjectHeaderRow: View {
             // Clickable label area — toggles expand/collapse
             HStack(spacing: 4) {
                 Image(systemName: expanded ? "chevron.down" : "chevron.right")
-                    .font(.system(size: 9, weight: .semibold))
+                    .font(AppFonts.badge.weight(.semibold))
                     .foregroundStyle(.tertiary)
                     .frame(width: 12, height: 12)
 
                 Image(systemName: "folder.fill")
-                    .font(.system(size: 12))
+                    .font(AppFonts.body)
                     .foregroundStyle(.blue)
 
                 Text(project.displayName)
-                    .font(.system(size: 12, weight: .regular))
+                    .font(AppFonts.body)
                     .lineLimit(1)
 
                 // Show branch inline when collapsed
                 if !expanded, let branch = project.lastBranch {
                     Text(branch)
-                        .font(.system(size: 10))
+                        .font(AppFonts.caption)
                         .foregroundStyle(.tertiary)
                         .lineLimit(1)
                 }
@@ -223,12 +226,13 @@ private struct ProjectHeaderRow: View {
                             .frame(width: 12, height: 12)
                     } else {
                         Image(systemName: "plus.diamond")
-                            .font(.system(size: 10))
+                            .font(AppFonts.toolbarIcon)
                             .foregroundStyle(.secondary)
                     }
                 }
                 .buttonStyle(.plain)
                 .help("Create worktree")
+                .accessibilityLabel("Create worktree")
                 .disabled(creating)
             }
         }
@@ -288,9 +292,9 @@ private struct BranchRow: View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 5) {
                 Image(systemName: "arrow.triangle.branch")
-                    .font(.system(size: 12))
+                    .font(AppFonts.body)
                 Text(branch)
-                    .font(.system(size: 12))
+                    .font(AppFonts.body)
 
                 Spacer(minLength: 4)
 
@@ -314,11 +318,12 @@ private struct BranchRow: View {
                         NSPasteboard.general.setString(path, forType: .string)
                     } label: {
                         Image(systemName: "doc.on.doc")
-                            .font(.system(size: 9))
+                            .font(AppFonts.smallIcon)
                     }
                     .buttonStyle(.plain)
                     .foregroundStyle(.tertiary)
                     .help("Copy path")
+                    .accessibilityLabel("Copy path")
                 }
             }
             .padding(.leading, 16)
@@ -360,13 +365,13 @@ private struct WorktreeRow: View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 5) {
                 Image(systemName: "arrow.triangle.branch")
-                    .font(.system(size: isRenaming ? 10 : 12))
+                    .font(isRenaming ? AppFonts.caption : AppFonts.body)
                     .foregroundStyle(isRenaming ? .secondary : .primary)
 
                 if isRenaming {
                     TextField("", text: $renameText)
                         .textFieldStyle(.plain)
-                        .font(.system(size: 12))
+                        .font(AppFonts.body)
                         .focused($renameFieldFocused)
                         .onSubmit {
                             let trimmed = renameText.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -378,7 +383,7 @@ private struct WorktreeRow: View {
                         .onExitCommand { isRenaming = false }
                 } else {
                     Text(wt.worktreeBranch ?? wt.name)
-                        .font(.system(size: 12))
+                        .font(AppFonts.body)
                 }
 
                 Spacer(minLength: 4)
@@ -402,22 +407,24 @@ private struct WorktreeRow: View {
                         Task { await archiveWorktree() }
                     } label: {
                         Image(systemName: "archivebox")
-                            .font(.system(size: 9))
+                            .font(AppFonts.smallIcon)
                     }
                     .buttonStyle(.plain)
                     .foregroundStyle(.tertiary)
                     .help("Archive worktree")
+                    .accessibilityLabel("Archive worktree")
 
                     Button {
                         NSPasteboard.general.clearContents()
                         NSPasteboard.general.setString(wt.path, forType: .string)
                     } label: {
                         Image(systemName: "doc.on.doc")
-                            .font(.system(size: 9))
+                            .font(AppFonts.smallIcon)
                     }
                     .buttonStyle(.plain)
                     .foregroundStyle(.tertiary)
                     .help("Copy path")
+                    .accessibilityLabel("Copy path")
                 }
             }
             .padding(.leading, 16)
@@ -497,7 +504,7 @@ private struct PaneStatusRow: View {
                 .frame(width: 7, height: 7)
 
             Text(info.title)
-                .font(.system(size: 11))
+                .font(AppFonts.secondaryLabel)
                 .foregroundStyle(info.hasBell ? AnyShapeStyle(.primary) : AnyShapeStyle(.secondary))
                 .lineLimit(1)
 
@@ -505,7 +512,7 @@ private struct PaneStatusRow: View {
 
             if info.hasBell {
                 Image(systemName: "bell.fill")
-                    .font(.system(size: 9))
+                    .font(AppFonts.smallIcon)
                     .foregroundStyle(Color.accentColor)
             }
         }
