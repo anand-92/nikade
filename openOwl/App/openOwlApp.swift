@@ -18,11 +18,12 @@ struct openOwlApp: App {
 
         // Set cwd to active project BEFORE ghostty starts, so the first shell
         // opens in the project directory instead of ~.
-        // BookmarkStore.startAccessing (called in ProjectStore.init) restores
-        // TCC authorization from saved bookmarks, so this access won't prompt
-        // if the project was previously opened via NSOpenPanel.
+        // Check isReadableFile first — it uses access() which does NOT trigger
+        // TCC prompts. If the check fails (e.g., dev build re-signed, TCC revoked),
+        // skip silently instead of popping a system authorization dialog.
         let store = ProjectStore()
-        if let url = store.activeProjectURL {
+        if let url = store.activeProjectURL,
+           FileManager.default.isReadableFile(atPath: url.path) {
             FileManager.default.changeCurrentDirectoryPath(url.path)
         }
         _projectStore = State(wrappedValue: store)
@@ -199,8 +200,10 @@ struct openOwlApp: App {
         guard let projectURL = projectStore.activeProjectURL,
               let activeID = projectStore.activeProjectID else { return }
 
-        // Always update cwd (needed for new terminal surfaces)
-        FileManager.default.changeCurrentDirectoryPath(projectURL.path)
+        // Update cwd if accessible (avoids TCC prompt in dev builds)
+        if FileManager.default.isReadableFile(atPath: projectURL.path) {
+            FileManager.default.changeCurrentDirectoryPath(projectURL.path)
+        }
 
         // Only refresh the currently visible tab's store
         switch navigationStore.activeTab {
