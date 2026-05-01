@@ -56,23 +56,33 @@ init_submodule() {
 build_ghosttykit() {
     cd "$GHOSTTY_DIR"
 
+    # ReleaseSafe (default) keeps Zig safety checks in libghostty so that
+    # null-deref / out-of-bounds / overflow trap loudly instead of silently
+    # corrupting state. ReleaseFast on ARM64 macOS will silently read zeros
+    # from a null pointer (issue ghostty-org/ghostty#11899), surfacing as
+    # "chunks of terminal output go missing" with no crash report.
+    # Override with OPTIMIZE=ReleaseFast for maximum throughput once stable.
+    local optimize="${OPTIMIZE:-ReleaseSafe}"
+
     # Get current commit SHA
     local sha
     sha=$(git rev-parse HEAD)
-    local cache_dir="$CACHE_BASE/$sha"
+    # Cache key includes optimize mode — switching modes must not reuse a
+    # binary built with the other mode.
+    local cache_dir="$CACHE_BASE/${sha}-${optimize}"
     local cached_xcframework="$cache_dir/GhosttyKit.xcframework"
 
     # Check cache
     if [ -d "$cached_xcframework" ]; then
-        info "Using cached GhosttyKit for commit ${sha:0:8}"
+        info "Using cached GhosttyKit for commit ${sha:0:8} (${optimize})"
     else
-        info "Building GhosttyKit for commit ${sha:0:8}..."
+        info "Building GhosttyKit for commit ${sha:0:8} (${optimize})..."
         info "This may take 5-10 minutes on first build."
 
         zig build \
             -Demit-xcframework=true \
             -Dxcframework-target=universal \
-            -Doptimize=ReleaseFast
+            "-Doptimize=${optimize}"
 
         # Find the built xcframework
         local built_path="$GHOSTTY_DIR/zig-out/macos/GhosttyKit.xcframework"
