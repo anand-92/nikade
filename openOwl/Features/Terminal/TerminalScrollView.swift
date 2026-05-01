@@ -236,7 +236,7 @@ class ScrollIndicatorView: NSView {
     /// height. When `knobTopYAtMouseDown` is provided, preserves the relative offset
     /// so the knob doesn't jump under the cursor.
     private func positionForCursorY(_ cursorY: CGFloat, knobOffsetY: CGFloat) -> CGFloat {
-        let knobHeight = max(bounds.height * proportion, 24)
+        let knobHeight = knobRect().height
         let trackSpace = bounds.height - knobHeight
         guard trackSpace > 0 else { return 0 }
         // Target knob top-Y, adjusted so the cursor stays at the same spot on the knob.
@@ -271,8 +271,7 @@ class ScrollIndicatorView: NSView {
         } else {
             // Click on empty track → jump so the knob center lands at cursor,
             // then enter drag mode anchored there.
-            let knobHeight = max(bounds.height * proportion, 24)
-            dragKnobOffsetY = -knobHeight / 2
+            dragKnobOffsetY = -knob.height / 2
             let newPos = positionForCursorY(p.y, knobOffsetY: dragKnobOffsetY!)
             onInteractionChange?(true)
             onScrollRequest?(newPos)

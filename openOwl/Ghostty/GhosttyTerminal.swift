@@ -533,8 +533,11 @@ class TerminalNSView: NSView {
     }
 
     override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
-        guard let surface else { return false }
         let pb = sender.draggingPasteboard
+        guard let surface else {
+            NSLog("openOwl: [Terminal] performDragOperation rejected — no surface (pane not yet initialized)")
+            return false
+        }
 
         let content: String?
         // Check file URLs FIRST: Finder puts both .fileURL (multi) and .URL (single, first only)
@@ -558,7 +561,13 @@ class TerminalNSView: NSView {
             content = nil
         }
 
-        guard let content, !content.isEmpty else { return false }
+        guard let content, !content.isEmpty else {
+            NSLog(
+                "openOwl: [Terminal] performDragOperation rejected — no usable pasteboard content (types=%@)",
+                pb.types?.map(\.rawValue) ?? []
+            )
+            return false
+        }
         window?.makeFirstResponder(self)
         let payload = content + " "
         payload.withCString { cstr in

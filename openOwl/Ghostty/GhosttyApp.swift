@@ -102,33 +102,40 @@ final class GhosttyAppManager {
         runtime.read_clipboard_cb = { userdata, clipboard, state in
             guard let userdata else { return false }
             let manager = Unmanaged<GhosttyAppManager>.fromOpaque(userdata).takeUnretainedValue()
-            guard manager.activeSurface != nil else { return false }
+            // Capture the triggering surface synchronously. `state` is bound to
+            // this specific surface — passing it to a different surface (or to
+            // a freed one) is a use-after-free. We MUST complete on the same
+            // surface that triggered the request, not whichever happens to be
+            // active when the async block runs.
+            guard let triggeringSurface = manager.activeSurface else { return false }
 
             // Must defer completion to avoid reentrancy crash:
             // ghostty_surface_key → paste binding → read_clipboard_cb →
             // ghostty_surface_complete_clipboard_request would crash if synchronous.
             DispatchQueue.main.async {
-                // Re-read activeSurface: the surface captured at callback entry may
-                // have been freed (pane closed) before this async block runs.
-                guard let surface = manager.activeSurface else { return }
+                // Skip if the triggering surface was freed (pane closed) before
+                // this block ran — `state` is now invalid.
+                guard manager.isSurfaceAlive(triggeringSurface) else { return }
                 let value = NSPasteboard.general.string(forType: .string) ?? ""
                 value.withCString { ptr in
-                    ghostty_surface_complete_clipboard_request(surface, ptr, state, false)
+                    ghostty_surface_complete_clipboard_request(triggeringSurface, ptr, state, false)
                 }
             }
             return true
         }
 
         runtime.confirm_read_clipboard_cb = { userdata, content, state, _ in
-            guard let content else { return }
-            guard let userdata else { return }
+            guard let content, let userdata else { return }
+            let manager = Unmanaged<GhosttyAppManager>.fromOpaque(userdata).takeUnretainedValue()
+            // Same surface-bound `state` constraint as read_clipboard_cb above:
+            // capture sync, verify alive async.
+            guard let triggeringSurface = manager.activeSurface else { return }
             // Copy content before async dispatch — libghostty may free the buffer after callback returns.
             let contentStr = String(cString: content)
             DispatchQueue.main.async {
-                let manager = Unmanaged<GhosttyAppManager>.fromOpaque(userdata).takeUnretainedValue()
-                guard let surface = manager.activeSurface else { return }
+                guard manager.isSurfaceAlive(triggeringSurface) else { return }
                 contentStr.withCString { ptr in
-                    ghostty_surface_complete_clipboard_request(surface, ptr, state, true)
+                    ghostty_surface_complete_clipboard_request(triggeringSurface, ptr, state, true)
                 }
             }
         }
@@ -322,6 +329,14 @@ final class GhosttyAppManager {
 
     func surface(for paneID: UUID) -> ghostty_surface_t? {
         paneSurfaceMap[paneID]
+    }
+
+    /// Whether the given surface is still registered (i.e. its pane hasn't been
+    /// destroyed). Clipboard callbacks check this before calling
+    /// `ghostty_surface_complete_clipboard_request` because the `state` pointer
+    /// is surface-bound and becomes invalid once the surface is freed.
+    func isSurfaceAlive(_ surface: ghostty_surface_t) -> Bool {
+        paneSurfaceMap.values.contains(where: { $0 == surface })
     }
 
     private func handleAction(target: ghostty_target_s, action: ghostty_action_s) -> Bool {
