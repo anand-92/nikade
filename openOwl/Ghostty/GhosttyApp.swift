@@ -33,6 +33,13 @@ final class GhosttyAppManager {
     /// Updated when a TerminalNSView creates its surface.
     var activeSurface: ghostty_surface_t?
 
+    /// Coalesces wakeup_cb → tick() dispatches. libghostty may fire wakeup hundreds of
+    /// times per second during heavy TUI output; without coalescing, each one enqueues
+    /// a separate main-queue block, saturating the main thread and delaying UI input.
+    /// Guarded by `tickLock`; accessed from both the wakeup thread and the main thread.
+    @ObservationIgnored private var tickScheduled = false
+    @ObservationIgnored private var tickLock = os_unfair_lock_s()
+
 
     init() {
         initializeGhostty()
@@ -82,9 +89,7 @@ final class GhosttyAppManager {
         runtime.wakeup_cb = { userdata in
             guard let userdata else { return }
             let manager = Unmanaged<GhosttyAppManager>.fromOpaque(userdata).takeUnretainedValue()
-            DispatchQueue.main.async {
-                manager.tick()
-            }
+            manager.scheduleTick()
         }
 
         runtime.action_cb = { app, target, action in
@@ -169,7 +174,29 @@ final class GhosttyAppManager {
         isReady = true
     }
 
-    /// Called from wakeup_cb to process pending ghostty events on the main thread.
+    /// Called from wakeup_cb (any thread). Coalesces multiple wakeups into a single
+    /// main-thread tick: if a tick is already scheduled, further wakeups are no-ops
+    /// until it runs. Clearing the flag BEFORE running tick ensures we don't miss a
+    /// wakeup that fires while tick is executing.
+    func scheduleTick() {
+        os_unfair_lock_lock(&tickLock)
+        if tickScheduled {
+            os_unfair_lock_unlock(&tickLock)
+            return
+        }
+        tickScheduled = true
+        os_unfair_lock_unlock(&tickLock)
+
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            os_unfair_lock_lock(&self.tickLock)
+            self.tickScheduled = false
+            os_unfair_lock_unlock(&self.tickLock)
+            self.tick()
+        }
+    }
+
+    /// Process pending ghostty events on the main thread.
     func tick() {
         guard let app else { return }
         ghostty_app_tick(app)

@@ -17,27 +17,32 @@ struct ContentView: View {
         } detail: {
             VStack(spacing: 0) {
                 ZStack {
+                    // All four tabs stay mounted so their @State survives tab switches
+                    // (editor tabs, commit message draft, scroll positions, etc.).
+                    // Visibility is controlled by opacity + allowsHitTesting, matching
+                    // the Terminal tab pattern. Shortcut bindings inside each view are
+                    // individually gated on `activeTab` to avoid cross-tab triggering.
                     terminalContent
                         .opacity(navigationStore.activeTab == .terminal ? 1 : 0)
                         .allowsHitTesting(navigationStore.activeTab == .terminal)
 
-                    if navigationStore.activeTab == .gitChanges {
-                        NavigationStack {
-                            GitChangesView()
-                        }
+                    NavigationStack {
+                        GitChangesView()
                     }
+                    .opacity(navigationStore.activeTab == .gitChanges ? 1 : 0)
+                    .allowsHitTesting(navigationStore.activeTab == .gitChanges)
 
-                    if navigationStore.activeTab == .fileExplorer {
-                        NavigationStack {
-                            FileExplorerView()
-                        }
+                    NavigationStack {
+                        FileExplorerView()
                     }
+                    .opacity(navigationStore.activeTab == .fileExplorer ? 1 : 0)
+                    .allowsHitTesting(navigationStore.activeTab == .fileExplorer)
 
-                    if navigationStore.activeTab == .deployments {
-                        NavigationStack {
-                            DeploymentPanelView()
-                        }
+                    NavigationStack {
+                        DeploymentPanelView()
                     }
+                    .opacity(navigationStore.activeTab == .deployments ? 1 : 0)
+                    .allowsHitTesting(navigationStore.activeTab == .deployments)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
 
