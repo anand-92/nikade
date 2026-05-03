@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 struct ContentView: View {
@@ -86,6 +87,9 @@ struct ContentView: View {
             guard let id = notification.userInfo?["id"] as? String else { return }
             navigationStore.openDeployment(id: id, deploymentStore: deploymentStore, projectStore: projectStore)
         }
+        .onChange(of: navigationStore.activeTab) { _, _ in
+            resignFirstResponderForTabSwitch()
+        }
     }
 
     @ViewBuilder
@@ -111,6 +115,13 @@ struct ContentView: View {
             ProgressView("Initializing terminal...")
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
+    }
+
+    @MainActor
+    private func resignFirstResponderForTabSwitch() {
+        guard let window = NSApp.keyWindow else { return }
+        window.endEditing(for: nil)
+        window.makeFirstResponder(nil)
     }
 }
 

@@ -29,12 +29,7 @@ struct GitChangesView: View {
             diffPanel
         }
         .onAppear {
-            store.startIfNeeded()
-        }
-        .onChange(of: projectStore.activeProjectID) { _, _ in
-            if let url = projectStore.activeProjectURL {
-                store.setPreferredDirectory(url)
-            }
+            syncRepositoryIfActive()
         }
         .onChange(of: store.selectedChange?.id) { _, _ in
             expandedHunks.removeAll()
@@ -45,6 +40,12 @@ struct GitChangesView: View {
         } message: { action in
             Text(confirmationMessage(for: action))
         }
+    }
+
+    private func syncRepositoryIfActive() {
+        guard navigationStore.activeTab == .gitChanges else { return }
+        guard let url = projectStore.activeProjectURL else { return }
+        store.setPreferredDirectory(url)
     }
 
     // MARK: - Left Top: Changes Panel
