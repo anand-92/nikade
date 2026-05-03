@@ -31,6 +31,13 @@ class TerminalScrollView: NSView {
         addSubview(terminalView)
         addSubview(scroller)
 
+        scroller.onScrollRequest = { [weak self] position in
+            self?.scrollToPosition(position)
+        }
+        scroller.onInteractionChange = { [weak self] active in
+            self?.setScrollerInteractionActive(active)
+        }
+
         // Accept file/URL/text drops on this top-level view (SwiftUI hosts this directly)
         registerForDraggedTypes([.fileURL, .URL, .string])
     }
@@ -86,16 +93,43 @@ class TerminalScrollView: NSView {
     }
 
     private var scrollerFadeTimer: Timer?
+    private var scrollerInteractionActive = false
 
     private func showScrollerTemporarily() {
         scroller.alphaValue = 0.7
         scrollerFadeTimer?.invalidate()
+        // While the user is dragging, keep the indicator visible indefinitely.
+        guard !scrollerInteractionActive else { return }
         scrollerFadeTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: false) { [weak self] _ in
             NSAnimationContext.runAnimationGroup { ctx in
                 ctx.duration = 0.3
                 self?.scroller.animator().alphaValue = 0
             }
         }
+    }
+
+    /// Called by ScrollIndicatorView during mouseDown/mouseUp so we can suspend fade.
+    private func setScrollerInteractionActive(_ active: Bool) {
+        scrollerInteractionActive = active
+        if active {
+            scrollerFadeTimer?.invalidate()
+            scroller.alphaValue = 0.7
+        } else {
+            // Restart the fade countdown after the drag ends.
+            showScrollerTemporarily()
+        }
+    }
+
+    /// Converts a fractional position [0, 1] into a scrollback row and forwards
+    /// to ghostty via the scroll_to_row binding action.
+    /// position=0 → top of scrollback, position=1 → live viewport.
+    private func scrollToPosition(_ position: CGFloat) {
+        guard let state = scrollbarState,
+              state.total > state.len else { return }
+        let maxOffset = state.total - state.len
+        let clamped = max(0, min(1, position))
+        let row = UInt64((CGFloat(maxOffset) * clamped).rounded())
+        terminalView.performBindingAction("scroll_to_row:\(row)")
     }
 
     func setTerminalVisibility(_ isVisible: Bool) {
@@ -148,10 +182,21 @@ class TerminalScrollView: NSView {
 
 /// Custom scroll indicator that draws a rounded bar.
 /// NSScroller doesn't render its knob correctly without an NSScrollView parent,
-/// so we draw our own minimal indicator.
+/// so we draw our own minimal indicator. Supports click-to-jump and knob dragging.
 class ScrollIndicatorView: NSView {
     private var proportion: CGFloat = 1
     private var position: CGFloat = 0
+
+    /// Called when the user drags the knob or clicks the track.
+    /// Argument is the target position in [0, 1], where 0 = top of scrollback.
+    var onScrollRequest: ((CGFloat) -> Void)?
+    /// Called at mouseDown (true) and mouseUp (false) so the host can suspend fade.
+    var onInteractionChange: ((Bool) -> Void)?
+
+    /// Captured at mouseDown when the click hit the knob itself:
+    /// knob's top-Y in view coords minus the mouseDown Y. Used to preserve the
+    /// mouse-to-knob offset during drag (prevents knob from snapping to cursor).
+    private var dragKnobOffsetY: CGFloat?
 
     override init(frame: NSRect) {
         super.init(frame: frame)
@@ -170,18 +215,79 @@ class ScrollIndicatorView: NSView {
 
     override func draw(_ dirtyRect: NSRect) {
         guard proportion < 1 else { return }
-        let knobHeight = max(bounds.height * proportion, 24)
-        let trackSpace = bounds.height - knobHeight
-        // AppKit is +Y up, but position 0 = top of scrollback.
-        // position=0 → knob at top, position=1 → knob at bottom.
-        let knobY = bounds.height - knobHeight - (trackSpace * position)
-        let knobRect = NSRect(
-            x: 1, y: knobY,
-            width: bounds.width - 2, height: knobHeight
-        )
-        let path = NSBezierPath(roundedRect: knobRect, xRadius: 3, yRadius: 3)
+        let rect = knobRect()
+        let path = NSBezierPath(roundedRect: rect, xRadius: 3, yRadius: 3)
         NSColor.labelColor.withAlphaComponent(0.35).setFill()
         path.fill()
+    }
+
+    // MARK: - Geometry helpers
+
+    /// Returns the knob rect in view coordinates (AppKit, +Y up).
+    private func knobRect() -> NSRect {
+        let knobHeight = max(bounds.height * proportion, 24)
+        let trackSpace = bounds.height - knobHeight
+        // position 0 → top of scrollback → knob at top of track (high Y in AppKit)
+        let knobY = bounds.height - knobHeight - (trackSpace * position)
+        return NSRect(x: 1, y: knobY, width: bounds.width - 2, height: knobHeight)
+    }
+
+    /// Converts a cursor Y (view coords) to a position in [0, 1], given the knob
+    /// height. When `knobTopYAtMouseDown` is provided, preserves the relative offset
+    /// so the knob doesn't jump under the cursor.
+    private func positionForCursorY(_ cursorY: CGFloat, knobOffsetY: CGFloat) -> CGFloat {
+        let knobHeight = knobRect().height
+        let trackSpace = bounds.height - knobHeight
+        guard trackSpace > 0 else { return 0 }
+        // Target knob top-Y, adjusted so the cursor stays at the same spot on the knob.
+        let targetKnobTopY = cursorY + knobOffsetY
+        // Invert: knobY = bounds.height - knobHeight - (trackSpace * position)
+        // => position = (bounds.height - knobHeight - knobY) / trackSpace
+        let pos = (bounds.height - knobHeight - targetKnobTopY) / trackSpace
+        return max(0, min(1, pos))
+    }
+
+    // MARK: - Mouse handling
+
+    override var acceptsFirstResponder: Bool { false }
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+
+    /// Reject hit tests when fully transparent — otherwise the scroller swallows
+    /// clicks even when invisible, blocking the terminal underneath.
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        guard alphaValue > 0.01, proportion < 1 else { return nil }
+        return super.hitTest(point)
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        let p = convert(event.locationInWindow, from: nil)
+        let knob = knobRect()
+
+        if knob.contains(p) {
+            // Click on knob → start drag, preserve cursor offset on the knob.
+            // knobOffsetY = knobTopY - cursorY; adding this back to cursor gives knob top.
+            dragKnobOffsetY = knob.maxY - p.y - knob.height
+            onInteractionChange?(true)
+        } else {
+            // Click on empty track → jump so the knob center lands at cursor,
+            // then enter drag mode anchored there.
+            dragKnobOffsetY = -knob.height / 2
+            let newPos = positionForCursorY(p.y, knobOffsetY: dragKnobOffsetY!)
+            onInteractionChange?(true)
+            onScrollRequest?(newPos)
+        }
+    }
+
+    override func mouseDragged(with event: NSEvent) {
+        guard let offset = dragKnobOffsetY else { return }
+        let p = convert(event.locationInWindow, from: nil)
+        let newPos = positionForCursorY(p.y, knobOffsetY: offset)
+        onScrollRequest?(newPos)
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        dragKnobOffsetY = nil
+        onInteractionChange?(false)
     }
 }
 

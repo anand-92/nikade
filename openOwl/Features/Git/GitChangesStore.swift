@@ -44,6 +44,7 @@ final class GitChangesStore {
     private var commitDetailTask: Task<Void, Never>?
 
     private var preferredDirectory: URL
+    private var openingDirectory: URL?
 
     init(initialDirectory: URL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath, isDirectory: true)) {
         self.preferredDirectory = initialDirectory.standardizedFileURL
@@ -53,9 +54,7 @@ final class GitChangesStore {
         guard !hasStarted else { return }
         hasStarted = true
 
-        Task {
-            await openRepository(at: preferredDirectory)
-        }
+        openPreferredDirectory(preferredDirectory)
     }
 
     func setPreferredDirectory(_ directoryURL: URL) {
@@ -63,8 +62,18 @@ final class GitChangesStore {
         preferredDirectory = standardized
         hasStarted = true
 
+        openPreferredDirectory(standardized)
+    }
+
+    private func openPreferredDirectory(_ directoryURL: URL) {
+        guard openingDirectory != directoryURL else { return }
+        openingDirectory = directoryURL
+
         Task {
-            await openRepository(at: standardized)
+            await openRepository(at: directoryURL)
+            if openingDirectory == directoryURL {
+                openingDirectory = nil
+            }
         }
     }
 

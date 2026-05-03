@@ -533,22 +533,27 @@ class TerminalNSView: NSView {
     }
 
     override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
-        guard let surface else { return false }
         let pb = sender.draggingPasteboard
+        guard let surface else {
+            NSLog("openOwl: [Terminal] performDragOperation rejected — no surface (pane not yet initialized)")
+            return false
+        }
 
         let content: String?
-        if let url = pb.string(forType: .URL) {
-            // Plain URL — escape as-is
-            content = Self.shellEscapedPath(url)
-        } else if let urls = pb.readObjects(forClasses: [NSURL.self], options: [
+        // Check file URLs FIRST: Finder puts both .fileURL (multi) and .URL (single, first only)
+        // on the pasteboard when dragging multiple files. Reading .URL first would discard
+        // all but the first file.
+        if let fileURLs = pb.readObjects(forClasses: [NSURL.self], options: [
             .urlReadingFileURLsOnly: true
-        ]) as? [URL], !urls.isEmpty {
-            // File URLs — full absolute path, shell-escaped
-            content = urls
+        ]) as? [URL], !fileURLs.isEmpty {
+            content = fileURLs
                 .map { $0.standardizedFileURL.path }
                 .uniquedPreservingOrder()
                 .map(Self.shellEscapedPath)
                 .joined(separator: " ")
+        } else if let url = pb.string(forType: .URL) {
+            // Non-file URL (e.g. http://) — escape as-is
+            content = Self.shellEscapedPath(url)
         } else if let str = pb.string(forType: .string) {
             // Plain text — not escaped (user may be pasting a command)
             content = str
@@ -556,7 +561,13 @@ class TerminalNSView: NSView {
             content = nil
         }
 
-        guard let content, !content.isEmpty else { return false }
+        guard let content, !content.isEmpty else {
+            NSLog(
+                "openOwl: [Terminal] performDragOperation rejected — no usable pasteboard content (types=%@)",
+                pb.types?.map(\.rawValue) ?? []
+            )
+            return false
+        }
         window?.makeFirstResponder(self)
         let payload = content + " "
         payload.withCString { cstr in

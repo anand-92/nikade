@@ -136,13 +136,18 @@ struct FileExplorerView: View {
         .onDisappear {
             saveAllDirtyTabs()
         }
+        // Shortcuts are gated on activeTab — without this gate, Cmd+S / Cmd+W
+        // would fire even while the user is on the Terminal tab (the view stays
+        // mounted for @State preservation, see ContentView).
         .background {
-            Button("") { saveCurrentTab() }
-                .keyboardShortcut("s", modifiers: [.command])
-                .hidden()
+            if navigationStore.activeTab == .fileExplorer {
+                Button("") { saveCurrentTab() }
+                    .keyboardShortcut("s", modifiers: [.command])
+                    .hidden()
+            }
         }
         .background {
-            if !openTabs.isEmpty {
+            if navigationStore.activeTab == .fileExplorer, !openTabs.isEmpty {
                 Button("") { closeActiveTab() }
                     .keyboardShortcut("w", modifiers: [.command])
                     .hidden()
@@ -170,12 +175,14 @@ struct FileExplorerView: View {
 
                 Spacer()
 
+                // Cmd+P is registered globally in ContentView; don't re-register here
+                // or SwiftUI will treat it as an ambiguous shortcut when this view stays
+                // mounted across tab switches.
                 Button { store.presentQuickOpen() } label: {
                     Image(systemName: "magnifyingglass").font(AppFonts.secondaryLabel)
                 }
                 .buttonStyle(.plain).help("Quick Open (⌘P)")
                 .accessibilityLabel("Quick Open (⌘P)")
-                .keyboardShortcut("p", modifiers: [.command])
                 .disabled(store.rootNodes.isEmpty)
 
                 Button { store.refreshNow() } label: {
