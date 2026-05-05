@@ -26,12 +26,7 @@ struct DeploymentTrayMenu: View {
         }
 
         Button("Quit openOwl") {
-            for dep in deploymentStore.deployments where !dep.isRemote && dep.status == .running {
-                Task { await deploymentStore.stop(id: dep.id) }
-            }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                NSApp.terminate(nil)
-            }
+            NSApp.terminate(nil)
         }
     }
 

@@ -331,6 +331,12 @@ final class GhosttyAppManager {
         paneSurfaceMap[paneID]
     }
 
+    /// Returns whether libghostty believes quitting would terminate active work.
+    func needsConfirmQuit() -> Bool {
+        guard let app else { return false }
+        return ghostty_app_needs_confirm_quit(app)
+    }
+
     /// Whether the given surface is still registered (i.e. its pane hasn't been
     /// destroyed). Clipboard callbacks check this before calling
     /// `ghostty_surface_complete_clipboard_request` because the `state` pointer

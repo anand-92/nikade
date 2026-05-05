@@ -56,21 +56,27 @@ init_submodule() {
 build_ghosttykit() {
     cd "$GHOSTTY_DIR"
 
-    # ReleaseSafe (default) keeps Zig safety checks in libghostty so that
-    # null-deref / out-of-bounds / overflow trap loudly instead of silently
-    # corrupting state. ReleaseFast on ARM64 macOS will silently read zeros
-    # from a null pointer (issue ghostty-org/ghostty#11899), surfacing as
-    # "chunks of terminal output go missing" with no crash report.
-    # Override with OPTIMIZE=ReleaseFast for maximum throughput once stable.
-    local optimize="${OPTIMIZE:-ReleaseSafe}"
+    # Default to ReleaseFast, matching the v1.0.5 runtime behavior.
+    # ReleaseSafe is useful when diagnosing libghostty memory-safety bugs, but
+    # its safety traps terminate the host app, so keep it opt-in:
+    #   OPTIMIZE=ReleaseSafe ./scripts/setup.sh
+    local optimize="${OPTIMIZE:-ReleaseFast}"
 
     # Get current commit SHA
     local sha
     sha=$(git rev-parse HEAD)
-    # Cache key includes optimize mode — switching modes must not reuse a
-    # binary built with the other mode.
+    # Cache key includes optimize mode so switching modes does not reuse the
+    # wrong binary. For ReleaseFast, keep compatibility with the legacy
+    # unsuffixed cache created before the key included optimize mode.
     local cache_dir="$CACHE_BASE/${sha}-${optimize}"
     local cached_xcframework="$cache_dir/GhosttyKit.xcframework"
+    if [ "$optimize" = "ReleaseFast" ] && [ ! -d "$cached_xcframework" ]; then
+        local legacy_cache_dir="$CACHE_BASE/$sha"
+        if [ -d "$legacy_cache_dir/GhosttyKit.xcframework" ]; then
+            cache_dir="$legacy_cache_dir"
+            cached_xcframework="$cache_dir/GhosttyKit.xcframework"
+        fi
+    fi
 
     # Check cache
     if [ -d "$cached_xcframework" ]; then

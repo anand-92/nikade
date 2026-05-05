@@ -46,6 +46,10 @@
 - 标题追踪：
   - 监听 libghostty `SetTitle/SetTabTitle` action 回调
   - 按目标 surface 映射到 pane，再更新应用内 tab 标题
+- 退出保护：
+  - `Cmd+Q` / App 菜单 Quit / 托盘 Quit 触发 app 退出前，先调用 `ghostty_app_needs_confirm_quit`
+  - 若 libghostty 判断有仍在运行的终端任务，必须弹确认框；取消后 app 和终端任务继续运行
+  - 用户确认 Quit 后才允许 app 退出，终端任务随 app 生命周期结束
 
 ## 技术要点
 
