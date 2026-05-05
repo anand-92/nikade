@@ -303,12 +303,56 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        NSLog("openOwl: applicationWillTerminate")
+        deploymentStore?.terminateRunningLocalDeploymentsForQuit()
         // Stop all security-scoped access sessions so macOS can clean up
         projectStore?.bookmarkStore.stopAll()
     }
 
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        let hasActiveTerminal = ghosttyManager?.needsConfirmQuit() ?? false
+        let hasActiveDeployment = deploymentStore?.hasRunningLocalDeployments() ?? false
+
+        NSLog(
+            "openOwl: applicationShouldTerminate requested terminal=%d deployment=%d",
+            hasActiveTerminal ? 1 : 0,
+            hasActiveDeployment ? 1 : 0
+        )
+
+        guard hasActiveTerminal || hasActiveDeployment else {
+            return .terminateNow
+        }
+
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = "Quit openOwl?"
+        alert.informativeText = quitConfirmationMessage(
+            hasActiveTerminal: hasActiveTerminal,
+            hasActiveDeployment: hasActiveDeployment
+        )
+        alert.addButton(withTitle: "Cancel")
+        alert.addButton(withTitle: "Quit")
+
+        let confirmed = alert.runModal() == .alertSecondButtonReturn
+        NSLog("openOwl: applicationShouldTerminate %@", confirmed ? "confirmed" : "cancelled")
+        return confirmed ? .terminateNow : .terminateCancel
+    }
+
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         false
+    }
+
+    private func quitConfirmationMessage(hasActiveTerminal: Bool, hasActiveDeployment: Bool) -> String {
+        switch (hasActiveTerminal, hasActiveDeployment) {
+        case (true, true):
+            return "Terminal commands and local deployments are still running. Quitting will stop them."
+        case (true, false):
+            return "A terminal command is still running. Quitting will stop it."
+        case (false, true):
+            return "A local deployment is still running. Quitting will stop it."
+        case (false, false):
+            return ""
+        }
     }
 
     private func installLocalKeyMonitor() {

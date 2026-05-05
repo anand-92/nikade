@@ -149,6 +149,29 @@ final class DeploymentStore {
         deployments.contains { $0.status == .running || $0.status == .building }
     }
 
+    func hasRunningLocalDeployments() -> Bool {
+        deployments.contains { !$0.isRemote && ($0.status == .running || $0.status == .building) }
+    }
+
+    func terminateRunningLocalDeploymentsForQuit() {
+        var changed = false
+        for index in deployments.indices {
+            let dep = deployments[index]
+            guard !dep.isRemote, dep.status == .running || dep.status == .building else { continue }
+            let id = deployments[index].id
+            processManager.terminate(id: id)
+            activeStreamIDs.remove(id)
+            consecutiveHealthFailures.removeValue(forKey: id)
+            stopBranchPoll(id: id)
+            deployments[index].status = .stopped
+            deployments[index].pid = nil
+            changed = true
+        }
+        if changed {
+            persist()
+        }
+    }
+
     // MARK: - Create
 
     func createDeployment(

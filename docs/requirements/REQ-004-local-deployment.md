@@ -107,6 +107,8 @@ enum DeploymentStatus: String, Codable {
 - macOS 13+ 可用 `MenuBarExtra`（SwiftUI 原生）
 - 或直接用 `NSStatusBar.system.statusItem` + `NSMenu`（AppKit，兼容性更好）
 - openOwl 主窗口关闭时，如有运行中的部署版本，app 不退出而是驻留托盘
+- `Cmd+Q` / App 菜单 Quit / 托盘 Quit 触发 app 退出前，如果有本地 deployment 正在 `building` 或 `running`，必须弹确认框；取消后 deployment 继续运行
+- 纯远程 health monitor 不阻止退出；用户确认退出后才停止本地 deployment 进程
 
 ### 持久化
 
