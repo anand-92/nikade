@@ -5,7 +5,7 @@ import SwiftUI
 struct GitChangesView: View {
     @Environment(GitChangesStore.self) private var store
     @Environment(ProjectStore.self) private var projectStore
-    @Environment(AppNavigationStore.self) private var navigationStore
+    @Environment(RightDockStore.self) private var rightDockStore
     @State private var confirmationAction: GitConfirmationAction?
     @State private var selectedIDs: Set<String> = []
     @State private var lastClickedID: String?
@@ -43,7 +43,7 @@ struct GitChangesView: View {
     }
 
     private func syncRepositoryIfActive() {
-        guard navigationStore.activeTab == .gitChanges else { return }
+        guard rightDockStore.isExpanded && rightDockStore.activeTab == .git else { return }
         guard let url = projectStore.activeProjectURL else { return }
         store.setPreferredDirectory(url)
     }
@@ -195,11 +195,11 @@ struct GitChangesView: View {
         }
         .padding(.horizontal, AppSpacing.panelPadding)
         .padding(.vertical, 6)
-        // Cmd+Return is gated on activeTab so it doesn't fire while the user is
-        // on another tab — this view stays mounted for @State preservation
-        // (commit message draft, expanded hunks, etc.). See ContentView.
+        // Cmd+Return is gated on right-dock visibility so it doesn't fire while
+        // the dock is closed or showing a different tab — this view stays mounted
+        // for @State preservation (commit message draft, expanded hunks, etc.).
         .background {
-            if navigationStore.activeTab == .gitChanges, commitEnabled {
+            if rightDockStore.isExpanded && rightDockStore.activeTab == .git, commitEnabled {
                 Button("") { store.commit() }
                     .keyboardShortcut(.return, modifiers: [.command])
                     .hidden()

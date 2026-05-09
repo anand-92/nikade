@@ -4,10 +4,17 @@ import Foundation
 
 @Suite("Deployment Recovery & Safety")
 struct DeploymentRecoveryTests {
+    /// DeploymentStore persists to UserDefaults, so prior test runs can pollute
+    /// state across runs. Each batch-recovery test starts from a clean slate.
+    private static let storeKey = "openowl.deployments.store"
+    private static func clearStore() {
+        UserDefaults.standard.removeObject(forKey: storeKey)
+    }
 
     // MARK: - Batch Recovery
 
     @Test @MainActor func recoverRunningDeployments_deadProcess_marksError() {
+        Self.clearStore()
         let store = DeploymentStore()
 
         // Manually inject a deployment that claims to be running with a bogus PID
@@ -24,9 +31,11 @@ struct DeploymentRecoveryTests {
         let recovered = store.deployments.first(where: { $0.id == "d1" })
         #expect(recovered?.status == .error)
         #expect(recovered?.pid == nil)
+        Self.clearStore()
     }
 
     @Test @MainActor func recoverRunningDeployments_stoppedDeployment_unchanged() {
+        Self.clearStore()
         let store = DeploymentStore()
 
         let dep = Deployment(
@@ -40,9 +49,11 @@ struct DeploymentRecoveryTests {
 
         let recovered = store.deployments.first(where: { $0.id == "d2" })
         #expect(recovered?.status == .stopped)
+        Self.clearStore()
     }
 
     @Test @MainActor func recoverRunningDeployments_errorDeployment_unchanged() {
+        Self.clearStore()
         let store = DeploymentStore()
 
         let dep = Deployment(
@@ -56,9 +67,11 @@ struct DeploymentRecoveryTests {
 
         let recovered = store.deployments.first(where: { $0.id == "d3" })
         #expect(recovered?.status == .error)
+        Self.clearStore()
     }
 
     @Test @MainActor func recoverRunningDeployments_multipleDeadProcesses_batchUpdate() {
+        Self.clearStore()
         let store = DeploymentStore()
 
         for i in 0..<5 {
@@ -78,6 +91,7 @@ struct DeploymentRecoveryTests {
             #expect(d?.status == .error, "deployment d\(i) should be .error")
             #expect(d?.pid == nil, "deployment d\(i) pid should be nil")
         }
+        Self.clearStore()
     }
 
     // MARK: - Path Safety

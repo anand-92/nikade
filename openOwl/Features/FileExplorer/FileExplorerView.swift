@@ -71,7 +71,7 @@ struct FileExplorerView: View {
     @Environment(FileExplorerStore.self) private var store
     @Environment(ProjectStore.self) private var projectStore
     @Environment(GitChangesStore.self) private var gitStore
-    @Environment(AppNavigationStore.self) private var navigationStore
+    @Environment(RightDockStore.self) private var rightDockStore
 
     // Tab management
     @State private var openTabs: [EditorTab] = []
@@ -136,18 +136,18 @@ struct FileExplorerView: View {
         .onDisappear {
             saveAllDirtyTabs()
         }
-        // Shortcuts are gated on activeTab — without this gate, Cmd+S / Cmd+W
-        // would fire even while the user is on the Terminal tab (the view stays
-        // mounted for @State preservation, see ContentView).
+        // Shortcuts are gated on right-dock visibility — without this gate, Cmd+S / Cmd+W
+        // would fire even while the dock is closed or showing a different tab (the view
+        // stays mounted for @State preservation, see RightDockView).
         .background {
-            if navigationStore.activeTab == .fileExplorer {
+            if rightDockStore.isExpanded && rightDockStore.activeTab == .files {
                 Button("") { saveCurrentTab() }
                     .keyboardShortcut("s", modifiers: [.command])
                     .hidden()
             }
         }
         .background {
-            if navigationStore.activeTab == .fileExplorer, !openTabs.isEmpty {
+            if rightDockStore.isExpanded && rightDockStore.activeTab == .files, !openTabs.isEmpty {
                 Button("") { closeActiveTab() }
                     .keyboardShortcut("w", modifiers: [.command])
                     .hidden()
@@ -530,7 +530,7 @@ struct FileExplorerView: View {
 
     private func openDiff(_ node: FileExplorerNode) {
         guard !node.isDirectory else { return }
-        navigationStore.navigate(to: .gitChanges)
+        rightDockStore.expand(tab: .git)
         gitStore.openDiff(forFileURL: node.url)
     }
 

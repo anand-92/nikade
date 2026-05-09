@@ -4,88 +4,97 @@ import Foundation
 
 @Suite("AppNavigationStore")
 struct AppNavigationStoreTests {
-
-    // MARK: - navigate(to:)
-
-    @Test @MainActor func navigate_switchesActiveTab() {
-        let store = AppNavigationStore()
-        store.navigate(to: .gitChanges)
-        #expect(store.activeTab == .gitChanges)
-
-        store.navigate(to: .fileExplorer)
-        #expect(store.activeTab == .fileExplorer)
-
-        store.navigate(to: .terminal)
-        #expect(store.activeTab == .terminal)
-
-        store.navigate(to: .deployments)
-        #expect(store.activeTab == .deployments)
-    }
-
-    @Test @MainActor func navigate_persistsToUserDefaults() {
-        let store = AppNavigationStore()
-        store.navigate(to: .gitChanges)
-
-        let saved = UserDefaults.standard.string(forKey: "activeTab")
-        #expect(saved == ViewTab.gitChanges.rawValue)
-
-        // Clean up
-        UserDefaults.standard.removeObject(forKey: "activeTab")
-    }
-
-    @Test @MainActor func navigate_sameTab_noError() {
-        let store = AppNavigationStore()
-        store.navigate(to: .terminal)
-        store.navigate(to: .terminal) // should not crash
-        #expect(store.activeTab == .terminal)
+    private static func clearDockDefaults() {
+        UserDefaults.standard.removeObject(forKey: "openowl.rightDock.isExpanded")
+        UserDefaults.standard.removeObject(forKey: "openowl.rightDock.activeTab")
+        UserDefaults.standard.removeObject(forKey: "openowl.rightDock.width")
     }
 
     // MARK: - openDeployment(id:...)
 
-    @Test @MainActor func openDeployment_switchesToDeploymentsTab() {
-        let navStore = AppNavigationStore()
-        let deployStore = DeploymentStore()
-        let projStore = ProjectStore()
-
-        navStore.navigate(to: .terminal)
-        navStore.openDeployment(id: "nonexistent", deploymentStore: deployStore, projectStore: projStore)
-
-        #expect(navStore.activeTab == .deployments)
-    }
-
     @Test @MainActor func openDeployment_setsSelectedID() {
+        Self.clearDockDefaults()
         let navStore = AppNavigationStore()
         let deployStore = DeploymentStore()
         let projStore = ProjectStore()
+        let dockStore = RightDockStore()
 
-        navStore.openDeployment(id: "deploy-123", deploymentStore: deployStore, projectStore: projStore)
+        navStore.openDeployment(
+            id: "deploy-123",
+            deploymentStore: deployStore,
+            projectStore: projStore,
+            rightDockStore: dockStore
+        )
 
         #expect(deployStore.selectedDeploymentID == "deploy-123")
+        Self.clearDockDefaults()
     }
 
-    // MARK: - init restores from UserDefaults
+    @Test @MainActor func openDeployment_expandsRightDockToDeployTab() {
+        Self.clearDockDefaults()
+        let navStore = AppNavigationStore()
+        let deployStore = DeploymentStore()
+        let projStore = ProjectStore()
+        let dockStore = RightDockStore()
+        #expect(dockStore.isExpanded == false)
 
-    @Test @MainActor func init_restoresSavedTab() {
-        UserDefaults.standard.set(ViewTab.fileExplorer.rawValue, forKey: "activeTab")
-        let store = AppNavigationStore()
-        #expect(store.activeTab == .fileExplorer)
+        navStore.openDeployment(
+            id: "deploy-123",
+            deploymentStore: deployStore,
+            projectStore: projStore,
+            rightDockStore: dockStore
+        )
 
-        // Clean up
-        UserDefaults.standard.removeObject(forKey: "activeTab")
+        #expect(dockStore.isExpanded == true)
+        #expect(dockStore.activeTab == .deploy)
+        Self.clearDockDefaults()
     }
 
-    @Test @MainActor func init_defaultsToTerminal_whenNoSavedValue() {
-        UserDefaults.standard.removeObject(forKey: "activeTab")
-        let store = AppNavigationStore()
-        #expect(store.activeTab == .terminal)
+    @Test @MainActor func openDeployment_existingDeployment_setsSelectedAndOpensTab() {
+        Self.clearDockDefaults()
+        let navStore = AppNavigationStore()
+        let deployStore = DeploymentStore()
+        let projStore = ProjectStore()
+        let dockStore = RightDockStore()
+
+        let dep = Deployment(
+            id: "deploy-1", projectID: "proj-A", name: "test",
+            branch: "main", status: .stopped
+        )
+        deployStore.deployments.append(dep)
+
+        navStore.openDeployment(
+            id: "deploy-1",
+            deploymentStore: deployStore,
+            projectStore: projStore,
+            rightDockStore: dockStore
+        )
+
+        #expect(deployStore.selectedDeploymentID == "deploy-1")
+        #expect(dockStore.activeTab == .deploy)
+        #expect(dockStore.isExpanded == true)
+        Self.clearDockDefaults()
     }
 
-    @Test @MainActor func init_defaultsToTerminal_whenInvalidSavedValue() {
-        UserDefaults.standard.set("invalid_tab", forKey: "activeTab")
-        let store = AppNavigationStore()
-        #expect(store.activeTab == .terminal)
+    @Test @MainActor func openDeployment_unknownDeployment_stillSetsSelected() {
+        Self.clearDockDefaults()
+        let navStore = AppNavigationStore()
+        let deployStore = DeploymentStore()
+        let projStore = ProjectStore()
+        let dockStore = RightDockStore()
 
-        // Clean up
-        UserDefaults.standard.removeObject(forKey: "activeTab")
+        navStore.openDeployment(
+            id: "missing-id",
+            deploymentStore: deployStore,
+            projectStore: projStore,
+            rightDockStore: dockStore
+        )
+
+        // Even when no matching deployment exists, the tray-menu flow still expects
+        // the deploy tab to surface so the user can see the (empty) selection.
+        #expect(deployStore.selectedDeploymentID == "missing-id")
+        #expect(dockStore.activeTab == .deploy)
+        #expect(dockStore.isExpanded == true)
+        Self.clearDockDefaults()
     }
 }

@@ -9,6 +9,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     weak var navigationStore: AppNavigationStore?
     weak var deploymentStore: DeploymentStore?
     weak var projectStore: ProjectStore?
+    weak var rightDockStore: RightDockStore?
     private var localKeyMonitor: Any?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -225,19 +226,21 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func menuShowTerminal() {
-        navigationStore?.navigate(to: .terminal)
+        // Terminal owns the center view — only action needed is to drop fullscreen
+        // if the right dock is currently masking it.
+        rightDockStore?.isFullscreen = false
     }
 
     @objc private func menuShowGit() {
-        navigationStore?.navigate(to: .gitChanges)
+        rightDockStore?.expand(tab: .git)
     }
 
     @objc private func menuShowFiles() {
-        navigationStore?.navigate(to: .fileExplorer)
+        rightDockStore?.expand(tab: .files)
     }
 
     @objc private func menuShowDeploy() {
-        navigationStore?.navigate(to: .deployments)
+        rightDockStore?.expand(tab: .deploy)
     }
 
     @objc private func menuQuickOpen() {
@@ -256,7 +259,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     // NSMenuItemValidation is implicitly conformed via NSObject
 
     @objc func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
-        let terminalOnly = navigationStore?.activeTab == .terminal
+        // Terminal occupies the center area unless the right dock is fullscreen.
+        let terminalOnly = !(rightDockStore?.isFullscreen ?? false)
         // Menu key-equivalents run before NSEvent local monitors. The firstResponder
         // guard must match handleLocalKeyDown so shortcuts don't fire when the search
         // TextField (or any other non-terminal control) has focus.
@@ -414,13 +418,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             let tabs = projectStore.orderedProjectTabs
             let index = tabNumber - 1
             guard index < tabs.count else { return true }
-            navigationStore?.navigate(to: .terminal)
+            // Switching projects with Cmd+1..9 should also surface the terminal.
+            rightDockStore?.isFullscreen = false
             projectStore.activateProject(id: tabs[index].id)
             return true
         }
 
-        // All other terminal shortcuts only work when terminal is active
-        guard navigationStore?.activeTab == .terminal else { return false }
+        // All other terminal shortcuts only work when the terminal is visible
+        // (i.e. right dock is not currently in fullscreen mode).
+        guard !(rightDockStore?.isFullscreen ?? false) else { return false }
 
         // Cmd+Shift+Return: toggle maximize/restore current pane (terminal tab only)
         if flags == [.command, .shift], event.keyCode == 36 {

@@ -324,6 +324,12 @@ indirect enum TerminalSplitNode: Equatable {
     }
 }
 
+/// Terminal tabs and panes are grouped by namespace — either a project (worktree)
+/// or a free terminal. Same shape as `ActiveKind` from the sidebar layer; the
+/// alias keeps the meaning explicit at the terminal-store boundary while sharing
+/// the underlying enum so callers can pass values across both layers cleanly.
+typealias TerminalNamespace = ActiveKind
+
 @MainActor
 @Observable
 final class TerminalWorkspaceStore {
@@ -354,38 +360,59 @@ final class TerminalWorkspaceStore {
     private(set) var paneBellStates: [UUID: Date] = [:]
 
 
-    // Per-project terminal tracking
-    private(set) var activeProjectID: String?
-    private var tabProjectMap: [UUID: String] = [:]  // tabID → projectID
+    // Per-namespace terminal tracking. A namespace is either a project (worktree)
+    // or a free terminal — see ProjectStore.ActiveKind for the same idea at the
+    // sidebar layer. Surfaces themselves remain flat (paneID-keyed).
+    private(set) var activeNamespace: TerminalNamespace?
+    private var tabNamespaceMap: [UUID: TerminalNamespace] = [:]
 
+    /// Backwards-compatible accessor: returns the active project id, or nil when a
+    /// free terminal namespace is active.
+    var activeProjectID: String? {
+        if case .project(let id) = activeNamespace { return id }
+        return nil
+    }
+
+    /// Switch to a project namespace by id. nil clears the active namespace.
+    /// Convenience wrapper; equivalent to `switchNamespace(.project(id))` for non-nil ids.
     func switchProject(_ projectID: String?) {
-        activeProjectID = projectID
-        maximizedPaneID = nil  // Reset maximize when switching projects
-        // Clear stale drag state: dragging a pane then switching project would leave
-        // the ContentShape overlay on every non-source pane in the new project's tab.
+        if let id = projectID {
+            switchNamespace(.project(id))
+        } else {
+            switchNamespace(nil)
+        }
+    }
+
+    /// Switch the visible namespace. Drops drag state and creates an initial tab if needed.
+    func switchNamespace(_ namespace: TerminalNamespace?) {
+        activeNamespace = namespace
+        maximizedPaneID = nil  // Reset maximize when switching namespaces
+        // Clear stale drag state: dragging a pane then switching namespace would leave
+        // the ContentShape overlay on every non-source pane in the new namespace's tab.
         draggingPaneID = nil
         dragOverPaneID = nil
         dropZone = nil
 
-        // Create initial tab if project has none
-        let projectTabs = tabs.filter { tabProjectMap[$0.id] == projectID }
-        if projectTabs.isEmpty, let projectID {
-            _ = newTab(forProject: projectID)
-        } else if let firstTab = projectTabs.first {
+        // Create initial tab if namespace has none
+        guard let namespace else { return }
+        let nsTabs = tabs.filter { tabNamespaceMap[$0.id] == namespace }
+        if nsTabs.isEmpty {
+            _ = newTab(for: namespace)
+        } else if let firstTab = nsTabs.first {
             activeTabID = firstTab.id
         }
     }
 
-    /// Tabs for the currently active project
+    /// Tabs for the currently active namespace
     var visibleTabs: [TerminalTabState] {
-        guard let activeProjectID else { return tabs }
-        return tabs.filter { tabProjectMap[$0.id] == activeProjectID }
+        guard let activeNamespace else { return tabs }
+        return tabs.filter { tabNamespaceMap[$0.id] == activeNamespace }
     }
 
-    /// Check if a tab belongs to the active project
+    /// Check if a tab belongs to the active namespace
     func isTabVisible(_ tabID: UUID) -> Bool {
-        guard let activeProjectID else { return true }
-        return tabProjectMap[tabID] == activeProjectID
+        guard let activeNamespace else { return true }
+        return tabNamespaceMap[tabID] == activeNamespace
     }
 
     func ensureInitialTab() {
@@ -393,23 +420,32 @@ final class TerminalWorkspaceStore {
         _ = newTab()
     }
 
+    /// Legacy convenience overload — wraps the namespace-based variant for callers
+    /// that still think in terms of project ids.
     @discardableResult
-    func newTab(makeActive: Bool = true, forProject projectID: String? = nil) -> UUID {
+    func newTab(makeActive: Bool = true, forProject projectID: String) -> UUID {
+        newTab(makeActive: makeActive, for: .project(projectID))
+    }
+
+    @discardableResult
+    func newTab(makeActive: Bool = true, for namespace: TerminalNamespace? = nil) -> UUID {
         let paneID = UUID()
         let tabID = UUID()
-        let ownerProject = projectID ?? activeProjectID
+        let owner = namespace ?? activeNamespace
 
-        // Number tabs per project: Tab 1, Tab 2, etc.
-        let projectTabCount = tabs.filter { tabProjectMap[$0.id] == ownerProject }.count
+        // Number tabs per namespace: Tab 1, Tab 2, etc.
+        let nsTabCount = tabs.filter { tabNamespaceMap[$0.id] == owner }.count
         let tab = TerminalTabState(
             id: tabID,
-            title: "Tab \(projectTabCount + 1)",
+            title: "Tab \(nsTabCount + 1)",
             splitTree: .leaf(paneID),
             focusedPaneID: paneID
         )
 
         tabs.append(tab)
-        tabProjectMap[tabID] = ownerProject
+        if let owner {
+            tabNamespaceMap[tabID] = owner
+        }
 
         if makeActive {
             activeTabID = tabID
@@ -466,7 +502,7 @@ final class TerminalWorkspaceStore {
                 paneBellStates.removeValue(forKey: pID)
                 paneSearchStates.removeValue(forKey: pID)
             }
-            tabProjectMap.removeValue(forKey: removedTab.id)
+            tabNamespaceMap.removeValue(forKey: removedTab.id)
             tabs.remove(at: index)
 
             // Switch to next visible tab for this project
@@ -683,8 +719,12 @@ final class TerminalWorkspaceStore {
 
     /// Pane info for a specific project (used by Sidebar).
     func paneInfos(for projectID: String) -> [PaneInfo] {
-        let projectTabs = tabs.filter { tabProjectMap[$0.id] == projectID }
-        return projectTabs.flatMap { tab in
+        paneInfos(for: .project(projectID))
+    }
+
+    func paneInfos(for namespace: TerminalNamespace) -> [PaneInfo] {
+        let nsTabs = tabs.filter { tabNamespaceMap[$0.id] == namespace }
+        return nsTabs.flatMap { tab in
             tab.splitTree.allPaneIDs.map { paneID in
                 PaneInfo(
                     paneID: paneID,
@@ -699,9 +739,13 @@ final class TerminalWorkspaceStore {
     /// Bell count for a project — lightweight alternative to paneInfos(for:).filter(\.hasBell).count.
     /// Only reads tabs and paneBellStates (not paneTitles), reducing observation dependencies.
     func bellCount(for projectID: String) -> Int {
-        let projectTabs = tabs.filter { tabProjectMap[$0.id] == projectID }
+        bellCount(for: .project(projectID))
+    }
+
+    func bellCount(for namespace: TerminalNamespace) -> Int {
+        let nsTabs = tabs.filter { tabNamespaceMap[$0.id] == namespace }
         var count = 0
-        for tab in projectTabs {
+        for tab in nsTabs {
             for paneID in tab.splitTree.allPaneIDs where paneBellStates[paneID] != nil {
                 count += 1
             }

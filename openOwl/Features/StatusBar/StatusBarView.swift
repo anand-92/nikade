@@ -4,7 +4,7 @@ import SwiftUI
 /// 28pt 高度，左侧 Git branch + 文件变更数，右侧文件/终端信息。
 struct StatusBarView: View {
     @Environment(GitChangesStore.self) private var gitStore
-    @Environment(AppNavigationStore.self) private var navigationStore
+    @Environment(RightDockStore.self) private var rightDockStore
     @Environment(ProjectStore.self) private var projectStore
     @Environment(FileExplorerStore.self) private var fileExplorerStore
 
@@ -24,17 +24,25 @@ struct StatusBarView: View {
             MetalStatsView()
             #endif
 
-            // 右侧：根据当前 tab 显示不同信息
+            // 右侧：根据当前可见区域显示不同信息
             StatusBarContextInfo(
-                activeTab: navigationStore.activeTab,
-                selectedFileName: fileExplorerStore.selectedNode?.name,
-                terminalPaneCount: nil
+                visibleArea: visibleArea,
+                selectedFileName: fileExplorerStore.selectedNode?.name
             )
         }
         .padding(.horizontal, 10)
         .padding(.top, 1)
         .frame(height: Self.height)
         .background(.bar)
+    }
+
+    private var visibleArea: StatusBarVisibleArea {
+        guard rightDockStore.isExpanded else { return .terminal }
+        switch rightDockStore.activeTab {
+        case .files: return .files
+        case .git: return .git
+        case .deploy: return .deploy
+        }
     }
 
     private var totalChangesCount: Int {
@@ -77,14 +85,20 @@ private struct StatusBarBranchLabel: View {
 
 // MARK: - Context Info (右侧)
 
+enum StatusBarVisibleArea {
+    case terminal
+    case git
+    case files
+    case deploy
+}
+
 private struct StatusBarContextInfo: View {
-    let activeTab: ViewTab
+    let visibleArea: StatusBarVisibleArea
     let selectedFileName: String?
-    let terminalPaneCount: Int?
 
     var body: some View {
         HStack(spacing: 6) {
-            switch activeTab {
+            switch visibleArea {
             case .terminal:
                 Image(systemName: "terminal")
                     .font(AppFonts.toolbarIcon)
@@ -93,7 +107,7 @@ private struct StatusBarContextInfo: View {
                     .font(AppFonts.statusBar)
                     .foregroundStyle(.tertiary)
 
-            case .gitChanges:
+            case .git:
                 Image(systemName: "arrow.triangle.pull")
                     .font(AppFonts.toolbarIcon)
                     .foregroundStyle(.tertiary)
@@ -101,7 +115,7 @@ private struct StatusBarContextInfo: View {
                     .font(AppFonts.statusBar)
                     .foregroundStyle(.tertiary)
 
-            case .fileExplorer:
+            case .files:
                 if let name = selectedFileName {
                     Image(systemName: "doc")
                         .font(AppFonts.toolbarIcon)
@@ -112,7 +126,7 @@ private struct StatusBarContextInfo: View {
                         .lineLimit(1)
                 }
 
-            case .deployments:
+            case .deploy:
                 Image(systemName: "shippingbox")
                     .font(AppFonts.toolbarIcon)
                     .foregroundStyle(.tertiary)

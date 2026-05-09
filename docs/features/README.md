@@ -20,6 +20,8 @@
 | 004 | 文件浏览器 | ✅ Done | [004-file-explorer.md](004-file-explorer.md) |
 | 005 | 本地部署服务 | ✅ Done | [005-local-deployment.md](005-local-deployment.md) |
 | 006 | 项目管理侧边栏 | ✅ Done | [006-project-sidebar.md](006-project-sidebar.md) |
+| 007 | UI 设计系统 | ✅ Done | [007-ui-design-system.md](007-ui-design-system.md) |
+| 008 | Right Dock + 独立 Terminals | ✅ Done | [008-right-dock.md](008-right-dock.md) |
 
 ## 分类
 
@@ -43,6 +45,7 @@
 ### 基础设施 (Infrastructure)
 
 - [006-project-sidebar.md](006-project-sidebar.md) — 项目列表、Worktree 管理、持久化
+- [008-right-dock.md](008-right-dock.md) — 右侧可折叠 inspector + 独立 free terminals + ContentView 三栏布局
 
 ## 依赖关系
 
@@ -60,3 +63,4 @@
 | 日期 | 说明 |
 |------|------|
 | 2026-03-16 | 创建索引，补全 001–006 功能文档 |
+| 2026-05-07 | 加入 008 Right Dock + 独立 Terminals（实现完成） |

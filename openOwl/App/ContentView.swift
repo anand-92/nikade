@@ -7,56 +7,52 @@ struct ContentView: View {
     @Environment(FileExplorerStore.self) var fileExplorerStore
     @Environment(DeploymentStore.self) var deploymentStore
     @Environment(ProjectStore.self) var projectStore
+    @Environment(RightDockStore.self) var rightDockStore
 
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
 
     var body: some View {
-        @Bindable var navigationStore = navigationStore
         NavigationSplitView(columnVisibility: $columnVisibility) {
             SidebarView()
                 .navigationSplitViewColumnWidth(min: 180, ideal: 250, max: 500)
         } detail: {
-            VStack(spacing: 0) {
-                ZStack {
-                    // All four tabs stay mounted so their @State survives tab switches
-                    // (editor tabs, commit message draft, scroll positions, etc.).
-                    // Visibility is controlled by opacity + allowsHitTesting, matching
-                    // the Terminal tab pattern. Shortcut bindings inside each view are
-                    // individually gated on `activeTab` to avoid cross-tab triggering.
-                    terminalContent
-                        .opacity(navigationStore.activeTab == .terminal ? 1 : 0)
-                        .allowsHitTesting(navigationStore.activeTab == .terminal)
+            GeometryReader { geo in
+                VStack(spacing: 0) {
+                    HStack(spacing: 0) {
+                        // Terminal — center area. Hidden when the right dock is
+                        // fullscreen but kept mounted (no surface destroy) so its
+                        // shell processes keep running in the background.
+                        terminalContent
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            .frame(width: rightDockStore.isFullscreen ? 0 : nil)
+                            .clipped()
 
-                    NavigationStack {
-                        GitChangesView()
-                    }
-                    .opacity(navigationStore.activeTab == .gitChanges ? 1 : 0)
-                    .allowsHitTesting(navigationStore.activeTab == .gitChanges)
+                        if rightDockStore.isExpanded {
+                            Divider()
 
-                    NavigationStack {
-                        FileExplorerView()
+                            RightDockView(hostWidth: geo.size.width)
+                                .frame(
+                                    width: rightDockStore.isFullscreen
+                                        ? max(0, geo.size.width)
+                                        : rightDockStore.width
+                                )
+                                .frame(maxHeight: .infinity)
+                        }
                     }
-                    .opacity(navigationStore.activeTab == .fileExplorer ? 1 : 0)
-                    .allowsHitTesting(navigationStore.activeTab == .fileExplorer)
 
-                    NavigationStack {
-                        DeploymentPanelView()
-                    }
-                    .opacity(navigationStore.activeTab == .deployments ? 1 : 0)
-                    .allowsHitTesting(navigationStore.activeTab == .deployments)
+                    Divider()
+
+                    StatusBarView()
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-
-                Divider()
-
-                StatusBarView()
+                .background(AppPalette.base)
             }
-            .background(AppPalette.base)
         }
         .navigationSplitViewStyle(.balanced)
         .toolbar {
-            ToolbarItemGroup(placement: .principal) {
-                ViewTabBar(activeTab: $navigationStore.activeTab)
+            if !rightDockStore.isExpanded {
+                ToolbarItemGroup(placement: .primaryAction) {
+                    RightDockToolbarButtons()
+                }
             }
         }
         .navigationTitle("")
@@ -85,9 +81,17 @@ struct ContentView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: .openDeployment)) { notification in
             guard let id = notification.userInfo?["id"] as? String else { return }
-            navigationStore.openDeployment(id: id, deploymentStore: deploymentStore, projectStore: projectStore)
+            navigationStore.openDeployment(
+                id: id,
+                deploymentStore: deploymentStore,
+                projectStore: projectStore,
+                rightDockStore: rightDockStore
+            )
         }
-        .onChange(of: navigationStore.activeTab) { _, _ in
+        .onChange(of: rightDockStore.activeTab) { _, _ in
+            resignFirstResponderForTabSwitch()
+        }
+        .onChange(of: rightDockStore.isExpanded) { _, _ in
             resignFirstResponderForTabSwitch()
         }
     }
@@ -97,7 +101,7 @@ struct ContentView: View {
         if ghosttyManager.isReady {
             TerminalWorkspaceView(
                 ghosttyApp: ghosttyManager.app!,
-                isVisible: navigationStore.activeTab == .terminal
+                isVisible: !rightDockStore.isFullscreen
             )
         } else if let error = ghosttyManager.error {
             VStack(spacing: 12) {
@@ -125,63 +129,37 @@ struct ContentView: View {
     }
 }
 
-// MARK: - View Tab Bar
+// MARK: - Right Dock Toolbar Buttons
 
-private struct ViewTabBar: View {
-    @Binding var activeTab: ViewTab
-    @Namespace private var tabNamespace
+/// Three toggle buttons for the right dock (Files / Git / Deploy).
+/// Tap behavior is delegated to RightDockStore.toggle(tab:).
+private struct RightDockToolbarButtons: View {
+    @Environment(RightDockStore.self) private var rightDockStore
 
     var body: some View {
         HStack(spacing: 2) {
-            ForEach(ViewTab.allCases) { tab in
-                let isActive = activeTab == tab
-
+            ForEach(RightDockTab.allCases) { tab in
+                let isActive = rightDockStore.isExpanded && rightDockStore.activeTab == tab
                 Button {
-                    withAnimation(.easeInOut(duration: 0.2)) {
-                        activeTab = tab
-                    }
+                    rightDockStore.toggle(tab: tab)
                 } label: {
-                    tabLabel(tab, isActive: isActive)
+                    Image(systemName: tab.systemImage)
+                        .font(AppFonts.toolbarIcon)
+                        .foregroundStyle(isActive ? AnyShapeStyle(.tint) : AnyShapeStyle(.secondary))
                 }
                 .buttonStyle(.plain)
+                .help(tab.title)
+                .accessibilityLabel(tab.title)
+                .keyboardShortcut(shortcutKey(for: tab), modifiers: [.command])
             }
         }
     }
 
-    @ViewBuilder
-    private func tabLabel(_ tab: ViewTab, isActive: Bool) -> some View {
-        if #available(macOS 26, *) {
-            HStack(spacing: 4) {
-                Image(systemName: tab.systemImage)
-                    .font(AppFonts.toolbarIcon)
-                Text(tab.title)
-                    .font(AppFonts.body.weight(isActive ? .semibold : .regular))
-            }
-            .foregroundStyle(isActive ? .primary : .secondary)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 4)
-            .glassEffect(isActive ? .regular.tint(.accentColor) : .identity, in: .capsule)
-        } else {
-            VStack(spacing: 4) {
-                HStack(spacing: 4) {
-                    Image(systemName: tab.systemImage)
-                        .font(AppFonts.toolbarIcon)
-                    Text(tab.title)
-                        .font(AppFonts.body.weight(isActive ? .semibold : .regular))
-                }
-                .foregroundStyle(isActive ? .primary : .secondary)
-
-                if isActive {
-                    Capsule()
-                        .fill(AppPalette.accent)
-                        .frame(height: 2)
-                        .matchedGeometryEffect(id: "indicator", in: tabNamespace)
-                } else {
-                    Color.clear.frame(height: 2)
-                }
-            }
-            .fixedSize()
-            .padding(.horizontal, 10)
+    private func shortcutKey(for tab: RightDockTab) -> KeyEquivalent {
+        switch tab {
+        case .files: return "1"
+        case .git: return "2"
+        case .deploy: return "3"
         }
     }
 }

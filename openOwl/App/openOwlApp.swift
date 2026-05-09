@@ -12,6 +12,7 @@ struct openOwlApp: App {
     @State private var fileExplorerStore = FileExplorerStore()
     @State private var deploymentStore = DeploymentStore()
     @State private var claudeStatusStore = ClaudeStatusStore()
+    @State private var rightDockStore = RightDockStore()
 
     init() {
         Self.setupEnvironment()
@@ -36,6 +37,7 @@ struct openOwlApp: App {
                 .environment(fileExplorerStore)
                 .environment(deploymentStore)
                 .environment(claudeStatusStore)
+                .environment(rightDockStore)
                 .onAppear {
                     // Apply saved appearance preference (system/light/dark)
                     NSApp.appearance = AppAppearance.current.nsAppearance
@@ -45,6 +47,7 @@ struct openOwlApp: App {
                     appDelegate.navigationStore = navigationStore
                     appDelegate.deploymentStore = deploymentStore
                     appDelegate.projectStore = projectStore
+                    appDelegate.rightDockStore = rightDockStore
                     deploymentStore.recoverRunningDeployments()
                     workspaceStore.destroyPaneHandler = { [weak ghosttyManager] paneID in
                         ghosttyManager?.destroyPane(paneID)
@@ -53,7 +56,8 @@ struct openOwlApp: App {
                         workspaceStore.updateTitle(for: paneID, title: title)
                     }
                     ghosttyManager.onPaneBell = { paneID in
-                        let isTerminalVisible = navigationStore.activeTab == .terminal
+                        // Terminal occupies the center area unless the right dock is fullscreen.
+                        let isTerminalVisible = !rightDockStore.isFullscreen
                         workspaceStore.handleBell(paneID: paneID, isTerminalVisible: isTerminalVisible)
 
                         // System-level feedback: sound, dock bounce, notification
@@ -98,7 +102,13 @@ struct openOwlApp: App {
                 .onChange(of: projectStore.activeProjectID) { _, _ in
                     syncActiveProjectContext()
                 }
-                .onChange(of: navigationStore.activeTab) { _, _ in
+                .onChange(of: projectStore.activeFreeTerminalID) { _, _ in
+                    syncActiveProjectContext()
+                }
+                .onChange(of: rightDockStore.isExpanded) { _, _ in
+                    syncActiveProjectContext()
+                }
+                .onChange(of: rightDockStore.activeTab) { _, _ in
                     syncActiveProjectContext()
                 }
                 .onChange(of: gitChangesStore.statusSnapshot?.branch) { _, _ in
@@ -192,18 +202,28 @@ struct openOwlApp: App {
 
     @MainActor
     private func syncActiveProjectContext() {
-        guard let projectURL = projectStore.activeProjectURL,
-              let activeID = projectStore.activeProjectID else { return }
+        // Terminal namespace follows the sidebar selection — projects bind to their
+        // working directory, free terminals share the user's home as cwd.
+        switch projectStore.activeKind {
+        case .project(let id):
+            workspaceStore.switchNamespace(.project(id))
+        case .freeTerminal(let id):
+            workspaceStore.switchNamespace(.freeTerminal(id))
+        case .none:
+            workspaceStore.switchNamespace(nil)
+        }
 
-        // Only refresh the currently visible tab's store
-        switch navigationStore.activeTab {
-        case .terminal:
-            workspaceStore.switchProject(activeID)
-        case .fileExplorer:
+        // Right dock content stores only refresh when their tab is currently
+        // visible AND a project is active (file explorer / git make no sense
+        // for the free-terminal selection).
+        guard let projectURL = projectStore.activeProjectURL,
+              rightDockStore.isExpanded else { return }
+        switch rightDockStore.activeTab {
+        case .files:
             fileExplorerStore.setProject(projectURL)
-        case .gitChanges:
+        case .git:
             gitChangesStore.setPreferredDirectory(projectURL)
-        case .deployments:
+        case .deploy:
             break
         }
     }

@@ -8,7 +8,7 @@ enum DeploymentKind: String, CaseIterable {
 struct CreateDeploymentSheet: View {
     @Environment(DeploymentStore.self) private var deploymentStore
     @Environment(ProjectStore.self) private var projectStore
-    @Environment(AppNavigationStore.self) private var navigationStore
+    @Environment(RightDockStore.self) private var rightDockStore
     @Environment(\.dismiss) private var dismiss
 
     @State private var kind: DeploymentKind = .local
@@ -113,7 +113,7 @@ struct CreateDeploymentSheet: View {
         let finalName = name.trimmingCharacters(in: .whitespaces)
         let finalHealthURL = healthCheckURL.trimmingCharacters(in: .whitespaces)
 
-        navigationStore.navigate(to: .deployments)
+        rightDockStore.expand(tab: .deploy)
         dismiss()
 
         if kind == .remote {

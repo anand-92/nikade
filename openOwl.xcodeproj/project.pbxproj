@@ -12,6 +12,7 @@
 		03E4037BB16E1CAFAD0AAB1A /* GhosttyConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = B9FDFE104B8726AFD0EF477D /* GhosttyConfig.swift */; };
 		05AC7232364220B07F6B1EB0 /* GhosttyApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 73CF89807648285D325F0F65 /* GhosttyApp.swift */; };
 		06EF6FC70AE06D5D9FB2EE60 /* TerminalSurfaceRetentionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 21DD4CFA52278B0DEC5F0003 /* TerminalSurfaceRetentionTests.swift */; };
+		1B7BFF5EEB471D6293891D61 /* RightDockStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 822AB065AB6C224FAF45E116 /* RightDockStore.swift */; };
 		1BD4F2C33F69F3A58B4049E9 /* TerminalSearchTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C041C1F34801BF486A888B46 /* TerminalSearchTests.swift */; };
 		1FF997CAB8DED665808F38C7 /* DeploymentRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF072A1BE1A1B61109C9CBEB /* DeploymentRow.swift */; };
 		23E85236BE44285F65D1E92F /* FileIconsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9F84090706181BCE2FB1AF47 /* FileIconsTests.swift */; };
@@ -19,6 +20,7 @@
 		253B536A97052112FD46B3FF /* GitChangesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F6C7B0DBA130E23B413EA3A8 /* GitChangesView.swift */; };
 		25638B8C67FB225663CCE5A1 /* BookmarkStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6892EC597E859C6C89747657 /* BookmarkStore.swift */; };
 		2F7B5276A453883804B6D37C /* GitCommitParsingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0940CC16A5382882D30EBAFD /* GitCommitParsingTests.swift */; };
+		31283B0E38777563D441B276 /* RightDockStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E6F418362A3D604D87E5F505 /* RightDockStoreTests.swift */; };
 		3140A88752300CC5AE03A433 /* FileExplorerGitPropagationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC7E472A3BF6DAE6E5623511 /* FileExplorerGitPropagationTests.swift */; };
 		353D99F512065C7E8FD7EDFB /* GhosttyInput.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8DE94F3F69D57F740DD9C966 /* GhosttyInput.swift */; };
 		38A6E6284838785F9ABDE4C2 /* SidebarExpandCollapseTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0A3DEDA992E14DF88D81FA8 /* SidebarExpandCollapseTests.swift */; };
@@ -36,6 +38,7 @@
 		56806FF59B6993BEC6BC294E /* TerminalWorkspaceStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4E0BCEA1E40509CACA5F04D /* TerminalWorkspaceStore.swift */; };
 		5729326DB2DB723A977828AB /* AppIcon.icns in Resources */ = {isa = PBXBuildFile; fileRef = 938F89967F54EF40EA4AE7FE /* AppIcon.icns */; };
 		58B0B6ED8636B72C527AE508 /* SplitDiffByFileTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C39D7120D769F3D4DF10E3C6 /* SplitDiffByFileTests.swift */; };
+		5B201E5BFA79E0FA515A4928 /* RightDockView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F2AE87C73C9563DAB9CC396C /* RightDockView.swift */; };
 		5C81D60C2CA89EF4FA785444 /* CreateDeploymentSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7ED9D7B88CF308C9655ACB5D /* CreateDeploymentSheet.swift */; };
 		5CB8CC71803498A3BE67CF5A /* GitService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 61C1A374304AF8134D201B42 /* GitService.swift */; };
 		5E396A11E8647300BD34C2FB /* PanelDivider.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAF45F9E4541BB9F66DC113E /* PanelDivider.swift */; };
@@ -50,6 +53,7 @@
 		788F25C370B576583C54F299 /* WindowAccessor.swift in Sources */ = {isa = PBXBuildFile; fileRef = E8DDBDFCC91E18EF5D1F8EA3 /* WindowAccessor.swift */; };
 		78E88DA5D9EE3022602988FB /* TerminalSplitNodeExtraTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 46C97B681433B80851C4C8B2 /* TerminalSplitNodeExtraTests.swift */; };
 		844E903C02CBCD3540C8A3A9 /* DeploymentStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6E6805352D222E6C3AA08960 /* DeploymentStore.swift */; };
+		87018CD003D1FDF77793E2D9 /* TerminalsSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 68DEE8DDE92BBFB82DCA1183 /* TerminalsSection.swift */; };
 		882EAAE1592A1A4FCB1A169A /* ScrollIndicatorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE6FF0B33095CC35D7533713 /* ScrollIndicatorTests.swift */; };
 		8A11FA4EFF26B2E2418120DE /* FileExplorerErrorHandlingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 10A99EEE47269D739DF84C40 /* FileExplorerErrorHandlingTests.swift */; };
 		9121D7764A3A9AB908307340 /* ghostty-resources in Resources */ = {isa = PBXBuildFile; fileRef = 35BDC16C9BB8A7EF4C33FEE8 /* ghostty-resources */; };
@@ -73,6 +77,7 @@
 		D22473C2BCB4E577E5447A08 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 490E3122E814DA28B0734EF6 /* ContentView.swift */; };
 		D3A330C500889DCBF61B4CA0 /* CodeEditSourceEditor in Frameworks */ = {isa = PBXBuildFile; productRef = AE1D15AD458D2BC516FC7BCE /* CodeEditSourceEditor */; };
 		D8FC95FBDD4287532684B9F3 /* GitChangesStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C602586627CCE3EB2977A5E /* GitChangesStore.swift */; };
+		E1098CD6618647D26578FDDE /* TerminalNamespaceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6E1004748016D278139C0C15 /* TerminalNamespaceTests.swift */; };
 		E26D6EB03ADF4440FEECCD35 /* TerminalPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0C4F7D15DDB411EB83184BAD /* TerminalPanel.swift */; };
 		E2858524718C2F8850AE2DE9 /* BranchNameGeneratorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F5BCF2DFA7863BDF0B13FA97 /* BranchNameGeneratorTests.swift */; };
 		E3A2575D11E17CF509A2CA38 /* FileExplorerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C85221AB69D1FBEA8FB4B809 /* FileExplorerView.swift */; };
@@ -81,6 +86,7 @@
 		EF85B8825B0F808FE105D731 /* EmptyStateView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB19182518A4ECF2CB2EFE7D /* EmptyStateView.swift */; };
 		F00CD343673CE3309A16B710 /* UpdateAlertView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E6BFB8B2686ECAE673F0ACA6 /* UpdateAlertView.swift */; };
 		F043F631A3AD286B260541AB /* SectionTitle.swift in Sources */ = {isa = PBXBuildFile; fileRef = D3F88A4C649AE808F422E1D1 /* SectionTitle.swift */; };
+		F421841496019E108AB5BE60 /* ProjectStoreFreeTerminalsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CFD636CF11DDE806D4503902 /* ProjectStoreFreeTerminalsTests.swift */; };
 		F550C71135677716727CDABC /* MaximizePaneTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F82D68EDEACC74717AAF913C /* MaximizePaneTests.swift */; };
 		F79004DAFFCFE7A81C3C8061 /* OutlineTreeViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 217AE27F0A3DE1C89E12F04E /* OutlineTreeViewController.swift */; };
 		F7A0E506981153607E812058 /* BookmarkStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3EA6C0B7C4F7B3B1E84C0C91 /* BookmarkStoreTests.swift */; };
@@ -135,7 +141,9 @@
 		6607398740E9040BA756684C /* CommitMessageGenerator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommitMessageGenerator.swift; sourceTree = "<group>"; };
 		66514ED81AF24BE4D7AF7529 /* SidebarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SidebarView.swift; sourceTree = "<group>"; };
 		6892EC597E859C6C89747657 /* BookmarkStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BookmarkStore.swift; sourceTree = "<group>"; };
+		68DEE8DDE92BBFB82DCA1183 /* TerminalsSection.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = TerminalsSection.swift; sourceTree = "<group>"; };
 		6D5539E778AB8B17DC618C39 /* ProjectStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProjectStore.swift; sourceTree = "<group>"; };
+		6E1004748016D278139C0C15 /* TerminalNamespaceTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = TerminalNamespaceTests.swift; sourceTree = "<group>"; };
 		6E6805352D222E6C3AA08960 /* DeploymentStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeploymentStore.swift; sourceTree = "<group>"; };
 		7275948704BB7EA41DA98E21 /* ProjectStoreHelpersTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProjectStoreHelpersTests.swift; sourceTree = "<group>"; };
 		73CF89807648285D325F0F65 /* GhosttyApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GhosttyApp.swift; sourceTree = "<group>"; };
@@ -146,6 +154,7 @@
 		7CDAEC5FEAD4C9A90634C404 /* DeploymentCodableTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeploymentCodableTests.swift; sourceTree = "<group>"; };
 		7ED9D7B88CF308C9655ACB5D /* CreateDeploymentSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CreateDeploymentSheet.swift; sourceTree = "<group>"; };
 		7F7EDEF1C67164912B322294 /* DeploymentTrayMenu.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeploymentTrayMenu.swift; sourceTree = "<group>"; };
+		822AB065AB6C224FAF45E116 /* RightDockStore.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = RightDockStore.swift; sourceTree = "<group>"; };
 		8DE94F3F69D57F740DD9C966 /* GhosttyInput.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GhosttyInput.swift; sourceTree = "<group>"; };
 		938F89967F54EF40EA4AE7FE /* AppIcon.icns */ = {isa = PBXFileReference; lastKnownFileType = image.icns; path = AppIcon.icns; sourceTree = "<group>"; };
 		98E3B22B024A5CF89AEF09F0 /* QuickOpenSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuickOpenSheet.swift; sourceTree = "<group>"; };
@@ -167,13 +176,16 @@
 		C39D7120D769F3D4DF10E3C6 /* SplitDiffByFileTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SplitDiffByFileTests.swift; sourceTree = "<group>"; };
 		C4E0BCEA1E40509CACA5F04D /* TerminalWorkspaceStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalWorkspaceStore.swift; sourceTree = "<group>"; };
 		C85221AB69D1FBEA8FB4B809 /* FileExplorerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileExplorerView.swift; sourceTree = "<group>"; };
+		CFD636CF11DDE806D4503902 /* ProjectStoreFreeTerminalsTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ProjectStoreFreeTerminalsTests.swift; sourceTree = "<group>"; };
 		D0A3DEDA992E14DF88D81FA8 /* SidebarExpandCollapseTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SidebarExpandCollapseTests.swift; sourceTree = "<group>"; };
 		D3F88A4C649AE808F422E1D1 /* SectionTitle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SectionTitle.swift; sourceTree = "<group>"; };
 		DB671E763D87E90D400A8ED9 /* TerminalSearchOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalSearchOverlay.swift; sourceTree = "<group>"; };
 		E6BFB8B2686ECAE673F0ACA6 /* UpdateAlertView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UpdateAlertView.swift; sourceTree = "<group>"; };
+		E6F418362A3D604D87E5F505 /* RightDockStoreTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = RightDockStoreTests.swift; sourceTree = "<group>"; };
 		E712E0676CA92A36194A3A3E /* OutlineTreeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OutlineTreeView.swift; sourceTree = "<group>"; };
 		E8DDBDFCC91E18EF5D1F8EA3 /* WindowAccessor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowAccessor.swift; sourceTree = "<group>"; };
 		F24C6950453024B0CD1362DE /* DeploymentRecoveryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeploymentRecoveryTests.swift; sourceTree = "<group>"; };
+		F2AE87C73C9563DAB9CC396C /* RightDockView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = RightDockView.swift; sourceTree = "<group>"; };
 		F55B1F7B1BFEBE824E839A54 /* ProjectStorePersistenceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProjectStorePersistenceTests.swift; sourceTree = "<group>"; };
 		F5BCF2DFA7863BDF0B13FA97 /* BranchNameGeneratorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BranchNameGeneratorTests.swift; sourceTree = "<group>"; };
 		F6C7B0DBA130E23B413EA3A8 /* GitChangesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GitChangesView.swift; sourceTree = "<group>"; };
@@ -223,6 +235,9 @@
 				46C97B681433B80851C4C8B2 /* TerminalSplitNodeExtraTests.swift */,
 				C1ACD5DC9423F0D31646990E /* TerminalSplitNodeTests.swift */,
 				21DD4CFA52278B0DEC5F0003 /* TerminalSurfaceRetentionTests.swift */,
+				E6F418362A3D604D87E5F505 /* RightDockStoreTests.swift */,
+				CFD636CF11DDE806D4503902 /* ProjectStoreFreeTerminalsTests.swift */,
+				6E1004748016D278139C0C15 /* TerminalNamespaceTests.swift */,
 			);
 			path = openOwlTests;
 			sourceTree = "<group>";
@@ -254,6 +269,7 @@
 				954854B95DD331E285589331 /* Sidebar */,
 				F8123DAA52F37FDA88D2F92D /* StatusBar */,
 				A305209820E9D4A628147E13 /* Terminal */,
+				523F2B51C3C192A22E545DBD /* RightDock */,
 			);
 			path = Features;
 			sourceTree = "<group>";
@@ -292,6 +308,15 @@
 				25682E8CB84A6D92095A3762 /* openOwl-Bridging-Header.h */,
 			);
 			path = Ghostty;
+			sourceTree = "<group>";
+		};
+		523F2B51C3C192A22E545DBD /* RightDock */ = {
+			isa = PBXGroup;
+			children = (
+				F2AE87C73C9563DAB9CC396C /* RightDockView.swift */,
+			);
+			name = RightDock;
+			path = RightDock;
 			sourceTree = "<group>";
 		};
 		5A041046B6292B56FDBC5B40 /* Resources */ = {
@@ -333,6 +358,7 @@
 				6892EC597E859C6C89747657 /* BookmarkStore.swift */,
 				6D5539E778AB8B17DC618C39 /* ProjectStore.swift */,
 				66514ED81AF24BE4D7AF7529 /* SidebarView.swift */,
+				68DEE8DDE92BBFB82DCA1183 /* TerminalsSection.swift */,
 			);
 			path = Sidebar;
 			sourceTree = "<group>";
@@ -368,6 +394,7 @@
 				2CB54138411E7B198A089C5F /* openOwlApp.swift */,
 				740A85D83B4812D1CDBD53E0 /* SettingsView.swift */,
 				E6BFB8B2686ECAE673F0ACA6 /* UpdateAlertView.swift */,
+				822AB065AB6C224FAF45E116 /* RightDockStore.swift */,
 			);
 			path = App;
 			sourceTree = "<group>";
@@ -438,8 +465,6 @@
 				5E6007E437D4D5AE53793AE1 /* PBXTargetDependency */,
 			);
 			name = openOwlTests;
-			packageProductDependencies = (
-			);
 			productName = openOwlTests;
 			productReference = AD76AB4DCC030B2D4E99057E /* openOwlTests.xctest */;
 			productType = "com.apple.product-type.bundle.unit-test";
@@ -477,6 +502,7 @@
 				D9D81D1D8CE40E1D3BD6662C /* XCRemoteSwiftPackageReference "CodeEditSourceEditor" */,
 			);
 			preferredProjectObjectVersion = 77;
+			productRefGroup = AE2615A57603A7238B6BE4D3 /* Products */;
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
@@ -529,6 +555,9 @@
 				78E88DA5D9EE3022602988FB /* TerminalSplitNodeExtraTests.swift in Sources */,
 				B6BB3580C221F10DBB012FCA /* TerminalSplitNodeTests.swift in Sources */,
 				06EF6FC70AE06D5D9FB2EE60 /* TerminalSurfaceRetentionTests.swift in Sources */,
+				31283B0E38777563D441B276 /* RightDockStoreTests.swift in Sources */,
+				F421841496019E108AB5BE60 /* ProjectStoreFreeTerminalsTests.swift in Sources */,
+				E1098CD6618647D26578FDDE /* TerminalNamespaceTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -586,6 +615,9 @@
 				BE0A87CA4D3EE71346E578CF /* UpdateChecker.swift in Sources */,
 				788F25C370B576583C54F299 /* WindowAccessor.swift in Sources */,
 				5E3BD234948BA7E23B411AFC /* openOwlApp.swift in Sources */,
+				1B7BFF5EEB471D6293891D61 /* RightDockStore.swift in Sources */,
+				87018CD003D1FDF77793E2D9 /* TerminalsSection.swift in Sources */,
+				5B201E5BFA79E0FA515A4928 /* RightDockView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -606,9 +638,7 @@
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				COMBINE_HIDPI_IMAGES = YES;
 				GENERATE_INFOPLIST_FILE = YES;
-				HEADER_SEARCH_PATHS = (
-					"$(PROJECT_DIR)/GhosttyKit.xcframework/macos-arm64_x86_64/Headers",
-				);
+				HEADER_SEARCH_PATHS = "$(PROJECT_DIR)/GhosttyKit.xcframework/macos-arm64_x86_64/Headers";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
@@ -698,13 +728,9 @@
 				CODE_SIGN_ENTITLEMENTS = openOwl/Resources/openOwl.entitlements;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
-				FRAMEWORK_SEARCH_PATHS = (
-					"$(PROJECT_DIR)",
-				);
+				FRAMEWORK_SEARCH_PATHS = "$(PROJECT_DIR)";
 				GENERATE_INFOPLIST_FILE = YES;
-				HEADER_SEARCH_PATHS = (
-					"$(PROJECT_DIR)/GhosttyKit.xcframework/macos-arm64_x86_64/Headers",
-				);
+				HEADER_SEARCH_PATHS = "$(PROJECT_DIR)/GhosttyKit.xcframework/macos-arm64_x86_64/Headers";
 				INFOPLIST_FILE = openOwl/Resources/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = OpenOwl;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.developer-tools";
@@ -712,9 +738,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				LIBRARY_SEARCH_PATHS = (
-					"$(PROJECT_DIR)/GhosttyKit.xcframework/macos-arm64_x86_64",
-				);
+				LIBRARY_SEARCH_PATHS = "$(PROJECT_DIR)/GhosttyKit.xcframework/macos-arm64_x86_64";
 				MARKETING_VERSION = 1.0.7;
 				OTHER_LDFLAGS = (
 					"-lghostty",
@@ -745,13 +769,9 @@
 				CODE_SIGN_ENTITLEMENTS = openOwl/Resources/openOwl.entitlements;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
-				FRAMEWORK_SEARCH_PATHS = (
-					"$(PROJECT_DIR)",
-				);
+				FRAMEWORK_SEARCH_PATHS = "$(PROJECT_DIR)";
 				GENERATE_INFOPLIST_FILE = YES;
-				HEADER_SEARCH_PATHS = (
-					"$(PROJECT_DIR)/GhosttyKit.xcframework/macos-arm64_x86_64/Headers",
-				);
+				HEADER_SEARCH_PATHS = "$(PROJECT_DIR)/GhosttyKit.xcframework/macos-arm64_x86_64/Headers";
 				INFOPLIST_FILE = openOwl/Resources/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = OpenOwl;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.developer-tools";
@@ -759,9 +779,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				LIBRARY_SEARCH_PATHS = (
-					"$(PROJECT_DIR)/GhosttyKit.xcframework/macos-arm64_x86_64",
-				);
+				LIBRARY_SEARCH_PATHS = "$(PROJECT_DIR)/GhosttyKit.xcframework/macos-arm64_x86_64";
 				MARKETING_VERSION = 1.0.7;
 				OTHER_LDFLAGS = (
 					"-lghostty",
@@ -854,9 +872,7 @@
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				COMBINE_HIDPI_IMAGES = YES;
 				GENERATE_INFOPLIST_FILE = YES;
-				HEADER_SEARCH_PATHS = (
-					"$(PROJECT_DIR)/GhosttyKit.xcframework/macos-arm64_x86_64/Headers",
-				);
+				HEADER_SEARCH_PATHS = "$(PROJECT_DIR)/GhosttyKit.xcframework/macos-arm64_x86_64/Headers";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",

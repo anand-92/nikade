@@ -4,7 +4,7 @@ import SwiftUI
 
 struct QuickOpenPanel: View {
     @Environment(FileExplorerStore.self) private var store
-    @Environment(AppNavigationStore.self) private var navigationStore
+    @Environment(RightDockStore.self) private var rightDockStore
     @Environment(GitChangesStore.self) private var gitStore
     @State private var selectedIndex: Int = 0
     @FocusState private var isSearchFocused: Bool
@@ -120,10 +120,10 @@ struct QuickOpenPanel: View {
         store.dismissQuickOpen()
         // Switch tab FIRST so the target view is in the hierarchy
         if store.isChangedFile(match.node) {
-            navigationStore.navigate(to: .gitChanges)
+            rightDockStore.expand(tab: .git)
             gitStore.openDiff(forFileURL: match.node.url)
         } else {
-            navigationStore.navigate(to: .fileExplorer)
+            rightDockStore.expand(tab: .files)
         }
         // Then select node — FileExplorerView's onChange will fire
         DispatchQueue.main.async {

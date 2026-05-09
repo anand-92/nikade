@@ -26,7 +26,7 @@ struct TerminalWorkspaceView: View {
                         ghosttyApp: ghosttyApp,
                         tab: tab,
                         isWorkspaceVisible: isVisible,
-                        projectPath: projectStore.activeProjectURL?.path
+                        projectPath: cwdForActiveKind()
                     )
                 }
             }
@@ -74,6 +74,20 @@ struct TerminalWorkspaceView: View {
 
         DispatchQueue.main.async {
             _ = ghosttyManager.focusPane(paneID)
+        }
+    }
+
+    /// Resolve the working directory for new panes based on what's selected in the
+    /// sidebar — project-bound panes inherit the project URL, free terminals get
+    /// the user's home directory (matching ghostty's default).
+    private func cwdForActiveKind() -> String? {
+        switch projectStore.activeKind {
+        case .project:
+            return projectStore.activeProjectURL?.path
+        case .freeTerminal:
+            return FileManager.default.homeDirectoryForCurrentUser.path
+        case .none:
+            return nil
         }
     }
 }

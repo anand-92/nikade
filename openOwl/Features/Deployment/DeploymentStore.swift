@@ -116,7 +116,7 @@ struct Deployment: Identifiable, Codable, Hashable {
 @Observable
 final class DeploymentStore {
     // internal setter for @testable import test access
-    private(set) var deployments: [Deployment] = []
+    var deployments: [Deployment] = []
     var selectedDeploymentID: String?
     private(set) var logContent: String = ""
     private(set) var healthStatus: [String: Bool] = [:]  // id → healthy
@@ -499,7 +499,7 @@ final class DeploymentStore {
     // MARK: - Path Safety
 
     /// Only allow deletion of paths within ~/.openowl/deployments/
-    static func isSafeDeploymentPath(_ url: URL) -> Bool {
+    nonisolated static func isSafeDeploymentPath(_ url: URL) -> Bool {
         let home = FileManager.default.homeDirectoryForCurrentUser
         // Trailing "/" ensures ".openowl/deployments-evil" doesn't match
         let safePrefix = home.appendingPathComponent(".openowl/deployments").standardizedFileURL.path + "/"

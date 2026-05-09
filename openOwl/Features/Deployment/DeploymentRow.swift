@@ -3,7 +3,7 @@ import SwiftUI
 struct DeploymentRow: View {
     let deployment: Deployment
     @Environment(DeploymentStore.self) private var deploymentStore
-    @Environment(AppNavigationStore.self) private var navigationStore
+    @Environment(RightDockStore.self) private var rightDockStore
     @State private var hovering = false
 
     var body: some View {
@@ -37,7 +37,7 @@ struct DeploymentRow: View {
         .onHover { hovering = $0 }
         .onTapGesture {
             deploymentStore.selectedDeploymentID = deployment.id
-            navigationStore.navigate(to: .deployments)
+            rightDockStore.expand(tab: .deploy)
         }
         .contextMenu {
             if !deployment.isRemote {

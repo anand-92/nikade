@@ -914,11 +914,18 @@ extension FileExplorerStore {
         }
 
         if isDirectory && !isSymbolicLink {
-            // Don't recurse into gitignored directories (node_modules etc.)
-            // Show the directory itself with children=nil (lazy, scan on expand)
+            // Show heavy or external directory boundaries as lazy nodes.
+            // They remain visible and are scanned only when expanded.
             let isGitIgnored = Self.isGitIgnored(path: path, gitContext: gitContext)
             let children: [FileExplorerNode]?
-            if depth >= maxDepth || isGitIgnored {
+            if shouldLoadDirectoryLazily(
+                url: url,
+                path: path,
+                gitContext: gitContext,
+                depth: depth,
+                maxDepth: maxDepth,
+                isGitIgnored: isGitIgnored
+            ) {
                 children = nil // lazy: will scan when user expands
             } else {
                 let childURLs = sortEntries(directoryEntries(at: url))
@@ -977,8 +984,33 @@ extension FileExplorerStore {
         "ghostty-resources", "GhosttyKit.xcframework"
     ]
 
+    private static let alwaysLazyDirectoryNames: Set<String> = [
+        "node_modules", ".pnpm", ".next", ".turbo", ".cache",
+        "dist", "build", "coverage", ".expo", ".vercel", ".netlify",
+        ".parcel-cache", ".svelte-kit", ".nuxt", "Pods", ".gradle", "target"
+    ]
+
     nonisolated static func shouldIgnore(url: URL, gitContext: GitContext) -> Bool {
         alwaysIgnoredNames.contains(url.lastPathComponent)
+    }
+
+    nonisolated static func shouldLoadDirectoryLazily(
+        url: URL,
+        path: String,
+        gitContext: GitContext,
+        depth: Int,
+        maxDepth: Int,
+        isGitIgnored: Bool? = nil
+    ) -> Bool {
+        if depth >= maxDepth { return true }
+        if isGitIgnored ?? Self.isGitIgnored(path: path, gitContext: gitContext) { return true }
+        if alwaysLazyDirectoryNames.contains(url.lastPathComponent) { return true }
+
+        // Treat nested repositories/worktrees like package directories: show the
+        // root node, but do not index the whole repo when scanning a parent folder
+        // such as ~/.openowl/workspace.
+        let gitMarker = url.appendingPathComponent(".git").path
+        return FileManager.default.fileExists(atPath: gitMarker)
     }
 
     nonisolated static func isGitIgnored(path: String, gitContext: GitContext) -> Bool {

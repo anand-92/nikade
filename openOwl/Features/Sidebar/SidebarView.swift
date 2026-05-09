@@ -2,31 +2,34 @@ import SwiftUI
 
 struct SidebarView: View {
     @Environment(ProjectStore.self) private var projectStore
-    @Environment(AppNavigationStore.self) private var navigationStore
     @Environment(ClaudeStatusStore.self) private var claudeStatusStore
     @Environment(\.openURL) private var openURL
 
-    /// Selection binding — only branch rows and worktree rows are selectable.
-    /// Folder headers have no .tag() and are never highlighted.
+    @State private var terminalsSectionExpanded: Bool = true
+
+    /// Selection binding — branch rows, worktree rows, and free-terminal rows are
+    /// selectable. Folder headers have no `.tag()` and are never highlighted.
     private var listSelection: Binding<String?> {
         Binding(
             get: {
-                guard let activeID = projectStore.activeProjectID,
-                      let active = projectStore.projects.first(where: { $0.id == activeID })
-                else { return nil }
-
-                if active.isWorktree { return activeID }
-
-                // Root project → always highlight the branch row
-                return "branch-\(activeID)"
+                if let activeID = projectStore.activeProjectID,
+                   let active = projectStore.projects.first(where: { $0.id == activeID }) {
+                    if active.isWorktree { return activeID }
+                    return "branch-\(activeID)"
+                }
+                if let activeFree = projectStore.activeFreeTerminalID {
+                    return TerminalsSection.rowTag(for: activeFree)
+                }
+                return nil
             },
             set: { tag in
                 guard let tag else { return }
                 // Defer to avoid "publishing changes from within view updates"
                 // (List may call set during body evaluation when rows change)
                 DispatchQueue.main.async {
-                    navigationStore.activeTab = .terminal
-                    if tag.hasPrefix("branch-") {
+                    if let termID = TerminalsSection.terminalID(fromTag: tag) {
+                        projectStore.activate(.freeTerminal(termID))
+                    } else if tag.hasPrefix("branch-") {
                         let projectID = String(tag.dropFirst("branch-".count))
                         projectStore.activateProject(id: projectID)
                     } else {
@@ -50,6 +53,8 @@ struct SidebarView: View {
         let shortcuts = shortcutMap
 
         List(selection: listSelection) {
+            TerminalsSection(isExpanded: $terminalsSectionExpanded)
+
             ForEach(projectStore.rootProjects) { project in
                 // 1) Project header — no .tag(), never selectable
                 ProjectHeaderRow(project: project)
@@ -355,6 +360,7 @@ private struct WorktreeRow: View {
 
     @State private var hovering = false
     @State private var isRenaming = false
+    @State private var isArchiving = false
     @State private var renameText = ""
     @FocusState private var renameFieldFocused: Bool
 
@@ -404,15 +410,23 @@ private struct WorktreeRow: View {
 
                 if hovering && !isRenaming {
                     Button {
-                        Task { await archiveWorktree() }
+                        startArchiveWorktree()
                     } label: {
-                        Image(systemName: "archivebox")
-                            .font(AppFonts.smallIcon)
+                        if isArchiving {
+                            ProgressView()
+                                .controlSize(.mini)
+                        } else {
+                            Image(systemName: "archivebox")
+                                .font(AppFonts.smallIcon)
+                        }
                     }
                     .buttonStyle(.plain)
                     .foregroundStyle(.tertiary)
-                    .help("Archive worktree")
-                    .accessibilityLabel("Archive worktree")
+                    .frame(width: 18, height: 18)
+                    .contentShape(Rectangle())
+                    .disabled(isArchiving)
+                    .help(isArchiving ? "Archiving worktree..." : "Archive worktree")
+                    .accessibilityLabel(isArchiving ? "Archiving worktree" : "Archive worktree")
 
                     Button {
                         NSPasteboard.general.clearContents()
@@ -449,13 +463,28 @@ private struct WorktreeRow: View {
                 NSPasteboard.general.setString(wt.path, forType: .string)
             }
             Divider()
-            Button("Archive Worktree", role: .destructive) {
-                Task { await archiveWorktree() }
+            Button(isArchiving ? "Archiving..." : "Archive Worktree", role: .destructive) {
+                startArchiveWorktree()
+            }
+            .disabled(isArchiving)
+        }
+    }
+
+    private func startArchiveWorktree() {
+        guard !isArchiving else { return }
+        isArchiving = true
+
+        Task {
+            let didArchive = await archiveWorktree()
+            if !didArchive {
+                await MainActor.run {
+                    isArchiving = false
+                }
             }
         }
     }
 
-    private func archiveWorktree() async {
+    private func archiveWorktree() async -> Bool {
         do {
             let dirty = try await GitService.hasUncommittedChanges(at: wt.url)
             if dirty {
@@ -468,27 +497,46 @@ private struct WorktreeRow: View {
                     alert.addButton(withTitle: "Cancel")
                     return alert.runModal() == .alertFirstButtonReturn
                 }
-                guard proceed else { return }
+                guard proceed else { return false }
             }
         } catch {
             NSLog("openOwl: [SidebarView] Failed to check uncommitted changes: %@", error.localizedDescription)
         }
 
-        if projectStore.activeProjectID == wt.id, let parentID = wt.worktreeOf {
+        guard let parentID = wt.worktreeOf,
+              let parent = projectStore.projects.first(where: { $0.id == parentID }) else {
+            await MainActor.run {
+                let alert = NSAlert()
+                alert.messageText = "Archive failed"
+                alert.informativeText = "Could not archive \"\(wt.worktreeBranch ?? wt.name)\" because its parent project is missing."
+                alert.alertStyle = .critical
+                alert.addButton(withTitle: "OK")
+                alert.runModal()
+            }
+            return false
+        }
+
+        let parentGit = GitService(workingDirectory: parent.url)
+        do {
+            try await parentGit.removeWorktree(path: wt.path)
+        } catch {
+            await MainActor.run {
+                let alert = NSAlert()
+                alert.messageText = "Archive failed"
+                alert.informativeText = "Could not archive \"\(wt.worktreeBranch ?? wt.name)\".\n\n\(error.localizedDescription)"
+                alert.alertStyle = .critical
+                alert.addButton(withTitle: "OK")
+                alert.runModal()
+            }
+            return false
+        }
+
+        if projectStore.activeProjectID == wt.id {
             projectStore.activateProject(id: parentID)
         }
 
-        if let parentID = wt.worktreeOf,
-           let parent = projectStore.projects.first(where: { $0.id == parentID }) {
-            let parentGit = GitService(workingDirectory: parent.url)
-            do {
-                try await parentGit.removeWorktree(path: wt.path)
-            } catch {
-                print("Failed to remove worktree: \(error)")
-            }
-        }
-
         projectStore.removeWorktreeProject(id: wt.id)
+        return true
     }
 }
 

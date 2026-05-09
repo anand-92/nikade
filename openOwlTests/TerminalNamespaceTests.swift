@@ -1,0 +1,141 @@
+import Testing
+import Foundation
+@testable import openOwl
+
+@Suite("TerminalWorkspaceStore Namespace")
+struct TerminalNamespaceTests {
+
+    // MARK: - newTab(for:)
+
+    @Test @MainActor func newTab_forProjectNamespace_associatesTabWithProject() {
+        let store = TerminalWorkspaceStore()
+        let projectNS: TerminalNamespace = .project("proj-A")
+        _ = store.newTab(for: projectNS)
+
+        #expect(store.paneInfos(for: projectNS).count == 1)
+        #expect(store.paneInfos(for: .freeTerminal(UUID())).isEmpty)
+    }
+
+    @Test @MainActor func newTab_forFreeTerminalNamespace_associatesTabWithFreeTerminal() {
+        let store = TerminalWorkspaceStore()
+        let termID = UUID()
+        let termNS: TerminalNamespace = .freeTerminal(termID)
+        _ = store.newTab(for: termNS)
+
+        #expect(store.paneInfos(for: termNS).count == 1)
+        #expect(store.paneInfos(for: .project("any-project")).isEmpty)
+    }
+
+    @Test @MainActor func newTab_acrossNamespaces_isolatesPanes() {
+        let store = TerminalWorkspaceStore()
+        let projectNS: TerminalNamespace = .project("proj-A")
+        let termNS: TerminalNamespace = .freeTerminal(UUID())
+
+        _ = store.newTab(for: projectNS)
+        _ = store.newTab(for: projectNS)
+        _ = store.newTab(for: termNS)
+
+        #expect(store.paneInfos(for: projectNS).count == 2)
+        #expect(store.paneInfos(for: termNS).count == 1)
+    }
+
+    // MARK: - switchNamespace
+
+    @Test @MainActor func switchNamespace_seedsInitialTabIfEmpty() {
+        let store = TerminalWorkspaceStore()
+        let projectNS: TerminalNamespace = .project("proj-A")
+        #expect(store.paneInfos(for: projectNS).isEmpty)
+
+        store.switchNamespace(projectNS)
+
+        #expect(store.paneInfos(for: projectNS).count == 1)
+        #expect(store.activeNamespace == projectNS)
+    }
+
+    @Test @MainActor func switchNamespace_keepsExistingTabsIntact() {
+        let store = TerminalWorkspaceStore()
+        let projectNS: TerminalNamespace = .project("proj-A")
+        let termNS: TerminalNamespace = .freeTerminal(UUID())
+
+        store.switchNamespace(projectNS)
+        let projectPanesAfterSeed = store.paneInfos(for: projectNS)
+
+        store.switchNamespace(termNS)
+        store.switchNamespace(projectNS)
+
+        let projectPanesAfterReturn = store.paneInfos(for: projectNS)
+        #expect(projectPanesAfterReturn.count == projectPanesAfterSeed.count)
+    }
+
+    @Test @MainActor func switchNamespace_visibleTabsReflectActive() {
+        let store = TerminalWorkspaceStore()
+        let projectNS: TerminalNamespace = .project("proj-A")
+        let termNS: TerminalNamespace = .freeTerminal(UUID())
+
+        _ = store.newTab(for: projectNS)
+        _ = store.newTab(for: projectNS)
+        _ = store.newTab(for: termNS)
+
+        store.switchNamespace(projectNS)
+        #expect(store.visibleTabs.count == 2)
+
+        store.switchNamespace(termNS)
+        #expect(store.visibleTabs.count == 1)
+    }
+
+    @Test @MainActor func switchNamespace_nil_clearsActive() {
+        let store = TerminalWorkspaceStore()
+        let projectNS: TerminalNamespace = .project("proj-A")
+        store.switchNamespace(projectNS)
+        #expect(store.activeNamespace != nil)
+
+        store.switchNamespace(nil)
+        #expect(store.activeNamespace == nil)
+    }
+
+    // MARK: - switchProject (legacy shim)
+
+    @Test @MainActor func switchProject_id_sameAsSwitchNamespaceProject() {
+        let store = TerminalWorkspaceStore()
+        store.switchProject("proj-A")
+
+        #expect(store.activeNamespace == .project("proj-A"))
+        #expect(store.activeProjectID == "proj-A")
+    }
+
+    @Test @MainActor func switchProject_nil_clearsActiveNamespace() {
+        let store = TerminalWorkspaceStore()
+        store.switchProject("proj-A")
+        store.switchProject(nil)
+
+        #expect(store.activeNamespace == nil)
+        #expect(store.activeProjectID == nil)
+    }
+
+    // MARK: - bellCount(for:)
+
+    @Test @MainActor func bellCount_namespaceVariant_matchesProjectStringVariant() {
+        let store = TerminalWorkspaceStore()
+        _ = store.newTab(for: .project("proj-A"))
+
+        #expect(store.bellCount(for: "proj-A") == store.bellCount(for: .project("proj-A")))
+    }
+
+    @Test @MainActor func bellCount_freeTerminalNamespace_isIsolated() {
+        let store = TerminalWorkspaceStore()
+        let termNS: TerminalNamespace = .freeTerminal(UUID())
+        _ = store.newTab(for: termNS)
+
+        #expect(store.bellCount(for: termNS) == 0)
+        #expect(store.bellCount(for: "unrelated") == 0)
+    }
+
+    // MARK: - activeProjectID convenience
+
+    @Test @MainActor func activeProjectID_isNilWhenFreeTerminalActive() {
+        let store = TerminalWorkspaceStore()
+        store.switchNamespace(.freeTerminal(UUID()))
+
+        #expect(store.activeProjectID == nil)
+    }
+}

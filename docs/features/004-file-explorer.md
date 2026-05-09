@@ -44,8 +44,9 @@ struct FileExplorerNode: Identifiable, Hashable {
 
 1. **浅扫描**（maxDepth=1）: 项目打开时立即执行，展示顶层目录结构
 2. **全量扫描**: 后台线程递归扫描，注入 gitignore + git status
-3. **按需展开**: `expandDirectory()` 用户展开目录时单独扫描该目录
-4. **缓存**: `projectScanCache` 按项目路径缓存，切换项目时即时恢复
+3. **扫描边界**: 嵌套 Git repo/worktree 与常见依赖/构建目录只保留目录节点，避免打开 `~/.openowl/workspace` 时递归索引所有子项目
+4. **按需展开**: `expandDirectory()` 用户展开目录时单独扫描该目录
+5. **缓存**: `projectScanCache` 按项目路径缓存，切换项目时即时恢复
 
 ### 3.3 Git 状态映射
 
@@ -67,7 +68,8 @@ classifyGitState: GitFileChange → FileGitState
 
 ### 3.5 忽略规则
 
-- **硬编码**: `.git`, `.DS_Store`, `.build`, `DerivedData`, `ghostty-resources`, `GhosttyKit.xcframework`
+- **硬编码隐藏**: `.git`, `.DS_Store`, `.build`, `DerivedData`, `ghostty-resources`, `GhosttyKit.xcframework`
+- **硬编码懒加载**: `node_modules`, `.pnpm`, `.next`, `.turbo`, `.cache`, `dist`, `build`, `coverage`, `.expo`, `.vercel`, `.netlify`, `.parcel-cache`, `.svelte-kit`, `.nuxt`, `Pods`, `.gradle`, `target`, 以及包含 `.git` 标记的嵌套 repo/worktree
 - **gitignore**: 通过 `git ls-files --others --ignored` 获取，压缩冗余前缀（`compactDirectoryPrefixes`）
 
 ## 4. 注意事项
@@ -85,4 +87,5 @@ classifyGitState: GitFileChange → FileGitState
 
 | 日期 | 说明 |
 |------|------|
+| 2026-05-07 | 全量扫描新增嵌套 repo 与依赖/构建目录懒加载边界，避免 workspace 级目录占用 GB 级内存 |
 | 2026-03-16 | 创建文档 |
