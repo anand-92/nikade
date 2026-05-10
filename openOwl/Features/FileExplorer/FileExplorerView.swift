@@ -2,6 +2,25 @@ import AppKit
 import SwiftUI
 import CodeEditSourceEditor
 import CodeEditLanguages
+import Darwin
+
+// TEMP DIAGNOSTIC: prints process resident memory at named checkpoints so we can
+// pinpoint which path on a single .dic click actually allocates. Remove when the
+// 1GB-on-click leak is rooted out.
+fileprivate func dbgResident(_ tag: String) {
+    var info = mach_task_basic_info()
+    var count = mach_msg_type_number_t(MemoryLayout<mach_task_basic_info>.size) / 4
+    let result = withUnsafeMutablePointer(to: &info) {
+        $0.withMemoryRebound(to: integer_t.self, capacity: Int(count)) {
+            task_info(mach_task_self_, task_flavor_t(MACH_TASK_BASIC_INFO), $0, &count)
+        }
+    }
+    if result == KERN_SUCCESS {
+        NSLog("openOwl: [DIAG-MEM] %@ resident=%lld MB", tag, Int64(info.resident_size) / 1_048_576)
+    } else {
+        NSLog("openOwl: [DIAG-MEM] %@ (task_info err=%d)", tag, result)
+    }
+}
 
 let editorConfiguration = SourceEditorConfiguration(
     appearance: .init(
@@ -93,6 +112,11 @@ struct FileExplorerView: View {
         "png", "jpg", "jpeg", "gif", "bmp", "tiff", "tif", "webp", "heic", "heif", "ico", "svg", "icns"
     ]
 
+    /// Cap on simultaneously open tabs. Beyond this, the oldest non-active,
+    /// non-dirty tab is evicted to release its NSTextStorage / NSImage and
+    /// keep memory bounded across long editing sessions.
+    private static let maxOpenTabs = 10
+
     private var isActiveTabImage: Bool {
         guard let ext = activeTabURL?.pathExtension.lowercased() else { return false }
         return Self.imageExtensions.contains(ext)
@@ -136,6 +160,16 @@ struct FileExplorerView: View {
                   !node.isDirectory else { return }
             Task { @MainActor in
                 openFileInTab(node)
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .openFileFromTerminal)) { notification in
+            guard let url = notification.userInfo?["url"] as? URL else { return }
+            openFileInTab(url: url)
+            // If this file is inside the loaded tree, highlight it; otherwise
+            // leave the tree alone (we don't want cmd+click to retarget the
+            // explorer root).
+            if store.nodeIndex[url.path] != nil {
+                store.selectNode(url.path)
             }
         }
         .onDisappear {
@@ -374,10 +408,19 @@ struct FileExplorerView: View {
 
     private func openFileInTab(_ node: FileExplorerNode) {
         guard !node.isDirectory else { return }
-        let url = node.url
+        openFileInTab(url: node.url)
+    }
 
+    /// URL-based overload — used by `cmd+click` from the terminal, where we
+    /// have a file path but not necessarily a tree node (the file may live
+    /// outside the current explorer root). Selects the tree node only if
+    /// the file is already inside the loaded tree; otherwise just opens
+    /// the editor tab without disturbing the tree.
+    private func openFileInTab(url: URL) {
+        dbgResident("openFileInTab.enter \(url.lastPathComponent)")
         // Already open — just switch
         if openTabs.contains(where: { $0.url == url }) {
+            NSLog("openOwl: [DIAG-MEM] openFileInTab.alreadyOpen %@", url.lastPathComponent)
             if activeTabURL != url {
                 switchToTab(url)
             }
@@ -386,10 +429,16 @@ struct FileExplorerView: View {
 
         // Size check
         let fileSize = (try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? Int) ?? 0
-        if fileSize > 10_000_000 { return }
+        NSLog("openOwl: [DIAG-MEM] openFileInTab.fileSize %@ = %d bytes", url.lastPathComponent, fileSize)
+        if fileSize > 10_000_000 {
+            NSLog("openOwl: [DIAG-MEM] openFileInTab.reject>10MB %@", url.lastPathComponent)
+            return
+        }
 
         let ext = url.pathExtension.lowercased()
         let isImage = Self.imageExtensions.contains(ext)
+
+        evictOldestTabIfNeeded()
 
         // Add new tab
         openTabs.append(EditorTab(url: url))
@@ -398,7 +447,9 @@ struct FileExplorerView: View {
 
         if isImage {
             Task.detached(priority: .userInitiated) {
+                dbgResident("openFileInTab.image.beforeLoad")
                 let image = NSImage(contentsOf: url)
+                dbgResident("openFileInTab.image.afterLoad")
                 await MainActor.run {
                     guard loadingFileURL == url else { return }
                     tabImageCache[url] = image
@@ -406,18 +457,24 @@ struct FileExplorerView: View {
                     activeTabURL = url
                     loadingFileURL = nil
                     isEditorLoading = false
+                    dbgResident("openFileInTab.image.committed")
                 }
             }
         } else {
             if fileSize > 1_000_000 {
+                NSLog("openOwl: [DIAG-MEM] openFileInTab.reject>1MB %@", url.lastPathComponent)
                 openTabs.removeAll { $0.url == url }
                 loadingFileURL = nil
                 isEditorLoading = false
+                dbgResident("openFileInTab.reject>1MB.afterCleanup")
                 return
             }
             Task.detached(priority: .userInitiated) {
+                dbgResident("openFileInTab.text.beforeRead")
                 let content = (try? String(contentsOf: url, encoding: .utf8)) ?? ""
+                dbgResident("openFileInTab.text.afterRead len=\(content.count)")
                 let storage = NSTextStorage(string: content)
+                dbgResident("openFileInTab.text.afterStorage")
                 await MainActor.run {
                     guard loadingFileURL == url else { return }
                     tabStorages[url] = storage
@@ -425,11 +482,13 @@ struct FileExplorerView: View {
                     editorState = SourceEditorState()
                     activeTabURL = url
                     loadingFileURL = nil
+                    dbgResident("openFileInTab.text.committed")
                 }
                 try? await Task.sleep(for: .milliseconds(50))
                 await MainActor.run {
                     guard activeTabURL == url else { return }
                     isEditorLoading = false
+                    dbgResident("openFileInTab.text.editorLoadingFalse")
                 }
             }
         }
@@ -513,6 +572,19 @@ struct FileExplorerView: View {
     private func closeActiveTab() {
         guard let url = activeTabURL else { return }
         closeTab(url)
+    }
+
+    /// LRU eviction: when the open-tab cap is reached, drop the oldest tab
+    /// that is neither active nor dirty so its NSTextStorage / NSImage can
+    /// be released. Skips dirty tabs to avoid silently losing edits.
+    private func evictOldestTabIfNeeded() {
+        guard openTabs.count >= Self.maxOpenTabs else { return }
+        guard let evictURL = openTabs.first(where: {
+            $0.url != activeTabURL && !dirtyTabs.contains($0.url)
+        })?.url else { return }
+        openTabs.removeAll { $0.url == evictURL }
+        tabStorages.removeValue(forKey: evictURL)
+        tabImageCache.removeValue(forKey: evictURL)
     }
 
     // MARK: - Save

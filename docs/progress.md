@@ -7,6 +7,7 @@
 - REQ-004: 本地部署服务（主体实现完成，待运行时手测）
 - UI review 后续：DeploymentStore 拆分（P3，分离健康检查/日志/进程管理）
 - Git 和 File 模块化拆分（待下个 session 开始，预估 3-4 天）
+- [ ] .dic 单击 1GB+ 内存暴涨根因定位（已加 DIAG-MEM 诊断日志，待用户实测回贴）
 
 ## Release & Distribution
 
@@ -138,6 +139,7 @@
 - [x] 菜单栏快捷键发现性 — Terminal + View 菜单栏，快捷键可见
 - [x] Git 角标初始加载位置修复 — 首次打开文件浏览器时 git status badge 位置正确
 - [x] Metal visibility fix — WindowServer CPU 修复已合入 v1.0.3，metalLayer.isHidden 双重保护
+- [x] 三个 per-click 内存累积路径修复（menuNeedsUpdate / tab LRU / projectScanCache LRU），已合入 v1.0.8
 
 ## Pending Issues
 

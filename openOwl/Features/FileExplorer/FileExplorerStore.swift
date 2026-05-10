@@ -1,6 +1,21 @@
 import AppKit
 import Foundation
 import Observation
+import Darwin
+
+// TEMP DIAGNOSTIC — see FileExplorerView.swift counterpart. Remove together.
+fileprivate func dbgResidentStore(_ tag: String) {
+    var info = mach_task_basic_info()
+    var count = mach_msg_type_number_t(MemoryLayout<mach_task_basic_info>.size) / 4
+    let result = withUnsafeMutablePointer(to: &info) {
+        $0.withMemoryRebound(to: integer_t.self, capacity: Int(count)) {
+            task_info(mach_task_self_, task_flavor_t(MACH_TASK_BASIC_INFO), $0, &count)
+        }
+    }
+    if result == KERN_SUCCESS {
+        NSLog("openOwl: [DIAG-MEM] %@ resident=%lld MB", tag, Int64(info.resident_size) / 1_048_576)
+    }
+}
 
 enum FileGitState: String, Hashable {
     case added
@@ -93,12 +108,28 @@ final class FileExplorerStore {
         // Kept for API compatibility with callers.
     }
 
-    // Cache scan results per project to avoid re-scanning on switch
+    // Cache scan results per project to avoid re-scanning on switch.
+    // Capped + LRU-ordered: a large nodeIndex (5k+ files) can cost tens of
+    // megabytes, so unbounded growth across many opened projects masquerades
+    // as a memory leak.
     private struct ProjectCache {
         let nodes: [FileExplorerNode]
         let index: [String: FileExplorerNode]
     }
+    private static let maxProjectScanCacheEntries = 5
     private var projectScanCache: [String: ProjectCache] = [:]
+    /// Project paths in LRU order; head = oldest, tail = most recently written.
+    private var projectScanCacheOrder: [String] = []
+
+    private func writeProjectScanCache(_ key: String, _ value: ProjectCache) {
+        projectScanCache[key] = value
+        projectScanCacheOrder.removeAll { $0 == key }
+        projectScanCacheOrder.append(key)
+        while projectScanCacheOrder.count > Self.maxProjectScanCacheEntries {
+            let evict = projectScanCacheOrder.removeFirst()
+            projectScanCache.removeValue(forKey: evict)
+        }
+    }
 
     var selectedNode: FileExplorerNode? {
         guard let selectedNodeID else { return nil }
@@ -149,7 +180,7 @@ final class FileExplorerStore {
 
         // Save current project's state to cache
         if let oldURL = projectURL, !rootNodes.isEmpty {
-            projectScanCache[oldURL.path] = ProjectCache(nodes: rootNodes, index: nodeIndex)
+            writeProjectScanCache(oldURL.path, ProjectCache(nodes: rootNodes, index: nodeIndex))
         }
 
         projectURL = standardized
@@ -277,6 +308,7 @@ final class FileExplorerStore {
     }
 
     func selectNode(_ nodeID: String?) {
+        dbgResidentStore("store.selectNode \(nodeID ?? "nil")")
         selectedNodeID = nodeID
         loadPreviewForSelection()
     }
@@ -547,7 +579,7 @@ final class FileExplorerStore {
         loadPreviewForSelection()
 
         // Update cache
-        projectScanCache[capturedURL.path] = ProjectCache(nodes: rootNodes, index: nodeIndex)
+        writeProjectScanCache(capturedURL.path, ProjectCache(nodes: rootNodes, index: nodeIndex))
     }
 
     /// Background-only refresh: skip shallow scan, only update git status.
@@ -592,7 +624,7 @@ final class FileExplorerStore {
         }
         syncQuickOpenSelection()
         loadPreviewForSelection()
-        projectScanCache[capturedURL.path] = ProjectCache(nodes: rootNodes, index: nodeIndex)
+        writeProjectScanCache(capturedURL.path, ProjectCache(nodes: rootNodes, index: nodeIndex))
     }
 
     private func configureWatcher() {
@@ -612,6 +644,7 @@ final class FileExplorerStore {
     }
 
     private func loadPreviewForSelection() {
+        dbgResidentStore("loadPreviewForSelection.enter")
         guard let node = selectedNode else {
             previewState = .none
             return
@@ -626,6 +659,7 @@ final class FileExplorerStore {
         }
 
         previewState = Self.makePreviewState(for: node.url)
+        dbgResidentStore("loadPreviewForSelection.exit \(node.url.lastPathComponent)")
     }
 
     /// Most recent git context (status + ignore rules). Updated after each full scan.
