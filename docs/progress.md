@@ -7,6 +7,7 @@
 - REQ-004: 本地部署服务（主体实现完成，待运行时手测）
 - UI review 后续：DeploymentStore 拆分（P3，分离健康检查/日志/进程管理）
 - Git 和 File 模块化拆分（待下个 session 开始，预估 3-4 天）
+- [ ] .dic 单击 1GB+ 内存暴涨根因定位（已加 DIAG-MEM 诊断日志，待用户实测回贴）
 
 ## Release & Distribution
 
@@ -118,6 +119,8 @@
 - [x] refreshNow 优化 — 已有数据时跳过 shallow phase，用 refreshFullOnly()
 - [x] autoresizesOutlineColumn = false — 防止列宽超过 clip view
 - [x] updateNSViewController 条件性跳过 — controller.rootNodes != store.rootNodes 才 updateData（@Observable 迁移时序变化适配）
+- [x] FileExplorer workspace 内存修复 — 全量扫描遇到嵌套 repo/worktree、node_modules、.next 等目录时只保留目录节点不递归，避免打开 `~/.openowl/workspace` 占用 GB 级内存
+- [x] Worktree 归档反馈与失败保护 — 点击后显示进度并禁用重复触发；`git worktree remove` 失败时不再从项目列表移除，并弹窗显示错误
 - [x] Deployment 100% CPU 修复 — EOF readabilityHandler nil-out + appendLog 200ms buffer 节流 + activeStreamIDs 去重
 - [x] 侧边栏分支点击空白页修复 — listSelection setter 加 activeTab = .terminal；PaneStatusRow 移除 onTapGesture 变纯展示组件
 - [x] 终端文件拖拽错误修复 — TerminalScrollView 拖拽方法加 isEffectivelyVisible 检查，拒绝 opacity=0 终端接收拖拽
@@ -136,6 +139,7 @@
 - [x] 菜单栏快捷键发现性 — Terminal + View 菜单栏，快捷键可见
 - [x] Git 角标初始加载位置修复 — 首次打开文件浏览器时 git status badge 位置正确
 - [x] Metal visibility fix — WindowServer CPU 修复已合入 v1.0.3，metalLayer.isHidden 双重保护
+- [x] 三个 per-click 内存累积路径修复（menuNeedsUpdate / tab LRU / projectScanCache LRU），已合入 v1.0.8
 
 ## Pending Issues
 
@@ -152,6 +156,18 @@
   - 文件拖拽到 Terminal 粘贴路径
   - 右键菜单动作（Reveal / Open in Terminal / Copy Path）
   - 大文件与二进制文件预览体验
+
+## REQ-007: Right Dock + 独立 Terminals (2026-05-07)
+
+实现完成 ✅。详见 [FEAT-008](features/008-right-dock.md)。
+
+- 中间区永远是 Terminal（dock 全屏除外）
+- Files / Git / Deploy 改为右侧 Right Dock 内的固定 tab，可折叠 / 全屏 / 拖拽宽度
+- Right Dock 展开时隐藏 toolbar 的 Files / Git / Deploy 重复入口；折叠时才显示 toolbar 入口用于重新打开
+- Sidebar 顶部新增 "TERMINALS" 区段：独立 free terminals（cwd=$HOME，不持久化）
+- 数据层：`RightDockStore`、`ActiveKind`、`FreeTerminalItem`、`TerminalNamespace` 全部带单测覆盖
+- 测试结果：339 测试全部通过
+- 待人工 E2E 验收：REQ-007 第 6 节列出的 20 条验收项目
 
 ## Notes
 

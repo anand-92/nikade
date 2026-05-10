@@ -18,8 +18,10 @@
 | 002 | 终端分屏系统 | ✅ Done | [002-terminal-split.md](002-terminal-split.md) |
 | 003 | Git 变更面板 | ✅ Done | [003-git-changes.md](003-git-changes.md) |
 | 004 | 文件浏览器 | ✅ Done | [004-file-explorer.md](004-file-explorer.md) |
-| 005 | 本地部署服务 | ✅ Done | [005-local-deployment.md](005-local-deployment.md) |
+| 005 | 本地部署服务 | ⏸️ Archived | [archive/FEAT-005-local-deployment.md](../archive/FEAT-005-local-deployment.md) |
 | 006 | 项目管理侧边栏 | ✅ Done | [006-project-sidebar.md](006-project-sidebar.md) |
+| 007 | UI 设计系统 | ✅ Done | [007-ui-design-system.md](007-ui-design-system.md) |
+| 008 | Right Dock + 独立 Terminals | ✅ Done | [008-right-dock.md](008-right-dock.md) |
 
 ## 分类
 
@@ -36,13 +38,14 @@
 
 - [004-file-explorer.md](004-file-explorer.md) — NSOutlineView 文件树、模糊搜索、Git 状态标注
 
-### 部署 (Deployment)
+### 部署 (Deployment) — 已下架
 
-- [005-local-deployment.md](005-local-deployment.md) — Clone+Build+Start、健康检查、自动更新、系统托盘
+- v1.0.8 移除本地部署功能。设计文档归档于 [archive/FEAT-005-local-deployment.md](../archive/FEAT-005-local-deployment.md)，方便未来恢复参考。
 
 ### 基础设施 (Infrastructure)
 
 - [006-project-sidebar.md](006-project-sidebar.md) — 项目列表、Worktree 管理、持久化
+- [008-right-dock.md](008-right-dock.md) — 右侧可折叠 inspector + 独立 free terminals + ContentView 三栏布局
 
 ## 依赖关系
 
@@ -50,7 +53,6 @@
 006-project-sidebar ──→ 002-terminal-split
                     ──→ 003-git-changes
                     ──→ 004-file-explorer
-                    ──→ 005-local-deployment
 
 002-terminal-split ──→ 001-libghostty-integration
 ```
@@ -60,3 +62,5 @@
 | 日期 | 说明 |
 |------|------|
 | 2026-03-16 | 创建索引，补全 001–006 功能文档 |
+| 2026-05-07 | 加入 008 Right Dock + 独立 Terminals（实现完成） |
+| 2026-05-10 | v1.0.8 下架本地部署，005 文档归档至 docs/archive/ |

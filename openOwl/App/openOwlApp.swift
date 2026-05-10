@@ -6,12 +6,11 @@ struct openOwlApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
     @State private var ghosttyManager: GhosttyAppManager
     @State private var workspaceStore = TerminalWorkspaceStore()
-    @State private var navigationStore = AppNavigationStore()
     @State private var projectStore: ProjectStore
     @State private var gitChangesStore = GitChangesStore()
     @State private var fileExplorerStore = FileExplorerStore()
-    @State private var deploymentStore = DeploymentStore()
     @State private var claudeStatusStore = ClaudeStatusStore()
+    @State private var rightDockStore = RightDockStore()
 
     init() {
         Self.setupEnvironment()
@@ -30,30 +29,39 @@ struct openOwlApp: App {
             ContentView()
                 .environment(ghosttyManager)
                 .environment(workspaceStore)
-                .environment(navigationStore)
                 .environment(projectStore)
                 .environment(gitChangesStore)
                 .environment(fileExplorerStore)
-                .environment(deploymentStore)
                 .environment(claudeStatusStore)
+                .environment(rightDockStore)
                 .onAppear {
                     // Apply saved appearance preference (system/light/dark)
                     NSApp.appearance = AppAppearance.current.nsAppearance
 
                     appDelegate.workspaceStore = workspaceStore
                     appDelegate.ghosttyManager = ghosttyManager
-                    appDelegate.navigationStore = navigationStore
-                    appDelegate.deploymentStore = deploymentStore
                     appDelegate.projectStore = projectStore
-                    deploymentStore.recoverRunningDeployments()
+                    appDelegate.rightDockStore = rightDockStore
                     workspaceStore.destroyPaneHandler = { [weak ghosttyManager] paneID in
                         ghosttyManager?.destroyPane(paneID)
+                    }
+                    workspaceStore.onContextDidChange = {
+                        syncActiveProjectContext()
                     }
                     ghosttyManager.onPaneTitleChanged = { paneID, title in
                         workspaceStore.updateTitle(for: paneID, title: title)
                     }
+                    ghosttyManager.onPanePwdChanged = { paneID, pwd in
+                        workspaceStore.updatePanePwd(paneID: paneID, pwd: pwd)
+                    }
+                    ghosttyManager.onOpenUrl = { urlString in
+                        handleTerminalOpenURL(urlString,
+                            workspaceStore: workspaceStore,
+                            rightDockStore: rightDockStore)
+                    }
                     ghosttyManager.onPaneBell = { paneID in
-                        let isTerminalVisible = navigationStore.activeTab == .terminal
+                        // Terminal occupies the center area unless the right dock is fullscreen.
+                        let isTerminalVisible = !rightDockStore.isFullscreen
                         workspaceStore.handleBell(paneID: paneID, isTerminalVisible: isTerminalVisible)
 
                         // System-level feedback: sound, dock bounce, notification
@@ -98,7 +106,13 @@ struct openOwlApp: App {
                 .onChange(of: projectStore.activeProjectID) { _, _ in
                     syncActiveProjectContext()
                 }
-                .onChange(of: navigationStore.activeTab) { _, _ in
+                .onChange(of: projectStore.activeFreeTerminalID) { _, _ in
+                    syncActiveProjectContext()
+                }
+                .onChange(of: rightDockStore.isExpanded) { _, _ in
+                    syncActiveProjectContext()
+                }
+                .onChange(of: rightDockStore.activeTab) { _, _ in
                     syncActiveProjectContext()
                 }
                 .onChange(of: gitChangesStore.statusSnapshot?.branch) { _, _ in
@@ -123,14 +137,6 @@ struct openOwlApp: App {
                 CheckForUpdatesButton()
             }
         }
-
-        MenuBarExtra("openOwl", image: "MenuBarIcon") {
-            DeploymentTrayMenu()
-                .environment(deploymentStore)
-                .environment(navigationStore)
-                .environment(projectStore)
-        }
-        .menuBarExtraStyle(.menu)
 
         Settings {
             SettingsView()
@@ -190,21 +196,86 @@ struct openOwlApp: App {
         projectStore.updateProjectBranch(activeID, branch: snapshot.branch)
     }
 
+    /// Resolve a URL/path string from ghostty's cmd+click action and, when
+    /// it points to a local file, open it in the file explorer's editor
+    /// area + reveal the dock. Returns `true` to suppress ghostty's
+    /// default `NSWorkspace.open` (which would have routed the path to
+    /// Finder or the user's default editor).
+    @MainActor
+    private func handleTerminalOpenURL(_ urlString: String,
+                                       workspaceStore: TerminalWorkspaceStore,
+                                       rightDockStore: RightDockStore) -> Bool {
+        // External web URLs — let ghostty's default handler open them in
+        // the system browser.
+        if urlString.hasPrefix("http://") || urlString.hasPrefix("https://") {
+            return false
+        }
+
+        let fileURL: URL?
+        if urlString.hasPrefix("file://") {
+            fileURL = URL(string: urlString)
+        } else if urlString.hasPrefix("/") {
+            fileURL = URL(fileURLWithPath: urlString)
+        } else if let pwd = workspaceStore.activePaneWorkingDirectory {
+            // Relative path — resolve against the focused pane's cwd so
+            // `cmd+click foo/bar.swift` works after `cd`.
+            fileURL = pwd.appendingPathComponent(urlString)
+        } else {
+            return false
+        }
+
+        guard let url = fileURL?.standardizedFileURL else { return false }
+        var isDir: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir),
+              !isDir.boolValue else {
+            return false
+        }
+
+        rightDockStore.expand(tab: .files)
+        NotificationCenter.default.post(
+            name: .openFileFromTerminal,
+            object: nil,
+            userInfo: ["url": url]
+        )
+        return true
+    }
+
     @MainActor
     private func syncActiveProjectContext() {
-        guard let projectURL = projectStore.activeProjectURL,
-              let activeID = projectStore.activeProjectID else { return }
+        // Terminal namespace follows the sidebar selection — projects bind to their
+        // working directory, free terminals share the user's home as cwd.
+        switch projectStore.activeKind {
+        case .project(let id):
+            workspaceStore.switchNamespace(.project(id))
+        case .freeTerminal(let id):
+            workspaceStore.switchNamespace(.freeTerminal(id))
+        case .none:
+            workspaceStore.switchNamespace(nil)
+        }
 
-        // Only refresh the currently visible tab's store
-        switch navigationStore.activeTab {
-        case .terminal:
-            workspaceStore.switchProject(activeID)
-        case .fileExplorer:
-            fileExplorerStore.setProject(projectURL)
-        case .gitChanges:
-            gitChangesStore.setPreferredDirectory(projectURL)
-        case .deployments:
-            break
+        // Right dock follows the active terminal's cwd: project namespaces use
+        // their fixed project URL; free-terminal tabs read the focused pane's
+        // shell cwd (reported via OSC 7 → GHOSTTY_ACTION_PWD), so cd-ing in the
+        // terminal automatically retargets file explorer + git changes.
+        let cwd: URL?
+        switch projectStore.activeKind {
+        case .project:
+            cwd = projectStore.activeProjectURL
+        case .freeTerminal:
+            // Fallback to $HOME until ghostty reports the shell's actual pwd
+            // — without this, a free terminal opened before shell
+            // integration emits OSC 7 would leave file explorer empty.
+            cwd = workspaceStore.activePaneWorkingDirectory
+                ?? FileManager.default.homeDirectoryForCurrentUser
+        case .none:
+            cwd = nil
+        }
+        guard let cwd, rightDockStore.isExpanded else { return }
+        switch rightDockStore.activeTab {
+        case .files:
+            fileExplorerStore.setProject(cwd)
+        case .git:
+            gitChangesStore.setPreferredDirectory(cwd)
         }
     }
 }

@@ -93,12 +93,28 @@ final class FileExplorerStore {
         // Kept for API compatibility with callers.
     }
 
-    // Cache scan results per project to avoid re-scanning on switch
+    // Cache scan results per project to avoid re-scanning on switch.
+    // Capped + LRU-ordered: a large nodeIndex (5k+ files) can cost tens of
+    // megabytes, so unbounded growth across many opened projects masquerades
+    // as a memory leak.
     private struct ProjectCache {
         let nodes: [FileExplorerNode]
         let index: [String: FileExplorerNode]
     }
+    private static let maxProjectScanCacheEntries = 5
     private var projectScanCache: [String: ProjectCache] = [:]
+    /// Project paths in LRU order; head = oldest, tail = most recently written.
+    private var projectScanCacheOrder: [String] = []
+
+    private func writeProjectScanCache(_ key: String, _ value: ProjectCache) {
+        projectScanCache[key] = value
+        projectScanCacheOrder.removeAll { $0 == key }
+        projectScanCacheOrder.append(key)
+        while projectScanCacheOrder.count > Self.maxProjectScanCacheEntries {
+            let evict = projectScanCacheOrder.removeFirst()
+            projectScanCache.removeValue(forKey: evict)
+        }
+    }
 
     var selectedNode: FileExplorerNode? {
         guard let selectedNodeID else { return nil }
@@ -149,7 +165,7 @@ final class FileExplorerStore {
 
         // Save current project's state to cache
         if let oldURL = projectURL, !rootNodes.isEmpty {
-            projectScanCache[oldURL.path] = ProjectCache(nodes: rootNodes, index: nodeIndex)
+            writeProjectScanCache(oldURL.path, ProjectCache(nodes: rootNodes, index: nodeIndex))
         }
 
         projectURL = standardized
@@ -547,7 +563,7 @@ final class FileExplorerStore {
         loadPreviewForSelection()
 
         // Update cache
-        projectScanCache[capturedURL.path] = ProjectCache(nodes: rootNodes, index: nodeIndex)
+        writeProjectScanCache(capturedURL.path, ProjectCache(nodes: rootNodes, index: nodeIndex))
     }
 
     /// Background-only refresh: skip shallow scan, only update git status.
@@ -592,7 +608,7 @@ final class FileExplorerStore {
         }
         syncQuickOpenSelection()
         loadPreviewForSelection()
-        projectScanCache[capturedURL.path] = ProjectCache(nodes: rootNodes, index: nodeIndex)
+        writeProjectScanCache(capturedURL.path, ProjectCache(nodes: rootNodes, index: nodeIndex))
     }
 
     private func configureWatcher() {
@@ -914,11 +930,18 @@ extension FileExplorerStore {
         }
 
         if isDirectory && !isSymbolicLink {
-            // Don't recurse into gitignored directories (node_modules etc.)
-            // Show the directory itself with children=nil (lazy, scan on expand)
+            // Show heavy or external directory boundaries as lazy nodes.
+            // They remain visible and are scanned only when expanded.
             let isGitIgnored = Self.isGitIgnored(path: path, gitContext: gitContext)
             let children: [FileExplorerNode]?
-            if depth >= maxDepth || isGitIgnored {
+            if shouldLoadDirectoryLazily(
+                url: url,
+                path: path,
+                gitContext: gitContext,
+                depth: depth,
+                maxDepth: maxDepth,
+                isGitIgnored: isGitIgnored
+            ) {
                 children = nil // lazy: will scan when user expands
             } else {
                 let childURLs = sortEntries(directoryEntries(at: url))
@@ -977,8 +1000,33 @@ extension FileExplorerStore {
         "ghostty-resources", "GhosttyKit.xcframework"
     ]
 
+    private static let alwaysLazyDirectoryNames: Set<String> = [
+        "node_modules", ".pnpm", ".next", ".turbo", ".cache",
+        "dist", "build", "coverage", ".expo", ".vercel", ".netlify",
+        ".parcel-cache", ".svelte-kit", ".nuxt", "Pods", ".gradle", "target"
+    ]
+
     nonisolated static func shouldIgnore(url: URL, gitContext: GitContext) -> Bool {
         alwaysIgnoredNames.contains(url.lastPathComponent)
+    }
+
+    nonisolated static func shouldLoadDirectoryLazily(
+        url: URL,
+        path: String,
+        gitContext: GitContext,
+        depth: Int,
+        maxDepth: Int,
+        isGitIgnored: Bool? = nil
+    ) -> Bool {
+        if depth >= maxDepth { return true }
+        if isGitIgnored ?? Self.isGitIgnored(path: path, gitContext: gitContext) { return true }
+        if alwaysLazyDirectoryNames.contains(url.lastPathComponent) { return true }
+
+        // Treat nested repositories/worktrees like package directories: show the
+        // root node, but do not index the whole repo when scanning a parent folder
+        // such as ~/.openowl/workspace.
+        let gitMarker = url.appendingPathComponent(".git").path
+        return FileManager.default.fileExists(atPath: gitMarker)
     }
 
     nonisolated static func isGitIgnored(path: String, gitContext: GitContext) -> Bool {

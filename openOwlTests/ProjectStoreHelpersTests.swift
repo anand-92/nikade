@@ -5,42 +5,6 @@ import Foundation
 @Suite("ProjectStore Helpers")
 struct ProjectStoreHelpersTests {
 
-    // MARK: - DeploymentStatus
-
-    @Test func deploymentStatus_displayLabel() {
-        #expect(DeploymentStatus.running.displayLabel == "Running")
-        #expect(DeploymentStatus.building.displayLabel == "Building\u{2026}")
-        #expect(DeploymentStatus.error.displayLabel == "Error")
-        #expect(DeploymentStatus.stopped.displayLabel == "Stopped")
-    }
-
-    @Test func deploymentStatus_codable() throws {
-        for status in [DeploymentStatus.running, .building, .error, .stopped] {
-            let data = try JSONEncoder().encode(status)
-            let decoded = try JSONDecoder().decode(DeploymentStatus.self, from: data)
-            #expect(decoded == status)
-        }
-    }
-
-    // MARK: - Deployment computed properties
-
-    @Test func deployment_logFileURL() {
-        let d = Deployment(
-            id: "1", projectID: "p1", name: "My Service",
-            branch: "main", status: .stopped
-        )
-        let path = d.logFileURL.path
-        #expect(path.contains(".openowl/deployments/my-service/logs/current.log"))
-    }
-
-    @Test func deployment_cloneURL() {
-        let d = Deployment(
-            id: "1", projectID: "p1", name: "Test",
-            branch: "main", status: .stopped, clonePath: "/tmp/clone"
-        )
-        #expect(d.cloneURL.path == "/tmp/clone")
-    }
-
     // MARK: - ProjectItem
 
     @Test func projectItem_urlFromPath() {

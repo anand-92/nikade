@@ -525,9 +525,14 @@ extension OutlineTreeViewController: NSMenuDelegate {
               let item = outlineView.item(atRow: clickedRow) as? NSString,
               let node = nodeIndex[item as String] else { return }
 
-        // If clicked row isn't in selection, select it
+        // If clicked row isn't in selection, select it.
+        // Suppress selectionDidChange → onSelectFile so right-clicking a file
+        // does not auto-load it into the editor (and pin its NSTextStorage in
+        // tabStorages, growing memory with every right-click).
         if !outlineView.selectedRowIndexes.contains(clickedRow) {
+            isProgrammaticSelection = true
             outlineView.selectRowIndexes(IndexSet(integer: clickedRow), byExtendingSelection: false)
+            isProgrammaticSelection = false
         }
 
         let contextMenu = buildContextMenu(for: node)

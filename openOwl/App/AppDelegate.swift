@@ -6,9 +6,8 @@ import UserNotifications
 class AppDelegate: NSObject, NSApplicationDelegate {
     weak var ghosttyManager: GhosttyAppManager?
     var workspaceStore: TerminalWorkspaceStore?
-    weak var navigationStore: AppNavigationStore?
-    weak var deploymentStore: DeploymentStore?
     weak var projectStore: ProjectStore?
+    weak var rightDockStore: RightDockStore?
     private var localKeyMonitor: Any?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -142,9 +141,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let files = NSMenuItem(title: "File Explorer", action: #selector(menuShowFiles), keyEquivalent: "")
         menu.addItem(files)
 
-        let deploy = NSMenuItem(title: "Deployments", action: #selector(menuShowDeploy), keyEquivalent: "")
-        menu.addItem(deploy)
-
         menu.addItem(.separator())
 
         let quickOpen = NSMenuItem(title: "Quick Open", action: #selector(menuQuickOpen), keyEquivalent: "p")
@@ -225,19 +221,17 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func menuShowTerminal() {
-        navigationStore?.navigate(to: .terminal)
+        // Terminal owns the center view — only action needed is to drop fullscreen
+        // if the right dock is currently masking it.
+        rightDockStore?.isFullscreen = false
     }
 
     @objc private func menuShowGit() {
-        navigationStore?.navigate(to: .gitChanges)
+        rightDockStore?.expand(tab: .git)
     }
 
     @objc private func menuShowFiles() {
-        navigationStore?.navigate(to: .fileExplorer)
-    }
-
-    @objc private func menuShowDeploy() {
-        navigationStore?.navigate(to: .deployments)
+        rightDockStore?.expand(tab: .files)
     }
 
     @objc private func menuQuickOpen() {
@@ -256,7 +250,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     // NSMenuItemValidation is implicitly conformed via NSObject
 
     @objc func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
-        let terminalOnly = navigationStore?.activeTab == .terminal
+        // Terminal occupies the center area unless the right dock is fullscreen.
+        let terminalOnly = !(rightDockStore?.isFullscreen ?? false)
         // Menu key-equivalents run before NSEvent local monitors. The firstResponder
         // guard must match handleLocalKeyDown so shortcuts don't fire when the search
         // TextField (or any other non-terminal control) has focus.
@@ -304,32 +299,26 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         NSLog("openOwl: applicationWillTerminate")
-        deploymentStore?.terminateRunningLocalDeploymentsForQuit()
         // Stop all security-scoped access sessions so macOS can clean up
         projectStore?.bookmarkStore.stopAll()
     }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         let hasActiveTerminal = ghosttyManager?.needsConfirmQuit() ?? false
-        let hasActiveDeployment = deploymentStore?.hasRunningLocalDeployments() ?? false
 
         NSLog(
-            "openOwl: applicationShouldTerminate requested terminal=%d deployment=%d",
-            hasActiveTerminal ? 1 : 0,
-            hasActiveDeployment ? 1 : 0
+            "openOwl: applicationShouldTerminate requested terminal=%d",
+            hasActiveTerminal ? 1 : 0
         )
 
-        guard hasActiveTerminal || hasActiveDeployment else {
+        guard hasActiveTerminal else {
             return .terminateNow
         }
 
         let alert = NSAlert()
         alert.alertStyle = .warning
         alert.messageText = "Quit openOwl?"
-        alert.informativeText = quitConfirmationMessage(
-            hasActiveTerminal: hasActiveTerminal,
-            hasActiveDeployment: hasActiveDeployment
-        )
+        alert.informativeText = "A terminal command is still running. Quitting will stop it."
         alert.addButton(withTitle: "Cancel")
         alert.addButton(withTitle: "Quit")
 
@@ -340,19 +329,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         false
-    }
-
-    private func quitConfirmationMessage(hasActiveTerminal: Bool, hasActiveDeployment: Bool) -> String {
-        switch (hasActiveTerminal, hasActiveDeployment) {
-        case (true, true):
-            return "Terminal commands and local deployments are still running. Quitting will stop them."
-        case (true, false):
-            return "A terminal command is still running. Quitting will stop it."
-        case (false, true):
-            return "A local deployment is still running. Quitting will stop it."
-        case (false, false):
-            return ""
-        }
     }
 
     private func installLocalKeyMonitor() {
@@ -405,22 +381,34 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         guard flags.contains(.command) else { return false }
         guard !flags.contains(.control), !flags.contains(.option) else { return false }
 
-        // Cmd+number: global project/worktree switch.
-        // Switches terminal, sidebar, cwd, git, and files all at once.
+        // Cmd+number: context-sensitive switch.
+        //  • Free-terminal active → switch among that namespace's tabs (ghostty style).
+        //  • Project active        → switch projects (terminal + sidebar + cwd + git + files).
         if let chars = event.charactersIgnoringModifiers?.lowercased(),
            let tabNumber = Int(chars), (1...9).contains(tabNumber),
            !flags.contains(.shift) {
             guard let projectStore else { return false }
-            let tabs = projectStore.orderedProjectTabs
             let index = tabNumber - 1
+
+            if case .freeTerminal = projectStore.activeKind {
+                let visibleTabs = workspaceStore.visibleTabs
+                guard index < visibleTabs.count else { return true }
+                rightDockStore?.isFullscreen = false
+                workspaceStore.selectTab(id: visibleTabs[index].id)
+                return true
+            }
+
+            let tabs = projectStore.orderedProjectTabs
             guard index < tabs.count else { return true }
-            navigationStore?.navigate(to: .terminal)
+            // Switching projects with Cmd+1..9 should also surface the terminal.
+            rightDockStore?.isFullscreen = false
             projectStore.activateProject(id: tabs[index].id)
             return true
         }
 
-        // All other terminal shortcuts only work when terminal is active
-        guard navigationStore?.activeTab == .terminal else { return false }
+        // All other terminal shortcuts only work when the terminal is visible
+        // (i.e. right dock is not currently in fullscreen mode).
+        guard !(rightDockStore?.isFullscreen ?? false) else { return false }
 
         // Cmd+Shift+Return: toggle maximize/restore current pane (terminal tab only)
         if flags == [.command, .shift], event.keyCode == 36 {

@@ -5,7 +5,7 @@ import SwiftUI
 struct GitChangesView: View {
     @Environment(GitChangesStore.self) private var store
     @Environment(ProjectStore.self) private var projectStore
-    @Environment(AppNavigationStore.self) private var navigationStore
+    @Environment(RightDockStore.self) private var rightDockStore
     @State private var confirmationAction: GitConfirmationAction?
     @State private var selectedIDs: Set<String> = []
     @State private var lastClickedID: String?
@@ -14,19 +14,17 @@ struct GitChangesView: View {
     @FocusState private var commitFieldFocused: Bool
 
     var body: some View {
-        HSplitView {
-            // Left panel: changes + graph
-            VSplitView {
-                changesPanel
-                    .frame(minHeight: 180)
-
-                gitGraphPanel
-                    .frame(minHeight: 120)
+        Group {
+            if rightDockStore.gitShowsDiff {
+                HSplitView {
+                    leftSplitView
+                        .frame(idealWidth: 220, maxWidth: 280)
+                    diffPanel
+                }
+            } else {
+                leftSplitView
+                    .frame(maxWidth: .infinity)
             }
-            .frame(idealWidth: 220, maxWidth: 280)
-
-            // Right panel: diff
-            diffPanel
         }
         .onAppear {
             syncRepositoryIfActive()
@@ -43,9 +41,21 @@ struct GitChangesView: View {
     }
 
     private func syncRepositoryIfActive() {
-        guard navigationStore.activeTab == .gitChanges else { return }
+        guard rightDockStore.isExpanded && rightDockStore.activeTab == .git else { return }
         guard let url = projectStore.activeProjectURL else { return }
         store.setPreferredDirectory(url)
+    }
+
+    // MARK: - Left Split (Changes + Graph)
+
+    private var leftSplitView: some View {
+        VSplitView {
+            changesPanel
+                .frame(minHeight: 180)
+
+            gitGraphPanel
+                .frame(minHeight: 120)
+        }
     }
 
     // MARK: - Left Top: Changes Panel
@@ -101,6 +111,17 @@ struct GitChangesView: View {
             .help("Refresh")
             .accessibilityLabel("Refresh")
             .disabled(store.isRefreshing || store.isRunningCommand)
+
+            Button { rightDockStore.gitShowsDiff.toggle() } label: {
+                Image(systemName: rightDockStore.gitShowsDiff
+                    ? "square.lefthalf.filled"
+                    : "square.split.2x1")
+                    .font(AppFonts.toolbarIcon)
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(.secondary)
+            .help(rightDockStore.gitShowsDiff ? "Hide diff" : "Show diff")
+            .accessibilityLabel(rightDockStore.gitShowsDiff ? "Hide diff" : "Show diff")
         }
         .padding(.horizontal, AppSpacing.panelPadding)
         .frame(height: AppSpacing.headerHeight)
@@ -195,11 +216,11 @@ struct GitChangesView: View {
         }
         .padding(.horizontal, AppSpacing.panelPadding)
         .padding(.vertical, 6)
-        // Cmd+Return is gated on activeTab so it doesn't fire while the user is
-        // on another tab — this view stays mounted for @State preservation
-        // (commit message draft, expanded hunks, etc.). See ContentView.
+        // Cmd+Return is gated on right-dock visibility so it doesn't fire while
+        // the dock is closed or showing a different tab — this view stays mounted
+        // for @State preservation (commit message draft, expanded hunks, etc.).
         .background {
-            if navigationStore.activeTab == .gitChanges, commitEnabled {
+            if rightDockStore.isExpanded && rightDockStore.activeTab == .git, commitEnabled {
                 Button("") { store.commit() }
                     .keyboardShortcut(.return, modifiers: [.command])
                     .hidden()
@@ -405,7 +426,14 @@ struct GitChangesView: View {
                     GitGraphContentView(
                         entries: store.logEntries,
                         selectedHash: store.selectedCommitHash,
-                        onSelect: { store.selectCommit($0) },
+                        onSelect: { hash in
+                            // Same auto-expand: a commit click in list-only mode
+                            // would otherwise update state with no visible result.
+                            if !rightDockStore.gitShowsDiff {
+                                rightDockStore.gitShowsDiff = true
+                            }
+                            store.selectCommit(hash)
+                        },
                         onLoadMore: { store.loadMoreLog() },
                         hasMore: store.hasMoreLog
                     )
@@ -986,6 +1014,11 @@ struct GitChangesView: View {
         }
 
         lastClickedID = change.id
+        // Picking a change in list-only mode auto-expands the diff so the
+        // click has a visible effect.
+        if !rightDockStore.gitShowsDiff {
+            rightDockStore.gitShowsDiff = true
+        }
         store.selectChange(change)
     }
 

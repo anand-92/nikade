@@ -64,6 +64,8 @@ GitService
 
 Worktree 目录统一存放在 `~/.openowl/workspace/projects/` 下。
 
+归档 worktree 会先进入进度态并禁用重复点击，再执行 `git worktree remove --force`；只有 Git 删除成功后才会从 openOwl 项目列表移除。失败时保留侧边栏条目并显示错误，避免界面状态与磁盘/Git 状态不一致。
+
 ### 3.4 分支前缀
 
 `branchPrefix` 用于 `BranchNameGenerator` 生成分支名（如 `sanvi/calm-vale`）。
@@ -103,3 +105,4 @@ Worktree 目录统一存放在 `~/.openowl/workspace/projects/` 下。
 |------|------|
 | 2026-03-16 | 创建文档 |
 | 2026-03-18 | 新增 Claude 异常提醒卡片（RSS 轮询 + 可关闭忽略） |
+| 2026-05-10 | 修复 worktree 归档无进度反馈、可重复点击、失败仍从项目列表移除的问题 |

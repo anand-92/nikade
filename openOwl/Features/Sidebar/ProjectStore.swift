@@ -31,11 +31,47 @@ struct ProjectItem: Identifiable, Hashable, Codable {
     }
 }
 
+/// What is currently selected in the sidebar — either a project (or worktree) or a free terminal.
+/// Doubles as the namespace key in `TerminalWorkspaceStore` (via `TerminalNamespace` typealias),
+/// so it must be Hashable for dictionary use.
+enum ActiveKind: Hashable {
+    case project(String)
+    case freeTerminal(UUID)
+}
+
+/// A free terminal — not tied to any project. Lives only for the current process lifetime.
+struct FreeTerminalItem: Identifiable, Equatable {
+    let id: UUID
+    let createdAt: Date
+
+    init(id: UUID = UUID(), createdAt: Date = Date()) {
+        self.id = id
+        self.createdAt = createdAt
+    }
+}
+
 @MainActor
 @Observable
 final class ProjectStore {
     private(set) var projects: [ProjectItem] = []
-    var activeProjectID: String?
+
+    /// Setting `activeProjectID` to a non-nil value implicitly clears any active
+    /// free terminal (project selection takes priority over free-terminal selection).
+    var activeProjectID: String? {
+        didSet {
+            if activeProjectID != nil {
+                activeFreeTerminalID = nil
+            }
+        }
+    }
+
+    /// Free terminals are session-scoped — never persisted, recreated on launch.
+    private(set) var freeTerminals: [FreeTerminalItem] = []
+
+    /// The currently selected free terminal, if any. Mutually exclusive with activeProjectID.
+    /// Setter exposed for @testable test access; production code should use `activate(_:)`.
+    var activeFreeTerminalID: UUID?
+
     var collapsedProjectIDs: Set<String> = []
 
     let bookmarkStore = BookmarkStore()
@@ -86,6 +122,13 @@ final class ProjectStore {
         return projects.first(where: { $0.id == activeProjectID })?.url
     }
 
+    /// Computed view of the active selection. nil only during early init.
+    var activeKind: ActiveKind? {
+        if let id = activeProjectID { return .project(id) }
+        if let id = activeFreeTerminalID { return .freeTerminal(id) }
+        return nil
+    }
+
     func isExpanded(_ projectID: String) -> Bool {
         !collapsedProjectIDs.contains(projectID)
     }
@@ -103,6 +146,14 @@ final class ProjectStore {
     init() {
         load()
         seedDefaultProjectIfNeeded()
+        seedDefaultFreeTerminalIfNeeded()
+
+        // If no project was restored (fresh install or all projects pruned),
+        // default the selection to the first free terminal so the center view
+        // shows a usable shell.
+        if activeProjectID == nil, let first = freeTerminals.first {
+            activeFreeTerminalID = first.id
+        }
     }
 
     // MARK: - Project Management
@@ -166,10 +217,48 @@ final class ProjectStore {
 
     func activateProject(id: String) {
         guard projects.contains(where: { $0.id == id }) else { return }
-        DispatchQueue.main.async {
-            self.activeProjectID = id
-            self.persist()
-            self.detectBranchPrefix(for: id)
+        activeProjectID = id
+        persist()
+        detectBranchPrefix(for: id)
+    }
+
+    // MARK: - Active Kind / Free Terminals
+
+    /// Unified entry point for activating either a project or a free terminal.
+    /// Caller must already be on the main thread.
+    func activate(_ kind: ActiveKind) {
+        switch kind {
+        case .project(let id):
+            activateProject(id: id)
+        case .freeTerminal(let id):
+            guard freeTerminals.contains(where: { $0.id == id }) else { return }
+            activeProjectID = nil
+            activeFreeTerminalID = id
+            // Free terminals are session-scoped; nothing to persist.
+        }
+    }
+
+    @discardableResult
+    func addFreeTerminal() -> FreeTerminalItem {
+        let item = FreeTerminalItem()
+        freeTerminals.append(item)
+        return item
+    }
+
+    /// Refuses to remove the last remaining free terminal (UI never shows the
+    /// close button in that case, but guard at the model layer too).
+    func removeFreeTerminal(id: UUID) {
+        guard freeTerminals.count > 1 else { return }
+        guard freeTerminals.contains(where: { $0.id == id }) else { return }
+        freeTerminals.removeAll { $0.id == id }
+        if activeFreeTerminalID == id, let next = freeTerminals.first {
+            activeFreeTerminalID = next.id
+        }
+    }
+
+    private func seedDefaultFreeTerminalIfNeeded() {
+        if freeTerminals.isEmpty {
+            _ = addFreeTerminal()
         }
     }
 
@@ -209,6 +298,35 @@ final class ProjectStore {
     }
 
     // MARK: - Tab Reordering
+
+    /// Reorder root projects to match `orderedIDs`. Each root's worktrees
+    /// follow their parent. Items not in `orderedIDs` (e.g. roots the caller
+    /// chose not to include in the drag scope) keep their relative order at
+    /// the tail. Called by SwiftUI `.onMove` from the sidebar PROJECTS list.
+    func reorderRootProjects(orderedIDs: [String]) {
+        var newProjects: [ProjectItem] = []
+        var seen: Set<String> = []
+
+        for id in orderedIDs {
+            guard let root = projects.first(where: { $0.id == id && !$0.isWorktree }) else { continue }
+            newProjects.append(root)
+            seen.insert(id)
+            for wt in worktrees(for: id) {
+                newProjects.append(wt)
+                seen.insert(wt.id)
+            }
+        }
+
+        // Append everything we didn't touch (inactive roots + their worktrees,
+        // anything missing from orderedIDs) in their original relative order.
+        for project in projects where !seen.contains(project.id) {
+            newProjects.append(project)
+        }
+
+        guard newProjects != projects else { return }
+        projects = newProjects
+        persist()
+    }
 
     /// Move a root project (and its worktrees) to a new position among root projects.
     func moveRootProject(id: String, beforeID: String?) {
@@ -280,11 +398,33 @@ final class ProjectStore {
         persist()
     }
 
-    func renameWorktreeProject(id: String, newBranch: String) {
-        guard let index = projects.firstIndex(where: { $0.id == id }) else { return }
-        projects[index].name = newBranch
-        projects[index].worktreeBranch = newBranch
-        persist()
+    /// Rename a worktree's local branch via `git branch -m`, then update the
+    /// in-memory display name. Throws if git rejects the rename (name already
+    /// exists, invalid characters, etc.) so the UI can surface the error
+    /// instead of leaving the sidebar inconsistent with the repo.
+    func renameWorktreeProject(id: String, newBranch: String) async throws {
+        guard let project = projects.first(where: { $0.id == id }),
+              project.isWorktree,
+              let oldBranch = project.worktreeBranch else {
+            throw NSError(
+                domain: "openOwl.ProjectStore", code: 1,
+                userInfo: [NSLocalizedDescriptionKey: "Not a worktree project, or branch unknown"]
+            )
+        }
+
+        guard newBranch != oldBranch else { return }
+
+        // Run `git branch -m` in the worktree's own checkout so git updates
+        // the worktree's HEAD pointer atomically with the rename.
+        let git = GitService(workingDirectory: URL(fileURLWithPath: project.path))
+        try await git.renameBranch(from: oldBranch, to: newBranch)
+
+        // Apply UI state only after git succeeded.
+        if let index = projects.firstIndex(where: { $0.id == id }) {
+            projects[index].name = newBranch
+            projects[index].worktreeBranch = newBranch
+            persist()
+        }
     }
 
     // MARK: - Persistence

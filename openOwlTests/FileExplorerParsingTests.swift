@@ -179,6 +179,93 @@ struct FileExplorerParsingTests {
         #expect(FileExplorerStore.shouldIgnore(url: url, gitContext: .empty) == true)
     }
 
+    // MARK: - Lazy directory scan boundaries
+
+    @Test func scanProject_defersGeneratedDependencyDirectories() throws {
+        let root = try makeTempDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        try FileManager.default.createDirectory(
+            at: root.appendingPathComponent("node_modules/lodash"),
+            withIntermediateDirectories: true
+        )
+        try FileManager.default.createDirectory(
+            at: root.appendingPathComponent("src"),
+            withIntermediateDirectories: true
+        )
+        try "module".write(
+            to: root.appendingPathComponent("node_modules/lodash/index.js"),
+            atomically: true,
+            encoding: .utf8
+        )
+        try "print(\"ok\")".write(
+            to: root.appendingPathComponent("src/main.swift"),
+            atomically: true,
+            encoding: .utf8
+        )
+
+        let result = FileExplorerStore.scanProject(projectURL: root, gitContext: .empty)
+        let nodeModulesPath = root.appendingPathComponent("node_modules").standardizedFileURL.path
+        let nestedPackagePath = root.appendingPathComponent("node_modules/lodash/index.js").standardizedFileURL.path
+        let sourcePath = root.appendingPathComponent("src/main.swift").standardizedFileURL.path
+
+        #expect(result.index[nodeModulesPath]?.children == nil)
+        #expect(result.index[nestedPackagePath] == nil)
+        #expect(result.index[sourcePath] != nil)
+    }
+
+    @Test func scanProject_defersNestedGitRepositories() throws {
+        let root = try makeTempDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let nestedRepo = root.appendingPathComponent("projects/app")
+        try FileManager.default.createDirectory(
+            at: nestedRepo.appendingPathComponent("src"),
+            withIntermediateDirectories: true
+        )
+        try "gitdir: ../.git/worktrees/app".write(
+            to: nestedRepo.appendingPathComponent(".git"),
+            atomically: true,
+            encoding: .utf8
+        )
+        try "print(\"nested\")".write(
+            to: nestedRepo.appendingPathComponent("src/main.swift"),
+            atomically: true,
+            encoding: .utf8
+        )
+
+        let result = FileExplorerStore.scanProject(projectURL: root, gitContext: .empty)
+        let nestedRepoPath = nestedRepo.standardizedFileURL.path
+        let nestedSourcePath = nestedRepo.appendingPathComponent("src/main.swift").standardizedFileURL.path
+
+        #expect(result.index[nestedRepoPath]?.children == nil)
+        #expect(result.index[nestedSourcePath] == nil)
+    }
+
+    @Test func scanProject_scansOpenedGitRepositoryRoot() throws {
+        let root = try makeTempDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        try FileManager.default.createDirectory(
+            at: root.appendingPathComponent(".git"),
+            withIntermediateDirectories: true
+        )
+        try FileManager.default.createDirectory(
+            at: root.appendingPathComponent("src"),
+            withIntermediateDirectories: true
+        )
+        try "print(\"root\")".write(
+            to: root.appendingPathComponent("src/main.swift"),
+            atomically: true,
+            encoding: .utf8
+        )
+
+        let result = FileExplorerStore.scanProject(projectURL: root, gitContext: .empty)
+        let sourcePath = root.appendingPathComponent("src/main.swift").standardizedFileURL.path
+
+        #expect(result.index[sourcePath] != nil)
+    }
+
     // MARK: - isGitIgnored
 
     @Test func isGitIgnored_exactPath() {
@@ -212,6 +299,14 @@ struct FileExplorerParsingTests {
     @Test func displayName_root() {
         let url = URL(fileURLWithPath: "/")
         #expect(FileExplorerStore.displayName(for: url) == "/")
+    }
+
+    private func makeTempDirectory() throws -> URL {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("openowl-file-explorer-tests")
+            .appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+        return url
     }
 }
 
