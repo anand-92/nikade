@@ -45,8 +45,19 @@ struct openOwlApp: App {
                     workspaceStore.destroyPaneHandler = { [weak ghosttyManager] paneID in
                         ghosttyManager?.destroyPane(paneID)
                     }
+                    workspaceStore.onContextDidChange = {
+                        syncActiveProjectContext()
+                    }
                     ghosttyManager.onPaneTitleChanged = { paneID, title in
                         workspaceStore.updateTitle(for: paneID, title: title)
+                    }
+                    ghosttyManager.onPanePwdChanged = { paneID, pwd in
+                        workspaceStore.updatePanePwd(paneID: paneID, pwd: pwd)
+                    }
+                    ghosttyManager.onOpenUrl = { urlString in
+                        handleTerminalOpenURL(urlString,
+                            workspaceStore: workspaceStore,
+                            rightDockStore: rightDockStore)
                     }
                     ghosttyManager.onPaneBell = { paneID in
                         // Terminal occupies the center area unless the right dock is fullscreen.
@@ -185,6 +196,50 @@ struct openOwlApp: App {
         projectStore.updateProjectBranch(activeID, branch: snapshot.branch)
     }
 
+    /// Resolve a URL/path string from ghostty's cmd+click action and, when
+    /// it points to a local file, open it in the file explorer's editor
+    /// area + reveal the dock. Returns `true` to suppress ghostty's
+    /// default `NSWorkspace.open` (which would have routed the path to
+    /// Finder or the user's default editor).
+    @MainActor
+    private func handleTerminalOpenURL(_ urlString: String,
+                                       workspaceStore: TerminalWorkspaceStore,
+                                       rightDockStore: RightDockStore) -> Bool {
+        // External web URLs — let ghostty's default handler open them in
+        // the system browser.
+        if urlString.hasPrefix("http://") || urlString.hasPrefix("https://") {
+            return false
+        }
+
+        let fileURL: URL?
+        if urlString.hasPrefix("file://") {
+            fileURL = URL(string: urlString)
+        } else if urlString.hasPrefix("/") {
+            fileURL = URL(fileURLWithPath: urlString)
+        } else if let pwd = workspaceStore.activePaneWorkingDirectory {
+            // Relative path — resolve against the focused pane's cwd so
+            // `cmd+click foo/bar.swift` works after `cd`.
+            fileURL = pwd.appendingPathComponent(urlString)
+        } else {
+            return false
+        }
+
+        guard let url = fileURL?.standardizedFileURL else { return false }
+        var isDir: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir),
+              !isDir.boolValue else {
+            return false
+        }
+
+        rightDockStore.expand(tab: .files)
+        NotificationCenter.default.post(
+            name: .openFileFromTerminal,
+            object: nil,
+            userInfo: ["url": url]
+        )
+        return true
+    }
+
     @MainActor
     private func syncActiveProjectContext() {
         // Terminal namespace follows the sidebar selection — projects bind to their
@@ -198,16 +253,29 @@ struct openOwlApp: App {
             workspaceStore.switchNamespace(nil)
         }
 
-        // Right dock content stores only refresh when their tab is currently
-        // visible AND a project is active (file explorer / git make no sense
-        // for the free-terminal selection).
-        guard let projectURL = projectStore.activeProjectURL,
-              rightDockStore.isExpanded else { return }
+        // Right dock follows the active terminal's cwd: project namespaces use
+        // their fixed project URL; free-terminal tabs read the focused pane's
+        // shell cwd (reported via OSC 7 → GHOSTTY_ACTION_PWD), so cd-ing in the
+        // terminal automatically retargets file explorer + git changes.
+        let cwd: URL?
+        switch projectStore.activeKind {
+        case .project:
+            cwd = projectStore.activeProjectURL
+        case .freeTerminal:
+            // Fallback to $HOME until ghostty reports the shell's actual pwd
+            // — without this, a free terminal opened before shell
+            // integration emits OSC 7 would leave file explorer empty.
+            cwd = workspaceStore.activePaneWorkingDirectory
+                ?? FileManager.default.homeDirectoryForCurrentUser
+        case .none:
+            cwd = nil
+        }
+        guard let cwd, rightDockStore.isExpanded else { return }
         switch rightDockStore.activeTab {
         case .files:
-            fileExplorerStore.setProject(projectURL)
+            fileExplorerStore.setProject(cwd)
         case .git:
-            gitChangesStore.setPreferredDirectory(projectURL)
+            gitChangesStore.setPreferredDirectory(cwd)
         }
     }
 }

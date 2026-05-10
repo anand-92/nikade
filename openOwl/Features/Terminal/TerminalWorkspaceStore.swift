@@ -342,6 +342,15 @@ final class TerminalWorkspaceStore {
     /// Set by the host app to destroy a pane's ghostty surface when it's permanently closed.
     var destroyPaneHandler: ((UUID) -> Void)?
 
+    /// Fired whenever the active terminal context changes — active tab
+    /// switches or the focused pane's reported pwd updates. Used by the
+    /// host to refresh non-terminal panels (file explorer / git changes)
+    /// that depend on which directory the active terminal is sitting in.
+    /// More reliable than relying on SwiftUI's `.onChange(of:)` against
+    /// these store properties because the host view doesn't always
+    /// otherwise observe them.
+    var onContextDidChange: (() -> Void)?
+
     /// Drag-to-reposition state
     var draggingPaneID: UUID?
     var dragOverPaneID: UUID?
@@ -355,6 +364,12 @@ final class TerminalWorkspaceStore {
 
     // Per-pane title tracking (paneID → title)
     private(set) var paneTitles: [UUID: String] = [:]
+
+    // Per-pane working directory (paneID → absolute path), reported by
+    // ghostty via GHOSTTY_ACTION_PWD whenever shell integration emits OSC 7
+    // or the shell `cd`s. Used to drive file explorer / git changes when the
+    // free-terminal namespace is active.
+    private(set) var panePwds: [UUID: String] = [:]
 
     // Pane bell notification state (paneID → last bell time)
     private(set) var paneBellStates: [UUID: Date] = [:]
@@ -393,7 +408,11 @@ final class TerminalWorkspaceStore {
         dragOverPaneID = nil
         dropZone = nil
 
-        // Create initial tab if namespace has none
+        // Create initial tab if namespace has none.
+        // Intentionally does NOT fire `onContextDidChange` — the host's
+        // sync function is what calls switchNamespace in the first place,
+        // so notifying back would cause infinite recursion. The host
+        // already knows the namespace just changed.
         guard let namespace else { return }
         let nsTabs = tabs.filter { tabNamespaceMap[$0.id] == namespace }
         if nsTabs.isEmpty {
@@ -407,6 +426,53 @@ final class TerminalWorkspaceStore {
     var visibleTabs: [TerminalTabState] {
         guard let activeNamespace else { return tabs }
         return tabs.filter { tabNamespaceMap[$0.id] == activeNamespace }
+    }
+
+    /// True if the given namespace owns at least one tab. Used by the sidebar
+    /// to split projects into "active" (have a live terminal session) vs
+    /// "inactive" (added but never opened) groups.
+    func hasTabs(for namespace: TerminalNamespace) -> Bool {
+        tabNamespaceMap.values.contains(namespace)
+    }
+
+    /// Working directory of the currently focused pane in the active tab,
+    /// or nil if pwd hasn't been reported yet. Drives the file explorer /
+    /// git changes panels when running in a non-project namespace.
+    var activePaneWorkingDirectory: URL? {
+        guard let activeTabID,
+              let tab = tabs.first(where: { $0.id == activeTabID }),
+              let paneID = tab.focusedPaneID ?? tab.splitTree.firstPaneID,
+              let pwd = panePwds[paneID]
+        else { return nil }
+        return URL(fileURLWithPath: pwd)
+    }
+
+    func updatePanePwd(paneID: UUID, pwd: String) {
+        let normalized = pwd.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalized.isEmpty, panePwds[paneID] != normalized else { return }
+        panePwds[paneID] = normalized
+        // Only fire when the pwd belongs to the currently focused pane —
+        // background pane pwd changes don't affect file explorer / git.
+        if let activeTabID,
+           let tab = tabs.first(where: { $0.id == activeTabID }),
+           paneID == (tab.focusedPaneID ?? tab.splitTree.firstPaneID) {
+            onContextDidChange?()
+        }
+    }
+
+    /// Switch the active tab by id. Refreshes focus and notifies host of the
+    /// context change (so file explorer / git follow the new tab's pwd).
+    func selectTab(id: UUID) {
+        guard let index = tabs.firstIndex(where: { $0.id == id }) else { return }
+        guard activeTabID != id else { return }
+        activeTabID = id
+        if tabs[index].focusedPaneID == nil {
+            tabs[index].focusedPaneID = tabs[index].splitTree.firstPaneID
+        }
+        if let paneID = tabs[index].focusedPaneID {
+            requestFocus(for: paneID)
+        }
+        onContextDidChange?()
     }
 
     /// Check if a tab belongs to the active namespace
@@ -455,6 +521,14 @@ final class TerminalWorkspaceStore {
         return tabID
     }
 
+    /// Public hook for callers that just performed a state change which the
+    /// host should sync against (e.g. + button creating a new tab). Avoids
+    /// firing the callback inside store-internal mutations like
+    /// switchNamespace / newTab, which would cause sync recursion.
+    func notifyContextChange() {
+        onContextDidChange?()
+    }
+
     func selectTab(index: Int) {
         guard tabs.indices.contains(index) else { return }
         activeTabID = tabs[index].id
@@ -484,6 +558,40 @@ final class TerminalWorkspaceStore {
         requestFocus(for: newPane)
     }
 
+    /// Close a tab by id (for tab-bar X button). Unlike `closeCurrent`,
+    /// this doesn't require the tab to be active — but if the closed tab
+    /// was active, focus rolls over to the next tab in the same namespace.
+    /// Returns true if the tab was found and removed.
+    @discardableResult
+    func closeTab(id: UUID) -> Bool {
+        guard let index = tabs.firstIndex(where: { $0.id == id }) else { return false }
+
+        let removed = tabs[index]
+        for pID in removed.splitTree.allPaneIDs {
+            destroyPaneHandler?(pID)
+            paneTitles.removeValue(forKey: pID)
+            panePwds.removeValue(forKey: pID)
+            paneBellStates.removeValue(forKey: pID)
+            paneSearchStates.removeValue(forKey: pID)
+        }
+        let removedNamespace = tabNamespaceMap[removed.id]
+        tabNamespaceMap.removeValue(forKey: removed.id)
+        tabs.remove(at: index)
+
+        // If we just closed the active tab, fall back to the next visible
+        // one (same namespace) — leave activeTabID untouched if a different
+        // tab was closed.
+        if activeTabID == id {
+            let next = tabs.first { tabNamespaceMap[$0.id] == removedNamespace }
+            activeTabID = next?.id
+            if let fb = next, let paneID = fb.focusedPaneID ?? fb.splitTree.firstPaneID {
+                requestFocus(for: paneID)
+            }
+            onContextDidChange?()
+        }
+        return true
+    }
+
     func closeCurrent() -> TerminalCloseAction {
         guard let index = activeTabIndex else { return .closeWindow }
         var tab = tabs[index]
@@ -499,6 +607,7 @@ final class TerminalWorkspaceStore {
             for pID in removedTab.splitTree.allPaneIDs {
                 destroyPaneHandler?(pID)
                 paneTitles.removeValue(forKey: pID)
+            panePwds.removeValue(forKey: pID)
                 paneBellStates.removeValue(forKey: pID)
                 paneSearchStates.removeValue(forKey: pID)
             }
@@ -779,6 +888,7 @@ final class TerminalWorkspaceStore {
 
         destroyPaneHandler?(currentPane)
         paneTitles.removeValue(forKey: currentPane)
+        panePwds.removeValue(forKey: currentPane)
         paneBellStates.removeValue(forKey: currentPane)
         paneSearchStates.removeValue(forKey: currentPane)
 

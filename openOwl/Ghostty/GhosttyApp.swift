@@ -24,7 +24,13 @@ final class GhosttyAppManager {
         fallbackShell: "/bin/zsh"
     )
     var onPaneTitleChanged: ((UUID, String) -> Void)?
+    var onPanePwdChanged: ((UUID, String) -> Void)?
     var onPaneBell: ((UUID) -> Void)?
+    /// Called when ghostty wants to open a URL/path (cmd+click on a hyperlink
+    /// or detected path). Return `true` if the host handled it (suppresses
+    /// ghostty's default `NSWorkspace.open`); return `false` to let ghostty's
+    /// system handler run.
+    var onOpenUrl: ((String) -> Bool)?
     var onSearchEnd: ((UUID) -> Void)?
     var onSearchTotal: ((UUID, UInt?) -> Void)?
     var onSearchSelected: ((UUID, UInt?) -> Void)?
@@ -355,6 +361,22 @@ final class GhosttyAppManager {
             guard let paneID = paneID(for: target) else { return false }
             onPaneTitleChanged?(paneID, title)
             return false
+
+        case GHOSTTY_ACTION_PWD:
+            guard let paneID = paneID(for: target) else { return false }
+            guard let raw = action.action.pwd.pwd else { return true }
+            let pwd = String(cString: raw)
+            // file:// URI is allowed by OSC 7 — strip if present.
+            let cleaned = pwd.hasPrefix("file://") ? String(pwd.dropFirst("file://".count)) : pwd
+            onPanePwdChanged?(paneID, cleaned)
+            return true
+
+        case GHOSTTY_ACTION_OPEN_URL:
+            guard let raw = action.action.open_url.url else { return false }
+            let urlString = String(cString: raw)
+            // If host claims it (file path → file explorer), tell ghostty
+            // we handled it so it doesn't also fire NSWorkspace.open.
+            return onOpenUrl?(urlString) ?? false
 
         case GHOSTTY_ACTION_SCROLLBAR:
             guard let paneID = paneID(for: target) else { return false }

@@ -381,14 +381,24 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         guard flags.contains(.command) else { return false }
         guard !flags.contains(.control), !flags.contains(.option) else { return false }
 
-        // Cmd+number: global project/worktree switch.
-        // Switches terminal, sidebar, cwd, git, and files all at once.
+        // Cmd+number: context-sensitive switch.
+        //  • Free-terminal active → switch among that namespace's tabs (ghostty style).
+        //  • Project active        → switch projects (terminal + sidebar + cwd + git + files).
         if let chars = event.charactersIgnoringModifiers?.lowercased(),
            let tabNumber = Int(chars), (1...9).contains(tabNumber),
            !flags.contains(.shift) {
             guard let projectStore else { return false }
-            let tabs = projectStore.orderedProjectTabs
             let index = tabNumber - 1
+
+            if case .freeTerminal = projectStore.activeKind {
+                let visibleTabs = workspaceStore.visibleTabs
+                guard index < visibleTabs.count else { return true }
+                rightDockStore?.isFullscreen = false
+                workspaceStore.selectTab(id: visibleTabs[index].id)
+                return true
+            }
+
+            let tabs = projectStore.orderedProjectTabs
             guard index < tabs.count else { return true }
             // Switching projects with Cmd+1..9 should also surface the terminal.
             rightDockStore?.isFullscreen = false

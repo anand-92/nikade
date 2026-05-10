@@ -138,4 +138,30 @@ struct TerminalNamespaceTests {
 
         #expect(store.activeProjectID == nil)
     }
+
+    // MARK: - hasTabs(for:) — sidebar inactive grouping
+
+    @Test @MainActor func hasTabs_emptyStore_returnsFalse() {
+        let store = TerminalWorkspaceStore()
+        #expect(store.hasTabs(for: .project("proj-A")) == false)
+    }
+
+    @Test @MainActor func hasTabs_afterNewTab_returnsTrueForThatNamespaceOnly() {
+        let store = TerminalWorkspaceStore()
+        _ = store.newTab(for: .project("proj-A"))
+
+        #expect(store.hasTabs(for: .project("proj-A")) == true)
+        #expect(store.hasTabs(for: .project("proj-B")) == false)
+        #expect(store.hasTabs(for: .freeTerminal(UUID())) == false)
+    }
+
+    @Test @MainActor func hasTabs_freeTerminalNamespace_isIsolated() {
+        let store = TerminalWorkspaceStore()
+        let termID = UUID()
+        _ = store.newTab(for: .freeTerminal(termID))
+
+        #expect(store.hasTabs(for: .freeTerminal(termID)) == true)
+        #expect(store.hasTabs(for: .freeTerminal(UUID())) == false)
+        #expect(store.hasTabs(for: .project("proj-A")) == false)
+    }
 }
