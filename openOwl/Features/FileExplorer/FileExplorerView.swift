@@ -2,25 +2,6 @@ import AppKit
 import SwiftUI
 import CodeEditSourceEditor
 import CodeEditLanguages
-import Darwin
-
-// TEMP DIAGNOSTIC: prints process resident memory at named checkpoints so we can
-// pinpoint which path on a single .dic click actually allocates. Remove when the
-// 1GB-on-click leak is rooted out.
-fileprivate func dbgResident(_ tag: String) {
-    var info = mach_task_basic_info()
-    var count = mach_msg_type_number_t(MemoryLayout<mach_task_basic_info>.size) / 4
-    let result = withUnsafeMutablePointer(to: &info) {
-        $0.withMemoryRebound(to: integer_t.self, capacity: Int(count)) {
-            task_info(mach_task_self_, task_flavor_t(MACH_TASK_BASIC_INFO), $0, &count)
-        }
-    }
-    if result == KERN_SUCCESS {
-        NSLog("openOwl: [DIAG-MEM] %@ resident=%lld MB", tag, Int64(info.resident_size) / 1_048_576)
-    } else {
-        NSLog("openOwl: [DIAG-MEM] %@ (task_info err=%d)", tag, result)
-    }
-}
 
 let editorConfiguration = SourceEditorConfiguration(
     appearance: .init(
@@ -46,6 +27,17 @@ let editorConfiguration = SourceEditorConfiguration(
         wrapLines: true
     ),
     peripherals: .init(showMinimap: false)
+)
+
+/// Configuration used when a file is opened in "large file" mode: same visual
+/// theme as `editorConfiguration` but read-only, so the user can browse the
+/// content without forcing CodeEditSourceEditor's edit pipeline to run on a
+/// many-megabyte buffer.
+let readOnlyEditorConfiguration = SourceEditorConfiguration(
+    appearance: editorConfiguration.appearance,
+    behavior: .init(isEditable: false, isSelectable: true),
+    layout: editorConfiguration.layout,
+    peripherals: editorConfiguration.peripherals
 )
 
 // MARK: - Editor Tab
@@ -99,6 +91,22 @@ struct FileExplorerView: View {
     @State private var tabImageCache: [URL: NSImage] = [:]
     @State private var dirtyTabs: Set<URL> = []
 
+    /// Tabs currently in large-file mode: syntax highlighting off, read-only.
+    /// User can lift this per-tab via the "Enable Anyway" banner.
+    @State private var largeModeTabs: Set<URL> = []
+
+    /// URLs whose huge-file confirmation dialog is currently displayed.
+    /// `NSAlert.runModal()` nests an event loop that lets `.onChange(of:
+    /// selectedNodeID)` schedule a second `openFileInTab` call mid-modal —
+    /// without this guard the user gets two stacked dialogs for one click.
+    @State private var hugeFilePending: Set<URL> = []
+
+    /// Non-nil while a synchronous main-thread operation is expected to take
+    /// long enough to look like a freeze (NSLayoutManager build/teardown for
+    /// large-mode tabs). Drives a centered ProgressView overlay on the editor
+    /// panel so the user knows the app is busy, not crashed.
+    @State private var heavyProgressText: String? = nil
+
     // Editor state
     @State private var editorState = SourceEditorState()
     @State private var previewImage: NSImage?
@@ -116,6 +124,18 @@ struct FileExplorerView: View {
     /// non-dirty tab is evicted to release its NSTextStorage / NSImage and
     /// keep memory bounded across long editing sessions.
     private static let maxOpenTabs = 10
+
+    /// Files at or above this size open in "large file" mode: tree-sitter is
+    /// bypassed (`CodeLanguage.default` returns no parser) and the editor is
+    /// read-only. User can override per-tab via the "Enable Anyway" banner.
+    /// Mirrors VS Code's `LARGE_FILE_SIZE_THRESHOLD` (20 MB); we pick 10 MB to
+    /// stay conservative while easily covering hunspell dictionaries / configs.
+    private static let largeFileThreshold: Int = 10_000_000
+
+    /// Files at or above this size require explicit confirmation before
+    /// opening. They are pinned to large-file mode (Enable Anyway is still
+    /// available, but the user has been warned).
+    private static let hugeFileThreshold: Int = 50_000_000
 
     private var isActiveTabImage: Bool {
         guard let ext = activeTabURL?.pathExtension.lowercased() else { return false }
@@ -150,6 +170,7 @@ struct FileExplorerView: View {
             tabStorages.removeAll()
             tabImageCache.removeAll()
             dirtyTabs.removeAll()
+            largeModeTabs.removeAll()
             previewImage = nil
         }
         .onChange(of: store.selectedNodeID) { _, newID in
@@ -310,6 +331,28 @@ struct FileExplorerView: View {
     // MARK: - Editor Panel
 
     private var editorPanel: some View {
+        ZStack {
+            editorPanelContent
+
+            if let text = heavyProgressText {
+                Color.black.opacity(0.25)
+                    .overlay {
+                        VStack(spacing: 8) {
+                            ProgressView()
+                                .controlSize(.large)
+                            Text(text)
+                                .font(AppFonts.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        .padding(20)
+                        .background(.regularMaterial)
+                        .cornerRadius(8)
+                    }
+            }
+        }
+    }
+
+    private var editorPanelContent: some View {
         VStack(spacing: 0) {
             // Tab bar
             if !openTabs.isEmpty {
@@ -332,16 +375,22 @@ struct FileExplorerView: View {
                     .clipped()
                     .background(Color(nsColor: .windowBackgroundColor))
                 } else if !isActiveTabImage, let storage = tabStorages[url] {
-                    SourceEditor(
-                        storage,
-                        language: editorLanguage(for: url),
-                        configuration: editorConfiguration,
-                        state: $editorState,
-                        coordinators: [editTracker]
-                    )
-                    .id(url)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .clipped()
+                    let isLargeMode = largeModeTabs.contains(url)
+                    VStack(spacing: 0) {
+                        if isLargeMode {
+                            largeFileBanner(for: url)
+                        }
+                        SourceEditor(
+                            storage,
+                            language: isLargeMode ? CodeLanguage.default : editorLanguage(for: url),
+                            configuration: isLargeMode ? readOnlyEditorConfiguration : editorConfiguration,
+                            state: $editorState,
+                            coordinators: [editTracker]
+                        )
+                        .id(url)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .clipped()
+                    }
                 }
             } else {
                 Spacer()
@@ -417,26 +466,47 @@ struct FileExplorerView: View {
     /// the file is already inside the loaded tree; otherwise just opens
     /// the editor tab without disturbing the tree.
     private func openFileInTab(url: URL) {
-        dbgResident("openFileInTab.enter \(url.lastPathComponent)")
+        // Already-modal de-dupe: a runModal() above is currently waiting on
+        // user input for this URL, ignore re-entrant calls (see hugeFilePending
+        // doc comment for the SwiftUI / nested-event-loop interaction).
+        if hugeFilePending.contains(url) { return }
+
         // Already open — just switch
         if openTabs.contains(where: { $0.url == url }) {
-            NSLog("openOwl: [DIAG-MEM] openFileInTab.alreadyOpen %@", url.lastPathComponent)
             if activeTabURL != url {
                 switchToTab(url)
             }
             return
         }
 
-        // Size check
         let fileSize = (try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? Int) ?? 0
-        NSLog("openOwl: [DIAG-MEM] openFileInTab.fileSize %@ = %d bytes", url.lastPathComponent, fileSize)
-        if fileSize > 10_000_000 {
-            NSLog("openOwl: [DIAG-MEM] openFileInTab.reject>10MB %@", url.lastPathComponent)
-            return
-        }
 
         let ext = url.pathExtension.lowercased()
         let isImage = Self.imageExtensions.contains(ext)
+        let needsLargeMode = !isImage && fileSize >= Self.largeFileThreshold
+
+        // Huge files (>= 50 MB) require explicit confirmation. Skip the prompt
+        // for images — NSImage handles its own decoding cost and we cap them
+        // by `imageMaxBytes` below.
+        if !isImage && fileSize >= Self.hugeFileThreshold {
+            hugeFilePending.insert(url)
+            defer { hugeFilePending.remove(url) }
+
+            let alert = NSAlert()
+            alert.messageText = "Open large file?"
+            alert.informativeText = """
+            \(url.lastPathComponent) is \(Self.formattedSize(fileSize)).
+            It will open in plain-text, read-only mode without syntax highlighting.
+            """
+            alert.addButton(withTitle: "Open")
+            alert.addButton(withTitle: "Cancel")
+            alert.alertStyle = .warning
+            guard alert.runModal() == .alertFirstButtonReturn else { return }
+        }
+
+        // Image cap stays — NSImage decode for huge images is unbounded.
+        let imageMaxBytes = 50_000_000
+        if isImage && fileSize > imageMaxBytes { return }
 
         evictOldestTabIfNeeded()
 
@@ -444,12 +514,13 @@ struct FileExplorerView: View {
         openTabs.append(EditorTab(url: url))
         loadingFileURL = url
         isEditorLoading = true
+        if needsLargeMode {
+            largeModeTabs.insert(url)
+        }
 
         if isImage {
             Task.detached(priority: .userInitiated) {
-                dbgResident("openFileInTab.image.beforeLoad")
                 let image = NSImage(contentsOf: url)
-                dbgResident("openFileInTab.image.afterLoad")
                 await MainActor.run {
                     guard loadingFileURL == url else { return }
                     tabImageCache[url] = image
@@ -457,24 +528,27 @@ struct FileExplorerView: View {
                     activeTabURL = url
                     loadingFileURL = nil
                     isEditorLoading = false
-                    dbgResident("openFileInTab.image.committed")
                 }
             }
         } else {
-            if fileSize > 1_000_000 {
-                NSLog("openOwl: [DIAG-MEM] openFileInTab.reject>1MB %@", url.lastPathComponent)
-                openTabs.removeAll { $0.url == url }
-                loadingFileURL = nil
-                isEditorLoading = false
-                dbgResident("openFileInTab.reject>1MB.afterCleanup")
-                return
-            }
             Task.detached(priority: .userInitiated) {
-                dbgResident("openFileInTab.text.beforeRead")
                 let content = (try? String(contentsOf: url, encoding: .utf8)) ?? ""
-                dbgResident("openFileInTab.text.afterRead len=\(content.count)")
                 let storage = NSTextStorage(string: content)
-                dbgResident("openFileInTab.text.afterStorage")
+
+                // Show the progress overlay BEFORE committing the new tab —
+                // assigning `activeTabURL` synchronously triggers SourceEditor
+                // / NSLayoutManager to build line layout for the entire
+                // buffer, blocking the main thread for several seconds on
+                // large files. The 50ms sleep yields one SwiftUI render cycle
+                // so the spinner actually paints before the freeze.
+                if needsLargeMode {
+                    await MainActor.run {
+                        guard loadingFileURL == url else { return }
+                        heavyProgressText = "Loading \(url.lastPathComponent)…"
+                    }
+                    try? await Task.sleep(for: .milliseconds(50))
+                }
+
                 await MainActor.run {
                     guard loadingFileURL == url else { return }
                     tabStorages[url] = storage
@@ -482,15 +556,48 @@ struct FileExplorerView: View {
                     editorState = SourceEditorState()
                     activeTabURL = url
                     loadingFileURL = nil
-                    dbgResident("openFileInTab.text.committed")
+                    if needsLargeMode {
+                        heavyProgressText = nil
+                    }
                 }
                 try? await Task.sleep(for: .milliseconds(50))
                 await MainActor.run {
                     guard activeTabURL == url else { return }
                     isEditorLoading = false
-                    dbgResident("openFileInTab.text.editorLoadingFalse")
                 }
             }
+        }
+    }
+
+    private static func formattedSize(_ bytes: Int) -> String {
+        ByteCountFormatter.string(fromByteCount: Int64(bytes), countStyle: .file)
+    }
+
+    /// Yellow banner shown above the editor for tabs in large-file mode.
+    /// Tapping "Enable Anyway" lifts the restriction for the current tab,
+    /// triggering a SourceEditor reconfiguration with the file's real
+    /// language and editable config.
+    @ViewBuilder
+    private func largeFileBanner(for url: URL) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .foregroundStyle(.orange)
+                .font(AppFonts.toolbarIcon)
+            Text("Large file — syntax highlighting and editing disabled.")
+                .font(AppFonts.caption)
+                .foregroundStyle(.secondary)
+            Spacer(minLength: 8)
+            Button("Enable Anyway") {
+                largeModeTabs.remove(url)
+            }
+            .controlSize(.small)
+            .buttonStyle(.bordered)
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+        .background(Color.orange.opacity(0.10))
+        .overlay(alignment: .bottom) {
+            Rectangle().fill(Color.orange.opacity(0.25)).frame(height: 1)
         }
     }
 
@@ -523,6 +630,24 @@ struct FileExplorerView: View {
     }
 
     private func closeTab(_ url: URL) {
+        // Closing a large-mode tab triggers synchronous NSLayoutManager
+        // teardown to release the line layout cache, which can block the main
+        // thread for several seconds on multi-MB plain text. Show the spinner
+        // overlay first, then yield one runloop turn so SwiftUI paints it
+        // before the synchronous removeValue freeze.
+        let needsSpinner = largeModeTabs.contains(url) && tabStorages[url] != nil
+        if needsSpinner {
+            heavyProgressText = "Closing \(url.lastPathComponent)…"
+            DispatchQueue.main.async {
+                performTabClose(url)
+                heavyProgressText = nil
+            }
+        } else {
+            performTabClose(url)
+        }
+    }
+
+    private func performTabClose(_ url: URL) {
         // Auto-save dirty tab
         if dirtyTabs.contains(url) {
             if let storage = tabStorages[url] {
@@ -541,6 +666,7 @@ struct FileExplorerView: View {
         tabStorages.removeValue(forKey: url)
         tabImageCache.removeValue(forKey: url)
         dirtyTabs.remove(url)
+        largeModeTabs.remove(url)
 
         if wasActive {
             if openTabs.isEmpty {
@@ -585,6 +711,7 @@ struct FileExplorerView: View {
         openTabs.removeAll { $0.url == evictURL }
         tabStorages.removeValue(forKey: evictURL)
         tabImageCache.removeValue(forKey: evictURL)
+        largeModeTabs.remove(evictURL)
     }
 
     // MARK: - Save

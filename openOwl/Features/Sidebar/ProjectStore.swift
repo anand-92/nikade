@@ -299,6 +299,35 @@ final class ProjectStore {
 
     // MARK: - Tab Reordering
 
+    /// Reorder root projects to match `orderedIDs`. Each root's worktrees
+    /// follow their parent. Items not in `orderedIDs` (e.g. roots the caller
+    /// chose not to include in the drag scope) keep their relative order at
+    /// the tail. Called by SwiftUI `.onMove` from the sidebar PROJECTS list.
+    func reorderRootProjects(orderedIDs: [String]) {
+        var newProjects: [ProjectItem] = []
+        var seen: Set<String> = []
+
+        for id in orderedIDs {
+            guard let root = projects.first(where: { $0.id == id && !$0.isWorktree }) else { continue }
+            newProjects.append(root)
+            seen.insert(id)
+            for wt in worktrees(for: id) {
+                newProjects.append(wt)
+                seen.insert(wt.id)
+            }
+        }
+
+        // Append everything we didn't touch (inactive roots + their worktrees,
+        // anything missing from orderedIDs) in their original relative order.
+        for project in projects where !seen.contains(project.id) {
+            newProjects.append(project)
+        }
+
+        guard newProjects != projects else { return }
+        projects = newProjects
+        persist()
+    }
+
     /// Move a root project (and its worktrees) to a new position among root projects.
     func moveRootProject(id: String, beforeID: String?) {
         guard let sourceIdx = projects.firstIndex(where: { $0.id == id && !$0.isWorktree }) else { return }
@@ -369,11 +398,33 @@ final class ProjectStore {
         persist()
     }
 
-    func renameWorktreeProject(id: String, newBranch: String) {
-        guard let index = projects.firstIndex(where: { $0.id == id }) else { return }
-        projects[index].name = newBranch
-        projects[index].worktreeBranch = newBranch
-        persist()
+    /// Rename a worktree's local branch via `git branch -m`, then update the
+    /// in-memory display name. Throws if git rejects the rename (name already
+    /// exists, invalid characters, etc.) so the UI can surface the error
+    /// instead of leaving the sidebar inconsistent with the repo.
+    func renameWorktreeProject(id: String, newBranch: String) async throws {
+        guard let project = projects.first(where: { $0.id == id }),
+              project.isWorktree,
+              let oldBranch = project.worktreeBranch else {
+            throw NSError(
+                domain: "openOwl.ProjectStore", code: 1,
+                userInfo: [NSLocalizedDescriptionKey: "Not a worktree project, or branch unknown"]
+            )
+        }
+
+        guard newBranch != oldBranch else { return }
+
+        // Run `git branch -m` in the worktree's own checkout so git updates
+        // the worktree's HEAD pointer atomically with the rename.
+        let git = GitService(workingDirectory: URL(fileURLWithPath: project.path))
+        try await git.renameBranch(from: oldBranch, to: newBranch)
+
+        // Apply UI state only after git succeeded.
+        if let index = projects.firstIndex(where: { $0.id == id }) {
+            projects[index].name = newBranch
+            projects[index].worktreeBranch = newBranch
+            persist()
+        }
     }
 
     // MARK: - Persistence

@@ -1,21 +1,6 @@
 import AppKit
 import Foundation
 import Observation
-import Darwin
-
-// TEMP DIAGNOSTIC — see FileExplorerView.swift counterpart. Remove together.
-fileprivate func dbgResidentStore(_ tag: String) {
-    var info = mach_task_basic_info()
-    var count = mach_msg_type_number_t(MemoryLayout<mach_task_basic_info>.size) / 4
-    let result = withUnsafeMutablePointer(to: &info) {
-        $0.withMemoryRebound(to: integer_t.self, capacity: Int(count)) {
-            task_info(mach_task_self_, task_flavor_t(MACH_TASK_BASIC_INFO), $0, &count)
-        }
-    }
-    if result == KERN_SUCCESS {
-        NSLog("openOwl: [DIAG-MEM] %@ resident=%lld MB", tag, Int64(info.resident_size) / 1_048_576)
-    }
-}
 
 enum FileGitState: String, Hashable {
     case added
@@ -308,7 +293,6 @@ final class FileExplorerStore {
     }
 
     func selectNode(_ nodeID: String?) {
-        dbgResidentStore("store.selectNode \(nodeID ?? "nil")")
         selectedNodeID = nodeID
         loadPreviewForSelection()
     }
@@ -644,7 +628,6 @@ final class FileExplorerStore {
     }
 
     private func loadPreviewForSelection() {
-        dbgResidentStore("loadPreviewForSelection.enter")
         guard let node = selectedNode else {
             previewState = .none
             return
@@ -659,7 +642,6 @@ final class FileExplorerStore {
         }
 
         previewState = Self.makePreviewState(for: node.url)
-        dbgResidentStore("loadPreviewForSelection.exit \(node.url.lastPathComponent)")
     }
 
     /// Most recent git context (status + ignore rules). Updated after each full scan.

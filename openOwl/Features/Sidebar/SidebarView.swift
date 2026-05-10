@@ -2,10 +2,26 @@ import SwiftUI
 
 struct SidebarView: View {
     @Environment(ProjectStore.self) private var projectStore
+    @Environment(TerminalWorkspaceStore.self) private var workspace
     @Environment(ClaudeStatusStore.self) private var claudeStatusStore
     @Environment(\.openURL) private var openURL
 
-    @State private var terminalsSectionExpanded: Bool = true
+    @State private var projectsSectionExpanded: Bool = true
+    @State private var inactiveSectionExpanded: Bool = false
+
+    /// True iff this root project (or any of its worktrees) currently owns a
+    /// terminal tab. Inactive projects are added but haven't been opened yet
+    /// in this session — they're moved to a collapsed group so the sidebar
+    /// stays focused on what the user is actually working on.
+    private func isProjectActive(_ project: ProjectItem) -> Bool {
+        if workspace.hasTabs(for: .project(project.id)) { return true }
+        if !project.isWorktree {
+            return projectStore.worktrees(for: project.id).contains {
+                workspace.hasTabs(for: .project($0.id))
+            }
+        }
+        return false
+    }
 
     /// Selection binding — branch rows, worktree rows, and free-terminal rows are
     /// selectable. Folder headers have no `.tag()` and are never highlighted.
@@ -18,7 +34,7 @@ struct SidebarView: View {
                     return "branch-\(activeID)"
                 }
                 if let activeFree = projectStore.activeFreeTerminalID {
-                    return TerminalsSection.rowTag(for: activeFree)
+                    return TerminalEntryRow.rowTag(for: activeFree)
                 }
                 return nil
             },
@@ -27,7 +43,7 @@ struct SidebarView: View {
                 // Defer to avoid "publishing changes from within view updates"
                 // (List may call set during body evaluation when rows change)
                 DispatchQueue.main.async {
-                    if let termID = TerminalsSection.terminalID(fromTag: tag) {
+                    if let termID = TerminalEntryRow.terminalID(fromTag: tag) {
                         projectStore.activate(.freeTerminal(termID))
                     } else if tag.hasPrefix("branch-") {
                         let projectID = String(tag.dropFirst("branch-".count))
@@ -51,27 +67,61 @@ struct SidebarView: View {
 
     var body: some View {
         let shortcuts = shortcutMap
+        let active = projectStore.rootProjects.filter(isProjectActive)
+        let inactive = projectStore.rootProjects.filter { !isProjectActive($0) }
 
         List(selection: listSelection) {
-            TerminalsSection(isExpanded: $terminalsSectionExpanded)
+            if let termID = projectStore.freeTerminals.first?.id {
+                TerminalEntryRow()
+                    .tag(TerminalEntryRow.rowTag(for: termID))
+            }
 
-            ForEach(projectStore.rootProjects) { project in
-                // 1) Project header — no .tag(), never selectable
-                ProjectHeaderRow(project: project)
+            ProjectsHeaderRow(isExpanded: $projectsSectionExpanded)
 
-                // 2) Expanded children: branch row (always) + worktree rows
-                if projectStore.isExpanded(project.id) {
-                    BranchRow(
-                        branch: project.lastBranch ?? "No commits yet",
-                        path: project.path,
-                        projectID: project.id,
-                        shortcutNumber: shortcuts[project.id]
+            if projectsSectionExpanded {
+                ForEach(active) { project in
+                    // 1) Project header — no .tag(), never selectable
+                    ProjectHeaderRow(project: project)
+
+                    // 2) Expanded children: branch row (always) + worktree rows
+                    if projectStore.isExpanded(project.id) {
+                        BranchRow(
+                            branch: project.lastBranch ?? "No commits yet",
+                            path: project.path,
+                            projectID: project.id,
+                            shortcutNumber: shortcuts[project.id]
+                        )
+                        .tag("branch-\(project.id)")
+
+                        ForEach(projectStore.worktrees(for: project.id)) { wt in
+                            WorktreeRow(wt: wt, projectID: wt.id, shortcutNumber: shortcuts[wt.id])
+                                .tag(wt.id)
+                        }
+                    }
+                }
+                .onMove { source, destination in
+                    // SwiftUI hands us indices into the `active` array; do the
+                    // local move there, then push the resulting id sequence to
+                    // the store so the persisted backing array (and any
+                    // expanded worktree groups) follow the new order.
+                    var reordered = active
+                    reordered.move(fromOffsets: source, toOffset: destination)
+                    projectStore.reorderRootProjects(orderedIDs: reordered.map(\.id))
+                }
+
+                if !inactive.isEmpty {
+                    InactiveProjectsHeaderRow(
+                        count: inactive.count,
+                        isExpanded: $inactiveSectionExpanded
                     )
-                    .tag("branch-\(project.id)")
 
-                    ForEach(projectStore.worktrees(for: project.id)) { wt in
-                        WorktreeRow(wt: wt, projectID: wt.id, shortcutNumber: shortcuts[wt.id])
-                            .tag(wt.id)
+                    if inactiveSectionExpanded {
+                        ForEach(inactive) { project in
+                            // Activating from this row creates a tab and the
+                            // row will reflow into the active group above on
+                            // the next render — that's the intended UX.
+                            InactiveProjectRow(project: project)
+                        }
                     }
                 }
             }
@@ -105,17 +155,6 @@ struct SidebarView: View {
                     }
                     .buttonStyle(.bordered)
                 }
-            }
-        }
-        .toolbar {
-            ToolbarItem(placement: .primaryAction) {
-                Button {
-                    projectStore.openProjectPicker()
-                } label: {
-                    Image(systemName: "plus")
-                }
-                .help("Open project folder")
-                .accessibilityLabel("Open project folder")
             }
         }
     }
@@ -362,6 +401,7 @@ private struct WorktreeRow: View {
     @State private var isRenaming = false
     @State private var isArchiving = false
     @State private var renameText = ""
+    @State private var renameError: String?
     @FocusState private var renameFieldFocused: Bool
 
     private var paneInfos: [PaneInfo] { workspace.paneInfos(for: projectID) }
@@ -381,10 +421,21 @@ private struct WorktreeRow: View {
                         .focused($renameFieldFocused)
                         .onSubmit {
                             let trimmed = renameText.trimmingCharacters(in: .whitespacesAndNewlines)
-                            if !trimmed.isEmpty {
-                                projectStore.renameWorktreeProject(id: wt.id, newBranch: trimmed)
+                            guard !trimmed.isEmpty else {
+                                isRenaming = false
+                                return
                             }
+                            // Capture the values we need synchronously: SwiftUI may
+                            // reset isRenaming before the Task runs.
+                            let targetID = wt.id
                             isRenaming = false
+                            Task {
+                                do {
+                                    try await projectStore.renameWorktreeProject(id: targetID, newBranch: trimmed)
+                                } catch {
+                                    renameError = error.localizedDescription
+                                }
+                            }
                         }
                         .onExitCommand { isRenaming = false }
                 } else {
@@ -467,6 +518,14 @@ private struct WorktreeRow: View {
                 startArchiveWorktree()
             }
             .disabled(isArchiving)
+        }
+        .alert("Rename failed", isPresented: Binding(
+            get: { renameError != nil },
+            set: { if !$0 { renameError = nil } }
+        )) {
+            Button("OK", role: .cancel) { renameError = nil }
+        } message: {
+            Text(renameError ?? "")
         }
     }
 
