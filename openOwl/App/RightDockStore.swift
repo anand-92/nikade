@@ -31,10 +31,15 @@ enum RightDockTab: String, CaseIterable, Hashable, Identifiable {
 final class RightDockStore {
     static let minWidth: CGFloat = 320
     static let defaultWidth: CGFloat = 420
+    /// Width used when the active tab's detail panel is hidden — narrow enough
+    /// to comfortably fit just the tree/changes list without dead space.
+    static let listOnlyWidth: CGFloat = 260
 
     private static let keyExpanded = "openowl.rightDock.isExpanded"
     private static let keyActiveTab = "openowl.rightDock.activeTab"
     private static let keyWidth = "openowl.rightDock.width"
+    private static let keyFilesShowsEditor = "openowl.rightDock.files.showsEditor"
+    private static let keyGitShowsDiff = "openowl.rightDock.git.showsDiff"
 
     var isExpanded: Bool {
         didSet {
@@ -54,6 +59,16 @@ final class RightDockStore {
     /// Fullscreen is session-scoped — not persisted across launches.
     var isFullscreen: Bool = false
 
+    /// File explorer: false hides the editor pane, leaving only the tree.
+    var filesShowsEditor: Bool {
+        didSet { UserDefaults.standard.set(filesShowsEditor, forKey: Self.keyFilesShowsEditor) }
+    }
+
+    /// Git changes: false hides the diff pane, leaving only the changes list.
+    var gitShowsDiff: Bool {
+        didSet { UserDefaults.standard.set(gitShowsDiff, forKey: Self.keyGitShowsDiff) }
+    }
+
     init() {
         let defaults = UserDefaults.standard
         self.isExpanded = defaults.object(forKey: Self.keyExpanded) as? Bool ?? false
@@ -62,6 +77,27 @@ final class RightDockStore {
         let savedWidth = defaults.object(forKey: Self.keyWidth) as? Double
         let resolvedWidth = CGFloat(savedWidth ?? Double(Self.defaultWidth))
         self.width = max(Self.minWidth, resolvedWidth)
+        self.filesShowsEditor = defaults.object(forKey: Self.keyFilesShowsEditor) as? Bool ?? true
+        self.gitShowsDiff = defaults.object(forKey: Self.keyGitShowsDiff) as? Bool ?? true
+    }
+
+    /// True if the active tab's detail panel (editor / diff) is currently visible.
+    /// Deploy has no left/right split so it's always considered "showing detail".
+    var showsDetailForActiveTab: Bool {
+        switch activeTab {
+        case .files: return filesShowsEditor
+        case .git: return gitShowsDiff
+        case .deploy: return true
+        }
+    }
+
+    /// Width the dock panel actually occupies, given fullscreen state and
+    /// whether the active tab is showing its detail pane. The host passes its
+    /// own width so fullscreen can stretch to fill the space minus the rail.
+    func effectiveWidth(hostWidth: CGFloat, railWidth: CGFloat) -> CGFloat {
+        if isFullscreen { return max(0, hostWidth - railWidth) }
+        if !showsDetailForActiveTab { return Self.listOnlyWidth }
+        return width
     }
 
     /// Toolbar button behavior:

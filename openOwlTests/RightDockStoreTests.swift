@@ -7,11 +7,15 @@ struct RightDockStoreTests {
     private static let keyExpanded = "openowl.rightDock.isExpanded"
     private static let keyActiveTab = "openowl.rightDock.activeTab"
     private static let keyWidth = "openowl.rightDock.width"
+    private static let keyFilesShowsEditor = "openowl.rightDock.files.showsEditor"
+    private static let keyGitShowsDiff = "openowl.rightDock.git.showsDiff"
 
     private static func clearDefaults() {
         UserDefaults.standard.removeObject(forKey: keyExpanded)
         UserDefaults.standard.removeObject(forKey: keyActiveTab)
         UserDefaults.standard.removeObject(forKey: keyWidth)
+        UserDefaults.standard.removeObject(forKey: keyFilesShowsEditor)
+        UserDefaults.standard.removeObject(forKey: keyGitShowsDiff)
     }
 
     // MARK: - init / defaults
@@ -252,6 +256,105 @@ struct RightDockStoreTests {
 
         store.setWidth(500, maxWidth: 100)
         #expect(store.width == RightDockStore.minWidth)
+        Self.clearDefaults()
+    }
+
+    // MARK: - Detail toggles (filesShowsEditor / gitShowsDiff)
+
+    @Test @MainActor func filesShowsEditor_defaultsTrue() {
+        Self.clearDefaults()
+        let store = RightDockStore()
+        #expect(store.filesShowsEditor == true)
+        Self.clearDefaults()
+    }
+
+    @Test @MainActor func gitShowsDiff_defaultsTrue() {
+        Self.clearDefaults()
+        let store = RightDockStore()
+        #expect(store.gitShowsDiff == true)
+        Self.clearDefaults()
+    }
+
+    @Test @MainActor func filesShowsEditor_persists() {
+        Self.clearDefaults()
+        let store = RightDockStore()
+        store.filesShowsEditor = false
+
+        let saved = UserDefaults.standard.object(forKey: Self.keyFilesShowsEditor) as? Bool
+        #expect(saved == false)
+        Self.clearDefaults()
+    }
+
+    @Test @MainActor func gitShowsDiff_persists() {
+        Self.clearDefaults()
+        let store = RightDockStore()
+        store.gitShowsDiff = false
+
+        let saved = UserDefaults.standard.object(forKey: Self.keyGitShowsDiff) as? Bool
+        #expect(saved == false)
+        Self.clearDefaults()
+    }
+
+    @Test @MainActor func init_restoresDetailToggles() {
+        UserDefaults.standard.set(false, forKey: Self.keyFilesShowsEditor)
+        UserDefaults.standard.set(false, forKey: Self.keyGitShowsDiff)
+
+        let store = RightDockStore()
+        #expect(store.filesShowsEditor == false)
+        #expect(store.gitShowsDiff == false)
+        Self.clearDefaults()
+    }
+
+    @Test @MainActor func showsDetailForActiveTab_followsCurrentTab() {
+        Self.clearDefaults()
+        let store = RightDockStore()
+        store.filesShowsEditor = false
+        store.gitShowsDiff = true
+
+        store.activeTab = .files
+        #expect(store.showsDetailForActiveTab == false)
+        store.activeTab = .git
+        #expect(store.showsDetailForActiveTab == true)
+        // Deploy has no list/detail split — always true.
+        store.activeTab = .deploy
+        #expect(store.showsDetailForActiveTab == true)
+        Self.clearDefaults()
+    }
+
+    // MARK: - effectiveWidth
+
+    @Test @MainActor func effectiveWidth_normalReturnsStoreWidth() {
+        Self.clearDefaults()
+        let store = RightDockStore()
+        store.activeTab = .git
+        store.gitShowsDiff = true
+        store.width = 480
+
+        let w = store.effectiveWidth(hostWidth: 1200, railWidth: 28)
+        #expect(w == 480)
+        Self.clearDefaults()
+    }
+
+    @Test @MainActor func effectiveWidth_listOnlyReturnsListOnlyWidth() {
+        Self.clearDefaults()
+        let store = RightDockStore()
+        store.activeTab = .files
+        store.filesShowsEditor = false
+        store.width = 480
+
+        let w = store.effectiveWidth(hostWidth: 1200, railWidth: 28)
+        #expect(w == RightDockStore.listOnlyWidth)
+        Self.clearDefaults()
+    }
+
+    @Test @MainActor func effectiveWidth_fullscreenFillsAvailable() {
+        Self.clearDefaults()
+        let store = RightDockStore()
+        store.toggle(tab: .git)
+        store.toggleFullscreen()
+
+        let w = store.effectiveWidth(hostWidth: 1000, railWidth: 28)
+        #expect(w == CGFloat(972))
         Self.clearDefaults()
     }
 }

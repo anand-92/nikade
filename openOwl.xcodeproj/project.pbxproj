@@ -39,6 +39,7 @@
 		5729326DB2DB723A977828AB /* AppIcon.icns in Resources */ = {isa = PBXBuildFile; fileRef = 938F89967F54EF40EA4AE7FE /* AppIcon.icns */; };
 		58B0B6ED8636B72C527AE508 /* SplitDiffByFileTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C39D7120D769F3D4DF10E3C6 /* SplitDiffByFileTests.swift */; };
 		5B201E5BFA79E0FA515A4928 /* RightDockView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F2AE87C73C9563DAB9CC396C /* RightDockView.swift */; };
+		A1B2C3D4E5F60011AABBCC01 /* RightDockRail.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60011AABBCC02 /* RightDockRail.swift */; };
 		5C81D60C2CA89EF4FA785444 /* CreateDeploymentSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7ED9D7B88CF308C9655ACB5D /* CreateDeploymentSheet.swift */; };
 		5CB8CC71803498A3BE67CF5A /* GitService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 61C1A374304AF8134D201B42 /* GitService.swift */; };
 		5E396A11E8647300BD34C2FB /* PanelDivider.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAF45F9E4541BB9F66DC113E /* PanelDivider.swift */; };
@@ -186,6 +187,7 @@
 		E8DDBDFCC91E18EF5D1F8EA3 /* WindowAccessor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowAccessor.swift; sourceTree = "<group>"; };
 		F24C6950453024B0CD1362DE /* DeploymentRecoveryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeploymentRecoveryTests.swift; sourceTree = "<group>"; };
 		F2AE87C73C9563DAB9CC396C /* RightDockView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = RightDockView.swift; sourceTree = "<group>"; };
+		A1B2C3D4E5F60011AABBCC02 /* RightDockRail.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = RightDockRail.swift; sourceTree = "<group>"; };
 		F55B1F7B1BFEBE824E839A54 /* ProjectStorePersistenceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProjectStorePersistenceTests.swift; sourceTree = "<group>"; };
 		F5BCF2DFA7863BDF0B13FA97 /* BranchNameGeneratorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BranchNameGeneratorTests.swift; sourceTree = "<group>"; };
 		F6C7B0DBA130E23B413EA3A8 /* GitChangesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GitChangesView.swift; sourceTree = "<group>"; };
@@ -313,6 +315,7 @@
 		523F2B51C3C192A22E545DBD /* RightDock */ = {
 			isa = PBXGroup;
 			children = (
+				A1B2C3D4E5F60011AABBCC02 /* RightDockRail.swift */,
 				F2AE87C73C9563DAB9CC396C /* RightDockView.swift */,
 			);
 			name = RightDock;
@@ -618,6 +621,7 @@
 				1B7BFF5EEB471D6293891D61 /* RightDockStore.swift in Sources */,
 				87018CD003D1FDF77793E2D9 /* TerminalsSection.swift in Sources */,
 				5B201E5BFA79E0FA515A4928 /* RightDockView.swift in Sources */,
+				A1B2C3D4E5F60011AABBCC01 /* RightDockRail.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

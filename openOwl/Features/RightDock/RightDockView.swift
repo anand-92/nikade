@@ -1,13 +1,13 @@
 import AppKit
 import SwiftUI
 
-/// Right-hand inspector panel. Hosts Files / Git / Deploy as switchable tabs,
-/// keeps all three views mounted to preserve their `@State` (editor tabs,
-/// commit drafts, scroll positions, etc.), and supports collapse + fullscreen.
+/// Right-hand inspector panel. Hosts Files / Git / Deploy as switchable tabs
+/// and keeps all three views mounted to preserve their `@State` (editor tabs,
+/// commit drafts, scroll positions, etc.).
 ///
-/// The hosting layout (ContentView) is responsible for sizing — this view fills
-/// the space it's given. Width persistence and the drag-to-resize handle live
-/// here so the dock owns its own affordance set.
+/// Tab switching, collapse, and fullscreen affordances live on `RightDockRail`
+/// (the always-visible icon strip on the far right) — this view is purely
+/// content + a left-edge resize handle.
 struct RightDockView: View {
     @Environment(RightDockStore.self) private var dock
 
@@ -18,68 +18,23 @@ struct RightDockView: View {
 
     var body: some View {
         HStack(spacing: 0) {
-            // Drag handle on the left edge — only shown when not fullscreen,
-            // since fullscreen panel ignores `width` entirely.
-            if !dock.isFullscreen {
-                ResizeHandle { translationX in
-                    let proposed = dock.width - translationX
-                    dock.setWidth(proposed, maxWidth: hostWidth * 0.5)
-                }
+            // Drag handle on the left edge — hidden when fullscreen (ignores
+            // `width`) or when the active tab is list-only (effectiveWidth
+            // overrides `width` with a fixed `listOnlyWidth` either way).
+            if !dock.isFullscreen && dock.showsDetailForActiveTab {
+                ResizeHandle(
+                    currentWidth: dock.width,
+                    onResize: { proposed in
+                        dock.setWidth(proposed, maxWidth: hostWidth * 0.5)
+                    }
+                )
             }
 
-            VStack(spacing: 0) {
-                tabBar
-
-                Divider()
-
-                contentArea
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            contentArea
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .background(AppPalette.base)
     }
-
-    // MARK: - Tab Bar
-
-    private var tabBar: some View {
-        HStack(spacing: 4) {
-            ForEach(RightDockTab.allCases) { tab in
-                TabBarItem(tab: tab, isActive: dock.activeTab == tab) {
-                    dock.activeTab = tab
-                }
-            }
-
-            Spacer(minLength: 8)
-
-            Button {
-                dock.toggleFullscreen()
-            } label: {
-                Image(systemName: dock.isFullscreen
-                      ? "arrow.down.right.and.arrow.up.left"
-                      : "arrow.up.left.and.arrow.down.right")
-                    .font(AppFonts.toolbarIcon)
-                    .foregroundStyle(.secondary)
-            }
-            .buttonStyle(.plain)
-            .help(dock.isFullscreen ? "Exit fullscreen" : "Fullscreen")
-            .accessibilityLabel(dock.isFullscreen ? "Exit fullscreen" : "Fullscreen")
-
-            Button {
-                dock.collapse()
-            } label: {
-                Image(systemName: "sidebar.right")
-                    .font(AppFonts.toolbarIcon)
-                    .foregroundStyle(.secondary)
-            }
-            .buttonStyle(.plain)
-            .help("Collapse panel")
-            .accessibilityLabel("Collapse panel")
-        }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 6)
-    }
-
-    // MARK: - Content Area
 
     private var contentArea: some View {
         ZStack {
@@ -108,43 +63,17 @@ struct RightDockView: View {
     }
 }
 
-// MARK: - Tab Bar Item
-
-private struct TabBarItem: View {
-    let tab: RightDockTab
-    let isActive: Bool
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            HStack(spacing: 4) {
-                Image(systemName: tab.systemImage)
-                    .font(AppFonts.toolbarIcon)
-                Text(tab.title)
-                    .font(AppFonts.body.weight(isActive ? .semibold : .regular))
-            }
-            .foregroundStyle(isActive ? AnyShapeStyle(.primary) : AnyShapeStyle(.secondary))
-            .padding(.horizontal, 10)
-            .padding(.vertical, 4)
-            .background(
-                RoundedRectangle(cornerRadius: 6, style: .continuous)
-                    .fill(isActive ? AppPalette.accent.opacity(0.18) : Color.clear)
-            )
-        }
-        .buttonStyle(.plain)
-        .help(tab.title)
-    }
-}
-
 // MARK: - Resize Handle
 
-/// 4pt-wide invisible hit zone on the left edge that drags the panel wider/narrower.
-/// Drag delta is reported as raw translation; the host translates that into a width
-/// proposal via `setWidth(_:maxWidth:)` so clamping lives in the store.
+/// 4pt-wide invisible hit zone on the left edge. Reports an absolute proposed
+/// width (computed from the width-at-drag-start + cumulative translation) so
+/// the gesture is immune to view rebuilds — a delta-based @GestureState
+/// version produced visible jitter as the dock rebuilt on every width change.
 private struct ResizeHandle: View {
-    let onDrag: (CGFloat) -> Void
+    let currentWidth: CGFloat
+    let onResize: (CGFloat) -> Void
 
-    @GestureState private var translationX: CGFloat = 0
+    @State private var dragStartWidth: CGFloat?
     @State private var hovering = false
 
     var body: some View {
@@ -167,11 +96,23 @@ private struct ResizeHandle: View {
                 }
             }
             .gesture(
-                DragGesture(minimumDistance: 0)
-                    .updating($translationX) { value, state, _ in
-                        let delta = value.translation.width - state
-                        state = value.translation.width
-                        onDrag(delta)
+                // .global is critical: as the dock grows the handle moves
+                // left with it, and a .local coordinate space would make the
+                // mouse appear to teleport relative to the handle each frame,
+                // producing a feedback-loop jitter. Global coords are stable
+                // because they don't depend on view position.
+                DragGesture(minimumDistance: 1, coordinateSpace: .global)
+                    .onChanged { value in
+                        if dragStartWidth == nil {
+                            dragStartWidth = currentWidth
+                        }
+                        // Handle is on the LEFT edge: dragging left makes the
+                        // panel wider, so subtract the (negative) translation.
+                        let proposed = (dragStartWidth ?? currentWidth) - value.translation.width
+                        onResize(proposed)
+                    }
+                    .onEnded { _ in
+                        dragStartWidth = nil
                     }
             )
     }

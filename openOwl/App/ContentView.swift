@@ -32,12 +32,17 @@ struct ContentView: View {
 
                             RightDockView(hostWidth: geo.size.width)
                                 .frame(
-                                    width: rightDockStore.isFullscreen
-                                        ? max(0, geo.size.width)
-                                        : rightDockStore.width
+                                    width: rightDockStore.effectiveWidth(
+                                        hostWidth: geo.size.width,
+                                        railWidth: RightDockRail.width
+                                    )
                                 )
                                 .frame(maxHeight: .infinity)
                         }
+
+                        Divider()
+
+                        RightDockRail()
                     }
 
                     Divider()
@@ -48,13 +53,6 @@ struct ContentView: View {
             }
         }
         .navigationSplitViewStyle(.balanced)
-        .toolbar {
-            if !rightDockStore.isExpanded {
-                ToolbarItemGroup(placement: .primaryAction) {
-                    RightDockToolbarButtons()
-                }
-            }
-        }
         .navigationTitle("")
         .background {
             Button("") { fileExplorerStore.presentQuickOpen(projectURL: projectStore.activeProjectURL) }
@@ -126,40 +124,5 @@ struct ContentView: View {
         guard let window = NSApp.keyWindow else { return }
         window.endEditing(for: nil)
         window.makeFirstResponder(nil)
-    }
-}
-
-// MARK: - Right Dock Toolbar Buttons
-
-/// Three toggle buttons for the right dock (Files / Git / Deploy).
-/// Tap behavior is delegated to RightDockStore.toggle(tab:).
-private struct RightDockToolbarButtons: View {
-    @Environment(RightDockStore.self) private var rightDockStore
-
-    var body: some View {
-        HStack(spacing: 2) {
-            ForEach(RightDockTab.allCases) { tab in
-                let isActive = rightDockStore.isExpanded && rightDockStore.activeTab == tab
-                Button {
-                    rightDockStore.toggle(tab: tab)
-                } label: {
-                    Image(systemName: tab.systemImage)
-                        .font(AppFonts.toolbarIcon)
-                        .foregroundStyle(isActive ? AnyShapeStyle(.tint) : AnyShapeStyle(.secondary))
-                }
-                .buttonStyle(.plain)
-                .help(tab.title)
-                .accessibilityLabel(tab.title)
-                .keyboardShortcut(shortcutKey(for: tab), modifiers: [.command])
-            }
-        }
-    }
-
-    private func shortcutKey(for tab: RightDockTab) -> KeyEquivalent {
-        switch tab {
-        case .files: return "1"
-        case .git: return "2"
-        case .deploy: return "3"
-        }
     }
 }

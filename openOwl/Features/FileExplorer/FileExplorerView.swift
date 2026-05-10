@@ -102,12 +102,17 @@ struct FileExplorerView: View {
 
     var body: some View {
         HStack(spacing: 0) {
-            treePanel
-                .frame(width: treePanelWidth)
+            if rightDockStore.filesShowsEditor {
+                treePanel
+                    .frame(width: treePanelWidth)
 
-            treePanelDivider
+                treePanelDivider
 
-            editorPanel
+                editorPanel
+            } else {
+                treePanel
+                    .frame(maxWidth: .infinity)
+            }
         }
         .onAppear {
             store.setProject(projectStore.activeProjectURL)
@@ -191,6 +196,16 @@ struct FileExplorerView: View {
                 .buttonStyle(.plain).help("Refresh")
                 .accessibilityLabel("Refresh")
                 .disabled(store.isRefreshing)
+
+                Button { rightDockStore.filesShowsEditor.toggle() } label: {
+                    Image(systemName: rightDockStore.filesShowsEditor
+                        ? "square.lefthalf.filled"
+                        : "square.split.2x1")
+                        .font(AppFonts.secondaryLabel)
+                }
+                .buttonStyle(.plain)
+                .help(rightDockStore.filesShowsEditor ? "Hide editor" : "Show editor")
+                .accessibilityLabel(rightDockStore.filesShowsEditor ? "Hide editor" : "Show editor")
             }
             .padding(.horizontal, AppSpacing.panelPadding)
             .frame(height: AppSpacing.headerHeight)
@@ -221,11 +236,22 @@ struct FileExplorerView: View {
                 OutlineTreeView(
                     onSelectFile: { node in
                         store.selectNode(node.id)
+                        // Picking a file in list-only mode auto-expands the editor —
+                        // otherwise the click would be a silent no-op.
+                        if !rightDockStore.filesShowsEditor {
+                            rightDockStore.filesShowsEditor = true
+                        }
                         openFileInTab(node)
                     },
                     onStage: { node in stageFile(node) },
                     onDiscard: { node in discardFile(node) },
-                    onOpenDiff: { node in openDiff(node) },
+                    onOpenDiff: { node in
+                        // Same auto-expand for the diff entry point.
+                        if !rightDockStore.filesShowsEditor {
+                            rightDockStore.filesShowsEditor = true
+                        }
+                        openDiff(node)
+                    },
                     onDelete: { urls in store.deleteNodes(urls) },
                     onRename: { node, newName in store.renameNode(node, to: newName) },
                     onCopy: { urls in store.copyFiles(urls) },

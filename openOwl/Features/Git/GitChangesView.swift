@@ -14,19 +14,17 @@ struct GitChangesView: View {
     @FocusState private var commitFieldFocused: Bool
 
     var body: some View {
-        HSplitView {
-            // Left panel: changes + graph
-            VSplitView {
-                changesPanel
-                    .frame(minHeight: 180)
-
-                gitGraphPanel
-                    .frame(minHeight: 120)
+        Group {
+            if rightDockStore.gitShowsDiff {
+                HSplitView {
+                    leftSplitView
+                        .frame(idealWidth: 220, maxWidth: 280)
+                    diffPanel
+                }
+            } else {
+                leftSplitView
+                    .frame(maxWidth: .infinity)
             }
-            .frame(idealWidth: 220, maxWidth: 280)
-
-            // Right panel: diff
-            diffPanel
         }
         .onAppear {
             syncRepositoryIfActive()
@@ -46,6 +44,18 @@ struct GitChangesView: View {
         guard rightDockStore.isExpanded && rightDockStore.activeTab == .git else { return }
         guard let url = projectStore.activeProjectURL else { return }
         store.setPreferredDirectory(url)
+    }
+
+    // MARK: - Left Split (Changes + Graph)
+
+    private var leftSplitView: some View {
+        VSplitView {
+            changesPanel
+                .frame(minHeight: 180)
+
+            gitGraphPanel
+                .frame(minHeight: 120)
+        }
     }
 
     // MARK: - Left Top: Changes Panel
@@ -101,6 +111,17 @@ struct GitChangesView: View {
             .help("Refresh")
             .accessibilityLabel("Refresh")
             .disabled(store.isRefreshing || store.isRunningCommand)
+
+            Button { rightDockStore.gitShowsDiff.toggle() } label: {
+                Image(systemName: rightDockStore.gitShowsDiff
+                    ? "square.lefthalf.filled"
+                    : "square.split.2x1")
+                    .font(AppFonts.toolbarIcon)
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(.secondary)
+            .help(rightDockStore.gitShowsDiff ? "Hide diff" : "Show diff")
+            .accessibilityLabel(rightDockStore.gitShowsDiff ? "Hide diff" : "Show diff")
         }
         .padding(.horizontal, AppSpacing.panelPadding)
         .frame(height: AppSpacing.headerHeight)
@@ -405,7 +426,14 @@ struct GitChangesView: View {
                     GitGraphContentView(
                         entries: store.logEntries,
                         selectedHash: store.selectedCommitHash,
-                        onSelect: { store.selectCommit($0) },
+                        onSelect: { hash in
+                            // Same auto-expand: a commit click in list-only mode
+                            // would otherwise update state with no visible result.
+                            if !rightDockStore.gitShowsDiff {
+                                rightDockStore.gitShowsDiff = true
+                            }
+                            store.selectCommit(hash)
+                        },
                         onLoadMore: { store.loadMoreLog() },
                         hasMore: store.hasMoreLog
                     )
@@ -986,6 +1014,11 @@ struct GitChangesView: View {
         }
 
         lastClickedID = change.id
+        // Picking a change in list-only mode auto-expands the diff so the
+        // click has a visible effect.
+        if !rightDockStore.gitShowsDiff {
+            rightDockStore.gitShowsDiff = true
+        }
         store.selectChange(change)
     }
 
