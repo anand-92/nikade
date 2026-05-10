@@ -41,7 +41,6 @@ struct StatusBarView: View {
         switch rightDockStore.activeTab {
         case .files: return .files
         case .git: return .git
-        case .deploy: return .deploy
         }
     }
 
@@ -89,7 +88,6 @@ enum StatusBarVisibleArea {
     case terminal
     case git
     case files
-    case deploy
 }
 
 private struct StatusBarContextInfo: View {
@@ -125,14 +123,6 @@ private struct StatusBarContextInfo: View {
                         .foregroundStyle(.tertiary)
                         .lineLimit(1)
                 }
-
-            case .deploy:
-                Image(systemName: "shippingbox")
-                    .font(AppFonts.toolbarIcon)
-                    .foregroundStyle(.tertiary)
-                Text("Deploy")
-                    .font(AppFonts.statusBar)
-                    .foregroundStyle(.tertiary)
             }
         }
     }

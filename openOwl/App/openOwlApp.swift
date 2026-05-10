@@ -6,11 +6,9 @@ struct openOwlApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
     @State private var ghosttyManager: GhosttyAppManager
     @State private var workspaceStore = TerminalWorkspaceStore()
-    @State private var navigationStore = AppNavigationStore()
     @State private var projectStore: ProjectStore
     @State private var gitChangesStore = GitChangesStore()
     @State private var fileExplorerStore = FileExplorerStore()
-    @State private var deploymentStore = DeploymentStore()
     @State private var claudeStatusStore = ClaudeStatusStore()
     @State private var rightDockStore = RightDockStore()
 
@@ -31,11 +29,9 @@ struct openOwlApp: App {
             ContentView()
                 .environment(ghosttyManager)
                 .environment(workspaceStore)
-                .environment(navigationStore)
                 .environment(projectStore)
                 .environment(gitChangesStore)
                 .environment(fileExplorerStore)
-                .environment(deploymentStore)
                 .environment(claudeStatusStore)
                 .environment(rightDockStore)
                 .onAppear {
@@ -44,11 +40,8 @@ struct openOwlApp: App {
 
                     appDelegate.workspaceStore = workspaceStore
                     appDelegate.ghosttyManager = ghosttyManager
-                    appDelegate.navigationStore = navigationStore
-                    appDelegate.deploymentStore = deploymentStore
                     appDelegate.projectStore = projectStore
                     appDelegate.rightDockStore = rightDockStore
-                    deploymentStore.recoverRunningDeployments()
                     workspaceStore.destroyPaneHandler = { [weak ghosttyManager] paneID in
                         ghosttyManager?.destroyPane(paneID)
                     }
@@ -134,14 +127,6 @@ struct openOwlApp: App {
             }
         }
 
-        MenuBarExtra("openOwl", image: "MenuBarIcon") {
-            DeploymentTrayMenu()
-                .environment(deploymentStore)
-                .environment(navigationStore)
-                .environment(projectStore)
-        }
-        .menuBarExtraStyle(.menu)
-
         Settings {
             SettingsView()
         }
@@ -223,8 +208,6 @@ struct openOwlApp: App {
             fileExplorerStore.setProject(projectURL)
         case .git:
             gitChangesStore.setPreferredDirectory(projectURL)
-        case .deploy:
-            break
         }
     }
 }

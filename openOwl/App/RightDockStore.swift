@@ -5,7 +5,6 @@ import Observation
 enum RightDockTab: String, CaseIterable, Hashable, Identifiable {
     case files
     case git
-    case deploy
 
     var id: String { rawValue }
 
@@ -13,7 +12,6 @@ enum RightDockTab: String, CaseIterable, Hashable, Identifiable {
         switch self {
         case .files: return "Files"
         case .git: return "Git"
-        case .deploy: return "Deploy"
         }
     }
 
@@ -21,7 +19,6 @@ enum RightDockTab: String, CaseIterable, Hashable, Identifiable {
         switch self {
         case .files: return "folder"
         case .git: return "point.bottomleft.forward.to.point.topright.scurvepath"
-        case .deploy: return "shippingbox"
         }
     }
 }
@@ -82,12 +79,10 @@ final class RightDockStore {
     }
 
     /// True if the active tab's detail panel (editor / diff) is currently visible.
-    /// Deploy has no left/right split so it's always considered "showing detail".
     var showsDetailForActiveTab: Bool {
         switch activeTab {
         case .files: return filesShowsEditor
         case .git: return gitShowsDiff
-        case .deploy: return true
         }
     }
 

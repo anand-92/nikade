@@ -3,9 +3,7 @@ import SwiftUI
 
 struct ContentView: View {
     @Environment(GhosttyAppManager.self) var ghosttyManager
-    @Environment(AppNavigationStore.self) var navigationStore
     @Environment(FileExplorerStore.self) var fileExplorerStore
-    @Environment(DeploymentStore.self) var deploymentStore
     @Environment(ProjectStore.self) var projectStore
     @Environment(RightDockStore.self) var rightDockStore
 
@@ -76,15 +74,6 @@ struct ContentView: View {
         .animation(.easeOut(duration: 0.15), value: fileExplorerStore.isQuickOpenPresented)
         .onReceive(NotificationCenter.default.publisher(for: .quickOpen)) { _ in
             fileExplorerStore.presentQuickOpen(projectURL: projectStore.activeProjectURL)
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .openDeployment)) { notification in
-            guard let id = notification.userInfo?["id"] as? String else { return }
-            navigationStore.openDeployment(
-                id: id,
-                deploymentStore: deploymentStore,
-                projectStore: projectStore,
-                rightDockStore: rightDockStore
-            )
         }
         .onChange(of: rightDockStore.activeTab) { _, _ in
             resignFirstResponderForTabSwitch()

@@ -78,9 +78,9 @@ struct RightDockStoreTests {
         let store = RightDockStore()
         store.toggle(tab: .files)
 
-        store.toggle(tab: .deploy)
+        store.toggle(tab: .git)
         #expect(store.isExpanded == true)
-        #expect(store.activeTab == .deploy)
+        #expect(store.activeTab == .git)
         Self.clearDefaults()
     }
 
@@ -90,9 +90,9 @@ struct RightDockStoreTests {
         Self.clearDefaults()
         let store = RightDockStore()
 
-        store.expand(tab: .deploy)
+        store.expand(tab: .files)
         #expect(store.isExpanded == true)
-        #expect(store.activeTab == .deploy)
+        #expect(store.activeTab == .files)
         Self.clearDefaults()
     }
 
@@ -121,10 +121,10 @@ struct RightDockStoreTests {
     @Test @MainActor func activeTab_persistsToDefaults() {
         Self.clearDefaults()
         let store = RightDockStore()
-        store.activeTab = .deploy
+        store.activeTab = .files
 
         let saved = UserDefaults.standard.string(forKey: Self.keyActiveTab)
-        #expect(saved == RightDockTab.deploy.rawValue)
+        #expect(saved == RightDockTab.files.rawValue)
         Self.clearDefaults()
     }
 
@@ -314,9 +314,6 @@ struct RightDockStoreTests {
         store.activeTab = .files
         #expect(store.showsDetailForActiveTab == false)
         store.activeTab = .git
-        #expect(store.showsDetailForActiveTab == true)
-        // Deploy has no list/detail split — always true.
-        store.activeTab = .deploy
         #expect(store.showsDetailForActiveTab == true)
         Self.clearDefaults()
     }

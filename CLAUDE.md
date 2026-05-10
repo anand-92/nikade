@@ -41,8 +41,9 @@ openOwl/
 │   ├── Terminal/           # libghostty 终端视图
 │   ├── Git/                # Git 变更面板、Diff 视图
 │   ├── FileExplorer/       # 文件浏览器
-│   ├── Deployment/         # 本地部署服务（clone+build+start, 系统托盘）
-│   └── Sidebar/            # 项目列表导航
+│   ├── RightDock/          # 右侧 inspector 面板（含 Activity rail）
+│   ├── Sidebar/            # 项目列表导航
+│   └── StatusBar/          # 底部状态栏
 ├── Services/
 │   ├── GitService.swift    # git CLI 封装
 │   └── FileWatcher.swift   # 文件系统监听

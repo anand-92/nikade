@@ -38,7 +38,7 @@ struct RightDockView: View {
 
     private var contentArea: some View {
         ZStack {
-            // All three views stay mounted so their @State (editor tabs, commit
+            // Both views stay mounted so their @State (editor tabs, commit
             // drafts, scroll positions) survives tab switches. Visibility is
             // controlled by opacity + allowsHitTesting.
             NavigationStack {
@@ -52,12 +52,6 @@ struct RightDockView: View {
             }
             .opacity(dock.activeTab == .git ? 1 : 0)
             .allowsHitTesting(dock.activeTab == .git)
-
-            NavigationStack {
-                DeploymentPanelView()
-            }
-            .opacity(dock.activeTab == .deploy ? 1 : 0)
-            .allowsHitTesting(dock.activeTab == .deploy)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
