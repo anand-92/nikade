@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// 旋转图标 — spinning 时持续旋转，停止时立即定格
+/// Spinning icon — rotates continuously when isSpinning is true, stays still otherwise.
 struct SpinningIcon: View {
     let systemName: String
     let isSpinning: Bool

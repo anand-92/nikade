@@ -1,7 +1,7 @@
 import SwiftUI
 
-/// 底部状态栏，参照 CodeEdit 的 StatusBarView。
-/// 28pt 高度，左侧 Git branch + 文件变更数，右侧文件/终端信息。
+/// Bottom status bar, based on CodeEdit's StatusBarView.
+/// 28pt height, left side Git branch + file change count, right side file/terminal info.
 struct StatusBarView: View {
     @Environment(GitChangesStore.self) private var gitStore
     @Environment(RightDockStore.self) private var rightDockStore
@@ -12,7 +12,7 @@ struct StatusBarView: View {
 
     var body: some View {
         HStack(alignment: .center, spacing: 10) {
-            // 左侧：Git branch + dirty indicator
+            // Left: Git branch + dirty indicator
             StatusBarBranchLabel(
                 branch: gitStore.statusSnapshot?.branch,
                 changesCount: totalChangesCount
@@ -24,7 +24,7 @@ struct StatusBarView: View {
             MetalStatsView()
             #endif
 
-            // 右侧：根据当前可见区域显示不同信息
+            // Right: display different info based on current visible area
             StatusBarContextInfo(
                 visibleArea: visibleArea,
                 selectedFileName: fileExplorerStore.selectedNode?.name
@@ -82,7 +82,7 @@ private struct StatusBarBranchLabel: View {
     }
 }
 
-// MARK: - Context Info (右侧)
+// MARK: - Context Info (Right)
 
 enum StatusBarVisibleArea {
     case terminal

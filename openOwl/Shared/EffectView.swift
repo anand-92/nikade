@@ -1,8 +1,8 @@
 import AppKit
 import SwiftUI
 
-/// NSVisualEffectView 包装，参照 CodeEdit 的 EffectView 实现。
-/// 已迁移到 `.background(.regularMaterial)`，macOS Tahoe 会自动升级为 Liquid Glass。
+/// NSVisualEffectView wrapper, based on CodeEdit's EffectView implementation.
+/// Migrated to `.background(.regularMaterial)`, which macOS Tahoe automatically upgrades to Liquid Glass.
 @available(*, deprecated, message: "Use .background(.regularMaterial) instead")
 struct EffectView: NSViewRepresentable {
     let material: NSVisualEffectView.Material

@@ -173,7 +173,7 @@ private struct TerminalTabContentView: View {
                     .opacity(isHiddenByMaximize ? 0 : 1)
                     .allowsHitTesting(!isHiddenByMaximize)
                     .overlay {
-                        // 非聚焦 pane 遮罩（轻柔）
+                        // Unfocused pane mask (subtle)
                         if isMultiPane && !isMaximized, !workspace.isFocusedPane(paneID, in: tab.id) {
                             Color.primary.opacity(0.04)
                                 .allowsHitTesting(false)

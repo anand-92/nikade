@@ -96,9 +96,9 @@ final class RightDockStore {
     }
 
     /// Toolbar button behavior:
-    /// - panel 折叠 → 展开并切到该 tab
-    /// - panel 已展开且 tab 相同 → 折叠
-    /// - panel 已展开且 tab 不同 → 切到该 tab（保持展开）
+    /// - Panel collapsed → expand and switch to that tab
+    /// - Panel expanded and tab is the same → collapse
+    /// - Panel expanded and tab is different → switch to that tab (keep expanded)
     func toggle(tab: RightDockTab) {
         if !isExpanded {
             activeTab = tab

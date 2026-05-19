@@ -1,77 +1,77 @@
-# M1: 骨架应用 + libghostty 终端
+# M1: Skeleton App + libghostty Terminal
 
-## 目标
+## Goals
 
-搭建 macOS 原生应用骨架，集成 libghostty 实现可用终端，并补齐多标签/分屏基础交互。
+Build the macOS native application skeleton, integrate libghostty to achieve a usable terminal, and complete basic interactions for multi-tab/split panes.
 
-## 任务
+## Tasks
 
-### T1.1 项目脚手架 ✅
-- [x] 创建 Xcode 项目 (macOS App, SwiftUI lifecycle)
-- [x] 配置 minimum deployment target (macOS 14.0+)
-- [x] 基础 SwiftUI 窗口 + 三栏布局 (Sidebar / Content / Inspector)
+### T1.1 Project Scaffold ✅
+- [x] Create Xcode project (macOS App, SwiftUI lifecycle)
+- [x] Configure minimum deployment target (macOS 14.0+)
+- [x] Basic SwiftUI window + three-column layout (Sidebar / Content / Inspector)
 
-### T1.2 Ghostty 集成 ✅
-- [x] 添加 Ghostty 作为 git submodule
-- [x] 配置 Zig 构建脚本编译 libghostty 静态库
-- [x] 创建 bridging header 导入 ghostty.h
-- [x] 验证 Swift 可以调用 ghostty C API
+### T1.2 Ghostty Integration ✅
+- [x] Add Ghostty as git submodule
+- [x] Configure Zig build script to compile libghostty static library
+- [x] Create bridging header and import ghostty.h
+- [x] Verify Swift can call ghostty C API
 
-### T1.3 终端视图 ✅
-- [x] 实现 GhosttyApp.swift — ghostty_app_t 生命周期管理
-- [x] 实现 GhosttyTerminal.swift — ghostty_surface_t 封装
-- [x] 实现 TerminalView (NSView + CAMetalLayer)
-- [x] 通过 NSViewRepresentable 桥接到 SwiftUI
-- [x] 键盘输入 → ghostty_surface_key()
-- [x] 窗口 resize → ghostty_surface_set_size()
+### T1.3 Terminal View ✅
+- [x] Implement GhosttyApp.swift — ghostty_app_t lifecycle management
+- [x] Implement GhosttyTerminal.swift — ghostty_surface_t wrapper
+- [x] Implement TerminalView (NSView + CAMetalLayer)
+- [x] Bridge to SwiftUI via NSViewRepresentable
+- [x] Keyboard input → ghostty_surface_key()
+- [x] Window resize → ghostty_surface_set_size()
 
-### T1.4 终端功能 ✅
-- [x] Shell 自动检测和启动（优先用户配置 command；无 command 时 fallback shell）
-- [x] 读取 ~/.config/ghostty/config（含 recursive includes）
-- [x] 主题/字体配置透传 libghostty，并记录运行时配置快照
-- [x] scrollback 由 libghostty 配置生效（读取 `scrollback-limit` 快照）
+### T1.4 Terminal Features ✅
+- [x] Shell auto-detection and startup (Priority to user-configured command; fallback to shell if no command)
+- [x] Read ~/.config/ghostty/config (including recursive includes)
+- [x] Theme/font configuration passed to libghostty, with runtime config snapshot recorded
+- [x] scrollback applied by libghostty configuration (reading `scrollback-limit` snapshot)
 
-### T1.5 多标签 + 分屏 ✅
-- [x] 应用内 Tab bar（Cmd+T/W/1-9）
-- [x] 多级分屏（Cmd+D 左右分屏，Cmd+Shift+D 上下分屏）
-- [x] 分屏焦点切换（Cmd+Arrow，边界无目标时 no-op）
-- [x] `Cmd+W` 层级：分屏 > 标签 > 窗口
+### T1.5 Multi-tab + Split Panes ✅
+- [x] In-app Tab bar (Cmd+T/W/1-9)
+- [x] Multi-level split panes (Cmd+D for horizontal split, Cmd+Shift+D for vertical split)
+- [x] Split pane focus switching (Cmd+Arrow, no-op if no target at boundary)
+- [x] `Cmd+W` hierarchy: Split pane > Tab > Window
 
-### P1 增强（持续迭代）
-- [x] 终端标题追踪（OSC 0/2 -> Tab 标题）
-- [ ] URL 检测 + Cmd+Click 打开链接
-- [ ] 运行时 scrollback 调参 UI
+### P1 Enhancements (Continuous Iteration)
+- [x] Terminal title tracking (OSC 0/2 -> Tab title)
+- [ ] URL detection + Cmd+Click to open links
+- [ ] Runtime scrollback adjustment UI
 
-## 本次实现说明
+## Implementation Notes
 
-- 新增 `TerminalWorkspaceStore` 管理 tabs、active tab、split tree 与 focused pane。
-- 新增 `TerminalSplitNode` 递归模型与 SwiftUI 递归渲染器，当前固定 50/50 比例（不含拖拽调比）。
-- `ContentView` 改为「Tab 条 + ZStack 内容区」，标签切换不销毁后台终端会话。
-- `GhosttyAppManager` 增加：
-  - `launchProfile`（`configCommand` + `fallbackShell`）
-  - pane/surface 注册与按 pane 聚焦能力
-  - action 回调转发 `SetTitle/SetTabTitle`，驱动 Tab 标题更新
-- `GhosttyConfig` 增加：
-  - default + recursive 配置加载
-  - diagnostics 聚合日志
-  - `command/font-family/font-size/theme/scrollback-limit` 快照
+- Added `TerminalWorkspaceStore` to manage tabs, active tab, split tree, and focused pane.
+- Added `TerminalSplitNode` recursive model and SwiftUI recursive renderer, currently fixed at 50/50 ratio (no drag resizing).
+- `ContentView` changed to "Tab bar + ZStack content area", tab switching does not destroy background terminal sessions.
+- `GhosttyAppManager` added:
+  - `launchProfile` (`configCommand` + `fallbackShell`)
+  - Pane/surface registration and per-pane focusing capability
+  - Action callback forwarding `SetTitle/SetTabTitle`, driving Tab title updates
+- `GhosttyConfig` added:
+  - Default + recursive configuration loading
+  - Diagnostics aggregation logs
+  - `command/font-family/font-size/theme/scrollback-limit` snapshots
 
-## 验证
+## Verification
 
-- [x] `xcodebuild -scheme openOwl -configuration Debug build` 通过
-- [ ] Xcode 运行时手测（Cmd+R）待执行：
-  - Tab/split 快捷键与 `Cmd+W` 层级
-  - shell fallback 与用户 command 优先级
-  - 主题/字体/scrollback 配置变更生效
+- [x] `xcodebuild -scheme openOwl -configuration Debug build` passed
+- [ ] Xcode runtime manual test (Cmd+R) pending:
+  - Tab/split shortcuts and `Cmd+W` hierarchy
+  - Shell fallback and user command priority
+  - Theme/font/scrollback config changes effect
 
-## 完成标准
+## Completion Criteria
 
-- 能打开应用并看到可交互终端
-- 终端渲染质量与原生 Ghostty 一致
-- 能运行常见 CLI 工具
-- 能创建多标签和多级分屏
+- Can open the app and see an interactive terminal
+- Terminal rendering quality consistent with native Ghostty
+- Can run common CLI tools
+- Can create multiple tabs and multi-level split panes
 
-## 参考
+## References
 
 - Ghostty macOS: `macos/Sources/`
 - cmux: `github.com/manaflow-ai/cmux`

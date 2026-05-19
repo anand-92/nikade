@@ -1,72 +1,72 @@
-# M3: 文件浏览器 + 侧边栏
+# M3: File Explorer + Sidebar
 
-## 目标
+## Goals
 
-实现文件浏览器和项目管理侧边栏。
+Implement the file explorer and project management sidebar.
 
-## 任务
+## Tasks
 
-### T3.1 文件树
-- [x] 递归目录树 (OutlineGroup / List)
-- [x] `.gitignore` 过滤（通过 `git ls-files --ignored --exclude-standard`）
-- [x] 目录优先 + 字母序排序
-- [x] 文件图标 (SF Symbols)
+### T3.1 File Tree
+- [x] Recursive directory tree (OutlineGroup / List)
+- [x] `.gitignore` filtering (via `git ls-files --ignored --exclude-standard`)
+- [x] Directory first + alphabetical sorting
+- [x] File icons (SF Symbols)
 
-### T3.2 Git 状态着色
-- [x] 文件 git status 颜色标注
-- [x] 父目录颜色传播
+### T3.2 Git Status Coloring
+- [x] File git status color annotation
+- [x] Parent directory color propagation
 
-### T3.3 文件交互
-- [x] 右键菜单 (Reveal in Finder, 在终端打开, 复制路径)
-- [x] 点击变更文件 → Diff 视图
-- [x] 点击普通文件 → 只读预览（轻量语法高亮）
+### T3.3 File Interaction
+- [x] Context menu (Reveal in Finder, Open in Terminal, Copy Path)
+- [x] Click on changed file → Diff view
+- [x] Click on regular file → Read-only preview (lightweight syntax highlighting)
 
-### T3.4 项目管理
-- [x] 项目列表（侧边栏顶部）
-- [x] 打开/切换项目 (NSOpenPanel)
-- [x] 项目持久化 (UserDefaults)
+### T3.4 Project Management
+- [x] Project list (Top of sidebar)
+- [x] Open/Switch projects (NSOpenPanel)
+- [x] Project persistence (UserDefaults)
 
-### T3.5 预览与搜索增强
-- [x] 文件快速查找（Cmd+P）
-- [x] 文件预览语法高亮（关键词/注释/字符串）
-- [x] 文件拖拽到终端（路径拖放）
+### T3.5 Preview and Search Enhancements
+- [x] Quick Open (Cmd+P)
+- [x] File preview syntax highlighting (keywords/comments/strings)
+- [x] File drag-and-drop to terminal (path drop)
 
-### T3.6 状态与忽略优化
-- [x] Git 状态细粒度映射（A/M/D/R/U）
-- [x] ignored 目录前缀压缩优化
+### T3.6 Status and Ignore Optimization
+- [x] Fine-grained Git status mapping (A/M/D/R/U)
+- [x] Ignored directory prefix compression optimization
 
-## 本次实现说明
+## Implementation Notes
 
-- 新增 `ProjectStore`：
-  - 维护项目列表与 active project，支持新增/切换/删除
-  - 项目列表持久化到 `UserDefaults`
-  - 首次启动自动注入当前工作目录
-- 新增 `FileExplorerStore` + `FileExplorerView`：
-  - 递归文件树构建，目录优先 + 字母序
-  - 通过 Git ignored 列表过滤被忽略路径
-  - 文件 git 状态着色并向父目录聚合传播（A/M/D/R/U）
-  - ignored 目录前缀压缩，降低大仓库扫描匹配开销
-  - 文件快速查找（Cmd+P）与搜索结果定位
-  - 文件/目录拖拽到终端（由 Terminal 侧执行路径粘贴）
-  - 文件右键菜单（Reveal / Open in Terminal / Copy Path）
-  - 变更文件点击后联动 `GitChangesStore` 打开 diff
-  - 普通文件只读预览（二进制文件提示、大文件截断、轻量语法高亮）
-- 应用层联动：
-  - `openOwlApp` 注入 `ProjectStore` / `FileExplorerStore`
-  - active project 变化时同步刷新 Git 面板仓库和文件树上下文
+- Added `ProjectStore`:
+  - Maintains project list and active project, supports adding/switching/deleting
+  - Project list persistence to `UserDefaults`
+  - Automatic injection of current working directory on first launch
+- Added `FileExplorerStore` + `FileExplorerView`:
+  - Recursive file tree construction, directory first + alphabetical
+  - Filtering ignored paths via Git ignored list
+  - File git status coloring and aggregation/propagation to parent directories (A/M/D/R/U)
+  - Ignored directory prefix compression, reducing scan-match overhead for large repositories
+  - Quick Open (Cmd+P) and search result positioning
+  - File/directory drag-and-drop to terminal (path pasting executed by Terminal side)
+  - File context menu (Reveal / Open in Terminal / Copy Path)
+  - Linking changed file clicks to `GitChangesStore` to open diffs
+  - Read-only preview for regular files (binary file hints, large file truncation, lightweight syntax highlighting)
+- Application Layer Integration:
+  - `openOwlApp` injects `ProjectStore` / `FileExplorerStore`
+  - Synchronous refresh of Git panel repository and file tree context when active project changes
 
-## 验证
+## Verification
 
 - [x] `xcodegen generate`
 - [x] `xcodebuild -scheme openOwl -configuration Debug -derivedDataPath /tmp/openowl-derived build`
-- [ ] 运行时手测（Xcode Cmd+R）待完成：
-  - 项目切换时 File/Git 上下文同步
-  - 变更文件跳转 Diff
-  - 右键菜单动作行为
-  - 文件预览与性能体验
+- [ ] Runtime manual test (Xcode Cmd+R) pending:
+  - File/Git context synchronization on project switch
+  - Jump to Diff from changed file
+  - Context menu action behavior
+  - File preview and performance experience
 
-## 完成标准
+## Completion Criteria
 
-- [x] 侧边栏能浏览文件树
-- [x] 文件有 git 状态颜色
-- [x] 能管理多个项目
+- [x] Sidebar can browse file tree
+- [x] Files have git status colors
+- [x] Can manage multiple projects

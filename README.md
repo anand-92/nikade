@@ -13,8 +13,7 @@
   <a href="#features">Features</a> &bull;
   <a href="#installation">Installation</a> &bull;
   <a href="#building">Building</a> &bull;
-  <a href="#architecture">Architecture</a> &bull;
-  <a href="README_CN.md">中文文档</a>
+  <a href="#architecture">Architecture</a>
 </p>
 
 ---

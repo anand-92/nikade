@@ -1,8 +1,8 @@
 import AppKit
 import SwiftUI
 
-/// NSWindow 引用捕获器，用于配置原生窗口属性（titlebar、toolbar 等）。
-/// 使用 viewDidMoveToWindow() 确保 window 可用时再执行配置。
+/// NSWindow reference capturer, used to configure native window properties (titlebar, toolbar, etc.).
+/// Uses viewDidMoveToWindow() to ensure window is available before configuration.
 struct WindowAccessor: NSViewRepresentable {
     let onWindow: (NSWindow) -> Void
 

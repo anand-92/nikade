@@ -18,7 +18,7 @@ enum AppConstants {
 
 // MARK: - Design System
 
-/// 语义调色盘 — 自适应亮/暗模式，尊重用户系统设置
+/// Semantic palette — adapts to light/dark mode, respects user's system settings
 enum AppPalette {
     // Background layers. Match the terminal theme's transparent black base so
     // the whole app reads as one translucent surface.
@@ -28,19 +28,19 @@ enum AppPalette {
     static let elevated  = Color.black.opacity(0.58)
     static let overlay   = Color.black.opacity(0.82)
 
-    // 文字 3 层
+    // Text layers
     static let textPrimary: Color   = .primary
     static let textSecondary: Color = .secondary
     static let textTertiary  = Color(nsColor: .tertiaryLabelColor)
 
-    // 边框
+    // Borders
     static let border      = Color(nsColor: .separatorColor)
     static let borderHover = Color(nsColor: .quaternaryLabelColor)
 
-    // 强调色（respects user's system accent color）
+    // Accent color (respects user's system accent color)
     static let accent: Color = .accentColor
 
-    // NSColor 变体 — 供 CodeEditSourceEditor 等需要 NSColor 的 API 使用
+    // NSColor variants — for use with APIs that require NSColor like CodeEditSourceEditor
     enum ns {
         static let surface = NSColor.black.withAlphaComponent(AppPalette.windowOpacity)
         static let elevated = NSColor.black.withAlphaComponent(0.58)
@@ -50,14 +50,14 @@ enum AppPalette {
 }
 
 enum AppColors {
-    /// 选中/活动态背景
+    /// Active/Selected background
     static let activeBackground = Color.accentColor.opacity(0.12)
-    /// 悬停态背景
+    /// Hover background
     static let hoverBackground = Color.white.opacity(0.08)
-    /// 选中边框
+    /// Selected border
     static let selectedBorder: Color = .accentColor
 
-    // 状态色
+    // Status colors
     static let error = Color.red
     static let warning = Color.orange
     static let success = Color.green

@@ -1,7 +1,7 @@
 import SwiftUI
 
-/// 图标按钮样式，参照 CodeEdit 的 IconButtonStyle。
-/// 统一 24×24pt 尺寸，14.5pt 图标，支持 active/pressed 状态。
+/// Icon button style, based on CodeEdit's IconButtonStyle.
+/// Standard 24x24pt size with 14.5pt icon, supports active/pressed states.
 struct IconButtonStyle: ButtonStyle {
     var isActive: Bool = false
     var font: Font = .system(size: 14.5)

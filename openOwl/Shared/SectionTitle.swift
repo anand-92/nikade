@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// 统一分区标题样式 — 大写字母 + tracking + tertiary 色
+/// Unified section title style — Uppercase + tracking + tertiary color
 struct SectionTitle: View {
     let text: String
 

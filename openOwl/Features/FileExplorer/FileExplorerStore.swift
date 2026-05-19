@@ -483,7 +483,7 @@ final class FileExplorerStore {
                 return failed
             }.value
             if !failedNames.isEmpty {
-                errorMessage = "无法删除：\(failedNames.joined(separator: "、"))"
+                errorMessage = "Failed to delete: \(failedNames.joined(separator: ", "))"
                 refreshNow()  // re-scan to restore failed items in the tree
             }
         }
