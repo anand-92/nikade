@@ -127,6 +127,8 @@ struct SidebarView: View {
             }
         }
         .listStyle(.sidebar)
+        .scrollContentBackground(.hidden)
+        .background(AppPalette.surface)
         .scrollEdgeEffectIfAvailable(for: .top)
         .navigationTitle("Projects")
         .safeAreaInset(edge: .bottom, spacing: 0) {

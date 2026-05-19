@@ -190,6 +190,27 @@ struct GhosttyConfigDefaultsTests {
         #expect(path != nil, "App config directory should be creatable")
     }
 
+    @Test func defaultConfig_selectsFirstPartyNeonTheme() {
+        let defaults = GhosttyConfig.defaultConfigText
+
+        #expect(defaults.contains("theme = "))
+        #expect(defaults.contains(GhosttyConfig.openOwlNeonThemeName))
+    }
+
+    @Test func firstPartyNeonTheme_includesRequestedValues() {
+        let theme = GhosttyConfig.openOwlNeonThemeText
+
+        #expect(theme.contains("background = #000000"))
+        #expect(theme.contains("foreground = #00ffff"))
+        #expect(theme.contains("cursor-color = #00ffff"))
+        #expect(theme.contains("selection-background = #ffff00"))
+        #expect(theme.contains("palette = 1=#ff0040"))
+        #expect(theme.contains("palette = 14=#40ffff"))
+        #expect(theme.contains("mouse-hide-while-typing = false"))
+        #expect(theme.contains("keybind = shift+enter=text:\\n"))
+        #expect(theme.contains("background-opacity = 0.75"))
+    }
+
     @Test func setOverride_roundTrip() throws {
         // Test that setOverride and readOverride work correctly,
         // which is how users would customize padding.

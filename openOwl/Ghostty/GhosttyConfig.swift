@@ -115,10 +115,14 @@ extension GhosttyConfig {
 }
 
 extension GhosttyConfig {
-    /// Load openOwl-specific defaults via a temp config file (ghostty has no set API).
-    /// Loaded BEFORE the user config so users can still override these values.
-    static func loadDefaults(into config: ghostty_config_t) {
-        let defaults = """
+    static let openOwlNeonThemeName = "OpenOwl Neon"
+
+    static var openOwlNeonThemeValue: String? {
+        appSupportThemeURL(named: openOwlNeonThemeName)?.path
+    }
+
+    static var defaultConfigText: String {
+        var text = """
         window-padding-x = 0
         window-padding-y = 0
         window-padding-balance = true
@@ -126,13 +130,84 @@ extension GhosttyConfig {
         notify-on-command-finish-action = bell
         notify-on-command-finish-after = 5
         """
+        if let themeValue = openOwlNeonThemeValue {
+            text += "\ntheme = \(themeValue)"
+        }
+        return text
+    }
+
+    static let openOwlNeonThemeText = """
+        background = #000000
+        foreground = #00ffff
+        cursor-color = #00ffff
+        cursor-text = #000000
+        adjust-cursor-thickness = 2
+        selection-background = #ffff00
+        selection-foreground = #000000
+
+        palette = 0=#000000
+        palette = 1=#ff0040
+        palette = 2=#00ff40
+        palette = 3=#ffff00
+        palette = 4=#0080ff
+        palette = 5=#ff00ff
+        palette = 6=#00ffff
+        palette = 7=#ffffff
+        palette = 8=#404040
+        palette = 9=#ff4080
+        palette = 10=#40ff80
+        palette = 11=#ffff40
+        palette = 12=#4080ff
+        palette = 13=#ff40ff
+        palette = 14=#40ffff
+        palette = 15=#ffffff
+
+        mouse-hide-while-typing = false
+        keybind = shift+enter=text:\\n
+        background-opacity = 0.75
+        """
+
+    static func installFirstPartyThemes() {
+        guard let themeURL = appSupportThemeURL(named: openOwlNeonThemeName) else { return }
+        try? FileManager.default.createDirectory(
+            at: themeURL.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+
+        let bundledURL = Bundle.main.url(
+            forResource: openOwlNeonThemeName,
+            withExtension: nil,
+            subdirectory: "Themes"
+        ) ?? Bundle.main.url(forResource: openOwlNeonThemeName, withExtension: nil)
+
+        if let bundledURL, let data = try? Data(contentsOf: bundledURL) {
+            try? data.write(to: themeURL, options: .atomic)
+        } else {
+            try? openOwlNeonThemeText.write(to: themeURL, atomically: true, encoding: .utf8)
+        }
+    }
+
+    /// Load openOwl-specific defaults via a temp config file (ghostty has no set API).
+    /// Loaded BEFORE the user config so users can still override these values.
+    static func loadDefaults(into config: ghostty_config_t) {
+        installFirstPartyThemes()
         let tempURL = FileManager.default.temporaryDirectory
             .appendingPathComponent("openowl-defaults.conf")
-        try? defaults.write(to: tempURL, atomically: true, encoding: .utf8)
+        try? defaultConfigText.write(to: tempURL, atomically: true, encoding: .utf8)
         defer { try? FileManager.default.removeItem(at: tempURL) }
         tempURL.path.withCString { path in
             ghostty_config_load_file(config, path)
         }
+    }
+
+    private static func appSupportThemeURL(named themeName: String) -> URL? {
+        guard let appSupport = FileManager.default.urls(
+            for: .applicationSupportDirectory, in: .userDomainMask
+        ).first else { return nil }
+        return appSupport
+            .appendingPathComponent("com.openowl.app")
+            .appendingPathComponent("themes")
+            .appendingPathComponent(themeName)
     }
 }
 

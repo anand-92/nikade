@@ -33,7 +33,7 @@ struct StatusBarView: View {
         .padding(.horizontal, 10)
         .padding(.top, 1)
         .frame(height: Self.height)
-        .background(.bar)
+        .background(AppPalette.elevated)
     }
 
     private var visibleArea: StatusBarVisibleArea {

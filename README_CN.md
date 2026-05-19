@@ -30,7 +30,7 @@ OpenOwl 是一款 macOS 原生桌面应用，将 **GPU 加速终端**、**Git GU
 - **文件浏览器** — NSOutlineView 文件树，带 git 状态标记。多标签代码编辑器，tree-sitter 语法高亮。快速打开（Cmd+P）模糊搜索。
 - **项目侧边栏** — 多项目支持。Git worktree 管理（创建、归档、重命名）。每个项目独立的终端隔离。Claude API 状态监控。
 - **本地部署** — 克隆、构建、启动本地服务。健康检查监控。系统托盘状态显示。
-- **设置 (Cmd+,)** — 外观模式（跟随系统 / 浅色 / 深色）。终端主题选择器，内置 463 套配色方案。配置存储在 `~/Library/Application Support/com.openowl.app/config`（兼容 ghostty 配置格式）。
+- **设置 (Cmd+,)** — 外观模式（跟随系统 / 浅色 / 深色）。终端默认使用一等 `OpenOwl Neon` 主题，并提供内置 463 套配色方案选择器。配置存储在 `~/Library/Application Support/com.openowl.app/config`（兼容 ghostty 配置格式）。
 - **菜单栏快捷键** — 所有键盘快捷键均在 macOS 菜单栏中列出，方便查找。
 
 ## 截图

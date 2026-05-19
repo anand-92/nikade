@@ -53,6 +53,7 @@
 		882EAAE1592A1A4FCB1A169A /* ScrollIndicatorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE6FF0B33095CC35D7533713 /* ScrollIndicatorTests.swift */; };
 		8A11FA4EFF26B2E2418120DE /* FileExplorerErrorHandlingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 10A99EEE47269D739DF84C40 /* FileExplorerErrorHandlingTests.swift */; };
 		9121D7764A3A9AB908307340 /* ghostty-resources in Resources */ = {isa = PBXBuildFile; fileRef = 35BDC16C9BB8A7EF4C33FEE8 /* ghostty-resources */; };
+		91D4BE907E5F4A3C9D217B62 /* OpenOwl Neon in Resources */ = {isa = PBXBuildFile; fileRef = 91D4BE8F7E5F4A3C9D217B62 /* OpenOwl Neon */; };
 		A1A33C96E8CE7B33C8C44339 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 56D3EFADA4D64C3ABBF4887E /* Assets.xcassets */; };
 		A2747B4F72892C3434D61AFD /* ProjectStorePersistenceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F55B1F7B1BFEBE824E839A54 /* ProjectStorePersistenceTests.swift */; };
 		A831242FE45B5FDEC78DD834 /* GhosttyTerminal.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3210995F6EB34D444A49815 /* GhosttyTerminal.swift */; };
@@ -142,6 +143,7 @@
 		7E5F0ECBA1E89045CB48F752 /* TerminalsSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalsSection.swift; sourceTree = "<group>"; };
 		8DE94F3F69D57F740DD9C966 /* GhosttyInput.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GhosttyInput.swift; sourceTree = "<group>"; };
 		8EB4866085EB54B9C129F121 /* RightDockStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RightDockStoreTests.swift; sourceTree = "<group>"; };
+		91D4BE8F7E5F4A3C9D217B62 /* OpenOwl Neon */ = {isa = PBXFileReference; lastKnownFileType = text; path = "OpenOwl Neon"; sourceTree = "<group>"; };
 		938F89967F54EF40EA4AE7FE /* AppIcon.icns */ = {isa = PBXFileReference; lastKnownFileType = image.icns; path = AppIcon.icns; sourceTree = "<group>"; };
 		98E3B22B024A5CF89AEF09F0 /* QuickOpenSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuickOpenSheet.swift; sourceTree = "<group>"; };
 		9F84090706181BCE2FB1AF47 /* FileIconsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileIconsTests.swift; sourceTree = "<group>"; };
@@ -280,8 +282,17 @@
 			isa = PBXGroup;
 			children = (
 				B0AADF796FB02C8E6D5B25A2 /* Info.plist */,
+				91D4BE917E5F4A3C9D217B62 /* Themes */,
 			);
 			path = Resources;
+			sourceTree = "<group>";
+		};
+		91D4BE917E5F4A3C9D217B62 /* Themes */ = {
+			isa = PBXGroup;
+			children = (
+				91D4BE8F7E5F4A3C9D217B62 /* OpenOwl Neon */,
+			);
+			path = Themes;
 			sourceTree = "<group>";
 		};
 		77D9EC043121D22FB33D3229 = {
@@ -488,6 +499,7 @@
 				5729326DB2DB723A977828AB /* AppIcon.icns in Resources */,
 				A1A33C96E8CE7B33C8C44339 /* Assets.xcassets in Resources */,
 				9121D7764A3A9AB908307340 /* ghostty-resources in Resources */,
+				91D4BE907E5F4A3C9D217B62 /* OpenOwl Neon in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

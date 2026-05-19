@@ -139,7 +139,16 @@ runtime.write_clipboard_cb = { _, clipboard, content, count, _ in
 
 ### 9. 配置
 
-读取 `~/.config/ghostty/config`（用户已有的 Ghostty 配置），支持：
+openOwl 先加载应用内默认配置，再加载 `~/Library/Application Support/com.openowl.app/config` 用户覆盖配置。默认终端主题为一等 OpenOwl 主题 `OpenOwl Neon`，会安装到 `~/Library/Application Support/com.openowl.app/themes/OpenOwl Neon`，并通过绝对路径写入 ghostty `theme` 配置。主题内容为 solid black + vibrant neon palette：
+- `background = #000000`
+- `foreground = #00ffff`
+- cyan cursor, yellow selection
+- 16 色 neon palette
+- `mouse-hide-while-typing = false`
+- `keybind = shift+enter=text:\n`
+- `background-opacity = 0.75`
+
+用户覆盖配置支持：
 - font-family, font-size
 - theme, palette (16 色)
 - background-opacity

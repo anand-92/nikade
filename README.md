@@ -30,7 +30,7 @@ OpenOwl is a macOS-native desktop app that combines a **GPU-accelerated terminal
 - **File Explorer** — NSOutlineView file tree with git status badges. Multi-tab code editor with syntax highlighting (tree-sitter). Quick Open (Cmd+P) with fuzzy search.
 - **Project Sidebar** — Multi-project support. Git worktree management (create, archive, rename). Per-project terminal isolation. Claude API status monitoring.
 - **Local Deployment** — Clone, build, and start services locally. Health check monitoring. System tray status.
-- **Settings (Cmd+,)** — Appearance mode (System / Light / Dark). Terminal theme picker with 463 built-in color schemes. Config stored in `~/Library/Application Support/com.openowl.app/config` (ghostty-compatible format).
+- **Settings (Cmd+,)** — Appearance mode (System / Light / Dark). Terminal defaults to the first-party `OpenOwl Neon` theme with 75% background opacity, plus a picker for 463 built-in color schemes. Config stored in `~/Library/Application Support/com.openowl.app/config` (ghostty-compatible format).
 - **Menu Bar Shortcuts** — All keyboard shortcuts listed in the macOS menu bar for discoverability.
 
 ## Screenshots

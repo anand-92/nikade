@@ -20,11 +20,13 @@ enum AppConstants {
 
 /// 语义调色盘 — 自适应亮/暗模式，尊重用户系统设置
 enum AppPalette {
-    // 背景 4 层（system semantic colors adapt to light/dark mode）
-    static let base      = Color(nsColor: .windowBackgroundColor)
-    static let surface   = Color(nsColor: .controlBackgroundColor)
-    static let elevated  = Color(nsColor: .underPageBackgroundColor)
-    static let overlay   = Color(nsColor: .controlBackgroundColor)
+    // Background layers. Match the terminal theme's transparent black base so
+    // the whole app reads as one translucent surface.
+    static let windowOpacity: CGFloat = 0.75
+    static let base      = Color.black.opacity(windowOpacity)
+    static let surface   = Color.black.opacity(0.68)
+    static let elevated  = Color.black.opacity(0.58)
+    static let overlay   = Color.black.opacity(0.82)
 
     // 文字 3 层
     static let textPrimary: Color   = .primary
@@ -40,8 +42,8 @@ enum AppPalette {
 
     // NSColor 变体 — 供 CodeEditSourceEditor 等需要 NSColor 的 API 使用
     enum ns {
-        static let surface: NSColor   = .controlBackgroundColor
-        static let elevated: NSColor  = .underPageBackgroundColor
+        static let surface = NSColor.black.withAlphaComponent(AppPalette.windowOpacity)
+        static let elevated = NSColor.black.withAlphaComponent(0.58)
         static let textPrimary: NSColor = .labelColor
         static let accent: NSColor    = .controlAccentColor
     }
@@ -51,7 +53,7 @@ enum AppColors {
     /// 选中/活动态背景
     static let activeBackground = Color.accentColor.opacity(0.12)
     /// 悬停态背景
-    static let hoverBackground = Color(nsColor: .unemphasizedSelectedContentBackgroundColor)
+    static let hoverBackground = Color.white.opacity(0.08)
     /// 选中边框
     static let selectedBorder: Color = .accentColor
 

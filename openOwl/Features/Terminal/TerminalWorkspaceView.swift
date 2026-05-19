@@ -361,7 +361,7 @@ private struct PaneDragHandle: View {
             }
             .frame(maxWidth: .infinity)
             .frame(height: 12)
-            .background(Color(nsColor: .underPageBackgroundColor))
+            .background(AppPalette.elevated)
             .contentShape(Rectangle())
             .onHover { isHovered = $0 }
             .onDrag {

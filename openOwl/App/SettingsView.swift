@@ -96,17 +96,39 @@ enum NotificationSound: String, CaseIterable, Identifiable {
 
 // MARK: - Settings View
 
+struct TerminalTheme: Identifiable, Equatable {
+    enum Source {
+        case openOwl
+        case ghostty
+    }
+
+    let name: String
+    let configValue: String
+    let source: Source
+
+    var id: String { configValue }
+
+    var label: String {
+        switch source {
+        case .openOwl: return "\(name) (OpenOwl)"
+        case .ghostty: return name
+        }
+    }
+}
+
 struct SettingsView: View {
     @State private var appearance: AppAppearance = .current
-    @State private var terminalTheme: String = GhosttyConfig.readOverride(key: "theme") ?? ""
+    @State private var terminalThemeValue: String = GhosttyConfig.readOverride(key: "theme")
+        ?? GhosttyConfig.openOwlNeonThemeValue
+        ?? ""
     @State private var themeSearchQuery = ""
     @State private var showRestartHint = false
     @State private var notificationSound: NotificationSound = .current
 
-    private var availableThemes: [String] {
+    private var availableThemes: [TerminalTheme] {
         let themes = Self.loadThemeList()
         if themeSearchQuery.isEmpty { return themes }
-        return themes.filter { $0.localizedCaseInsensitiveContains(themeSearchQuery) }
+        return themes.filter { $0.label.localizedCaseInsensitiveContains(themeSearchQuery) }
     }
 
     var body: some View {
@@ -142,16 +164,16 @@ struct SettingsView: View {
 
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 0) {
-                        ForEach(availableThemes, id: \.self) { theme in
+                        ForEach(availableThemes) { theme in
                             Button {
-                                terminalTheme = theme
+                                terminalThemeValue = theme.configValue
                             } label: {
-                                Text(theme)
+                                Text(theme.label)
                                     .frame(maxWidth: .infinity, alignment: .leading)
                                     .padding(.horizontal, 8)
                                     .padding(.vertical, 4)
-                                    .background(terminalTheme == theme ? Color.accentColor : Color.clear)
-                                    .foregroundStyle(terminalTheme == theme ? .white : .primary)
+                                    .background(terminalThemeValue == theme.configValue ? Color.accentColor : Color.clear)
+                                    .foregroundStyle(terminalThemeValue == theme.configValue ? .white : .primary)
                                     .cornerRadius(4)
                             }
                             .buttonStyle(.plain)
@@ -166,7 +188,7 @@ struct SettingsView: View {
                     RoundedRectangle(cornerRadius: 6)
                         .strokeBorder(Color.secondary.opacity(0.2), lineWidth: 0.5)
                 )
-                .onChange(of: terminalTheme) { _, newValue in
+                .onChange(of: terminalThemeValue) { _, newValue in
                     guard !newValue.isEmpty else { return }
                     GhosttyConfig.setOverride(key: "theme", value: newValue)
                     showRestartHint = true
@@ -183,20 +205,36 @@ struct SettingsView: View {
         .frame(width: 400, height: 500)
     }
 
-    private static func loadThemeList() -> [String] {
+    private static func loadThemeList() -> [TerminalTheme] {
+        GhosttyConfig.installFirstPartyThemes()
+
+        let firstPartyThemes = GhosttyConfig.openOwlNeonThemeValue.map {
+            [
+                TerminalTheme(
+                    name: GhosttyConfig.openOwlNeonThemeName,
+                    configValue: $0,
+                    source: .openOwl
+                )
+            ]
+        } ?? []
+
         // Find themes directory in ghostty resources
         guard let resourcesDir = ProcessInfo.processInfo.environment["GHOSTTY_RESOURCES_DIR"] else {
-            return []
+            return firstPartyThemes
         }
         let themesDir = URL(fileURLWithPath: resourcesDir).appendingPathComponent("themes")
         guard let files = try? FileManager.default.contentsOfDirectory(
             at: themesDir,
             includingPropertiesForKeys: nil,
             options: .skipsHiddenFiles
-        ) else { return [] }
+        ) else { return firstPartyThemes }
 
-        return files
+        let ghosttyThemes = files
             .map { $0.lastPathComponent }
             .sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
+            .filter { $0 != GhosttyConfig.openOwlNeonThemeName }
+            .map { TerminalTheme(name: $0, configValue: $0, source: .ghostty) }
+
+        return firstPartyThemes + ghosttyThemes
     }
 }

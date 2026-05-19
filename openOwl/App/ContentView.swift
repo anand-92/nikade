@@ -53,9 +53,16 @@ struct ContentView: View {
         .navigationSplitViewStyle(.balanced)
         .navigationTitle("")
         .background {
-            Button("") { fileExplorerStore.presentQuickOpen(projectURL: projectStore.activeProjectURL) }
-                .keyboardShortcut("p", modifiers: [.command])
-                .hidden()
+            ZStack {
+                WindowAccessor { window in
+                    configureTransparentWindow(window)
+                }
+                .frame(width: 0, height: 0)
+
+                Button("") { fileExplorerStore.presentQuickOpen(projectURL: projectStore.activeProjectURL) }
+                    .keyboardShortcut("p", modifiers: [.command])
+                    .hidden()
+            }
         }
         .overlay {
             if fileExplorerStore.isQuickOpenPresented {
@@ -113,5 +120,14 @@ struct ContentView: View {
         guard let window = NSApp.keyWindow else { return }
         window.endEditing(for: nil)
         window.makeFirstResponder(nil)
+    }
+
+    @MainActor
+    private func configureTransparentWindow(_ window: NSWindow) {
+        window.isOpaque = false
+        window.backgroundColor = .clear
+        window.titlebarAppearsTransparent = true
+        window.styleMask.insert(.fullSizeContentView)
+        window.hasShadow = true
     }
 }

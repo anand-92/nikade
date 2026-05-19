@@ -35,6 +35,8 @@
 
 #### 2.1 暗色调色盘
 
+> 2026-05 更新：终端默认主题切换为 `OpenOwl Neon` 后，应用外壳也跟随终端的 `background-opacity = 0.75`。`NSWindow` 设为 non-opaque + clear background，`AppPalette` 背景层改为半透明黑色，Sidebar / Right Dock / Status Bar 与终端形成统一透明窗口。
+
 ```swift
 enum AppPalette {
     // 背景 4 层（从深到浅）

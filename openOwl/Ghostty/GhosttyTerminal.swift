@@ -45,7 +45,7 @@ class TerminalNSView: NSView {
     override func makeBackingLayer() -> CALayer {
         let layer = CAMetalLayer()
         layer.device = MTLCreateSystemDefaultDevice()
-        layer.isOpaque = true
+        layer.isOpaque = false
         layer.contentsScale = window?.backingScaleFactor ?? 2.0
         layer.isHidden = !hostVisible
         metalLayer = layer

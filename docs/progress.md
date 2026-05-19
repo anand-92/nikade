@@ -19,6 +19,7 @@
 - [x] v1.0.3 — surface 泄漏修复 + 项目 Tab 关闭/拖拽 + Worktree 自动发现 + Debug 诊断系统
 - [x] v1.0.4 — Deployment removeItem 误删用户目录修复
 - [x] v1.0.7 测试版 — 退出保护 + libghostty 默认回退 ReleaseFast
+- [x] Terminal 默认主题 — 新增一等 `OpenOwl Neon` 主题，solid black + vibrant neon palette，75% background opacity
 
 ## Done
 

@@ -1,0 +1,28 @@
+background = #000000
+foreground = #00ffff
+cursor-color = #00ffff
+cursor-text = #000000
+adjust-cursor-thickness = 2
+selection-background = #ffff00
+selection-foreground = #000000
+
+palette = 0=#000000
+palette = 1=#ff0040
+palette = 2=#00ff40
+palette = 3=#ffff00
+palette = 4=#0080ff
+palette = 5=#ff00ff
+palette = 6=#00ffff
+palette = 7=#ffffff
+palette = 8=#404040
+palette = 9=#ff4080
+palette = 10=#40ff80
+palette = 11=#ffff40
+palette = 12=#4080ff
+palette = 13=#ff40ff
+palette = 14=#40ffff
+palette = 15=#ffffff
+
+mouse-hide-while-typing = false
+keybind = shift+enter=text:\n
+background-opacity = 0.75

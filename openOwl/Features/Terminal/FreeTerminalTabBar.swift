@@ -44,7 +44,7 @@ struct FreeTerminalTabBar: View {
             .padding(.vertical, 4)
         }
         .frame(height: AppSpacing.headerHeight)
-        .background(Color(nsColor: .underPageBackgroundColor))
+        .background(AppPalette.elevated)
     }
 }
 
